@@ -1,0 +1,43 @@
+server:
+  # 端口
+  port: 6002
+  servlet:
+    # 项目名称
+    # 开发环境
+    context-path : /
+
+
+spring:
+  application:
+    name: flint-analysis
+  messages:
+    basename: ValidationMessages
+    encoding: UTF-8
+  datasource:
+    url: jdbc:mysql://localhost:3306/flint
+    username: root
+    password: 123456
+    driverClassName: com.mysql.cj.jdbc.Driver
+    initialSize: 1
+    minIdle: 3
+    maxActive: 50
+    maxWait: 60000
+    timeBetweenEvictionRunsMillis: 60000
+    minEvictableIdleTimeMillis: 30000
+    validationQuery: select 1
+    testWhileIdle: true
+    testOnBorrow: false
+    testOnReturn: false
+    poolPreparedStatements: true
+    maxPoolPreparedStatementPerConnectionSize: 20
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+
+
+mybatis:
+  mapper-locations: classpath*:mapper/*.xml
+  type-aliases-package: com.iflytek.bigdata.flint.*.dao.model
+  configuration:
+    map-underscore-to-camel-case: true
+

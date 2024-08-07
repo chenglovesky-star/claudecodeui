@@ -1,0 +1,7 @@
+server:
+  # 端口
+  port: 6002
+  servlet:
+    # 项目名称
+    # 生产环境
+    context-path : /prod
