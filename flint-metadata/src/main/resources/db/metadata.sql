@@ -178,3 +178,95 @@ CREATE TABLE metadata_event_property_value
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   ROW_FORMAT = COMPRESSED COMMENT ='元数据-事件属性枚举值表';
+
+
+
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'uid', '用户标识', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'version', '当前版本', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'df', '当前渠道', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'imei', '用户设备标识信息', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'imsi', '用户SIM卡信息标识', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'ip', '远程IP', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'country', '国家', 'string', 1, 0);
+
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'province', '省份', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'country', '城市', 'string', 1, 0);
+
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'country', '品牌', 'string', 1, 0);
+
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'country', '国家', 'string', 1, 0);
+
+
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'country', '机型', 'string', 1, 0);
+
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'country', '子机型', 'string', 1, 0);
+
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'country', '操作系统版本', 'string', 1, 0);
+
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'country', '分辨率', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'country', '开始时间', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'country', '结束时间', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'country', '上传时间', 'string', 1, 0);
+
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'country', '产品', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'country', '平台', 'string', 1, 0);

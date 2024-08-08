@@ -22,7 +22,7 @@ import java.util.List;
 
 @RestController
 @Api(value = "虚拟事件接口")
-@RequestMapping("/iflytek/flint/metadata/virtual")
+@RequestMapping("/iflytek/flint/metadata/virtual/event")
 public class VirtualEventController {
 
     @Resource
@@ -32,7 +32,7 @@ public class VirtualEventController {
     private MetadataUtil metadataUtil;
 
     @ApiOperation(value = "列表", notes = "列表")
-    @RequestMapping(value = "/event", method = RequestMethod.GET)
+    @RequestMapping(value = "/list", method = RequestMethod.GET)
     @ResponseBody
     public Response list(@RequestHeader(value = "ldapUsername", required = false) String operator,
                          @RequestParam(value = "name", required = false) String name,
@@ -69,9 +69,9 @@ public class VirtualEventController {
     }
 
     @ApiOperation(value = "添加", notes = "添加")
-    @RequestMapping(value = "/event", method = RequestMethod.POST)
+    @RequestMapping(value = "/insert", method = RequestMethod.POST)
     @ResponseBody
-    public Response insert(@RequestHeader(value = "ldapUsername") String operator,
+    public Response insert(@RequestHeader(value = "ldapUsername", required = false) String operator,
                            @RequestBody VirtualEventDto virtualEvent) {
         boolean exists = iVirtualEventService.exists(virtualEvent.getName());
         if (exists) return new Response(1, "虚拟事件名称已存在");
@@ -93,9 +93,9 @@ public class VirtualEventController {
     }
 
     @ApiOperation(value = "编辑", notes = "编辑")
-    @RequestMapping(value = "/event", method = RequestMethod.PUT)
+    @RequestMapping(value = "/update", method = RequestMethod.PUT)
     @ResponseBody
-    public Response update(@RequestHeader(value = "ldapUsername") String operator,
+    public Response update(@RequestHeader(value = "ldapUsername", required = false) String operator,
                            @RequestBody VirtualEventDto virtualEvent) {
         boolean exists = iVirtualEventService.exists(virtualEvent.getId(), virtualEvent.getName());
         if (exists) return new Response(1, "虚拟事件名称已存在");
@@ -118,9 +118,12 @@ public class VirtualEventController {
     @ApiOperation(value = "详情", notes = "详情")
     @RequestMapping(value = "/detail", method = RequestMethod.GET)
     @ResponseBody
-    public Response detail(@RequestHeader(value = "ldapUsername") String operator, Integer id) {
+    public Response detail(@RequestHeader(value = "ldapUsername", required = false) String operator, Integer id) {
         VirtualEventWithBLOBs event = iVirtualEventService.selectById(id);
         VirtualEventDto virtualEventDto = new VirtualEventDto();
+        if (virtualEventDto.getName() == null) {
+            return new Response(200, "虚拟事件不存在");
+        }
         virtualEventDto.setId(id);
         virtualEventDto.setName(event.getName());
         virtualEventDto.setDisplayName(event.getDisplayName());
@@ -132,7 +135,7 @@ public class VirtualEventController {
     }
 
     @ApiOperation(value = "删除", notes = "删除")
-    @RequestMapping(value = "/event", method = RequestMethod.DELETE)
+    @RequestMapping(value = "/delete", method = RequestMethod.DELETE)
     @ResponseBody
     public Response delete(Integer id) {
         iVirtualEventService.delete(id);
@@ -140,9 +143,9 @@ public class VirtualEventController {
     }
 
     @ApiOperation(value = "修改隐藏显示", notes = "修改隐藏显示")
-    @RequestMapping(value = "/event/display", method = RequestMethod.POST)
+    @RequestMapping(value = "/display", method = RequestMethod.POST)
     @ResponseBody
-    public Response eventDisplay(@RequestHeader(value = "ldapUsername") String operator,
+    public Response eventDisplay(@RequestHeader(value = "ldapUsername", required = false) String operator,
                                  @RequestBody VirtualEventDto virtualEvent) {
         VirtualEventWithBLOBs item = iVirtualEventService.selectById(virtualEvent.getId());
         item.setDisplay(virtualEvent.getDisplay());

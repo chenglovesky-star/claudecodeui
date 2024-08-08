@@ -30,7 +30,9 @@ import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.DigestUtils;
 
@@ -58,6 +60,9 @@ public class AnalysisUtil {
 
     private final static String ALL_CN = "总体";
     private final static String GROUP_IDS_COLUMN = "group_ids";
+
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
 
     @Resource
     private IOperationService iOperationService;
@@ -105,6 +110,7 @@ public class AnalysisUtil {
     private String eventsTable;
 
 
+
     private Set<String> commonPros() {
         return metadataUtil.getCommonPros();
     }
@@ -139,8 +145,7 @@ public class AnalysisUtil {
 
         //cache=1:非强制刷新，查询历史揭露
         if (cache != 0) {
-            //String cacheId = redisTemplate.opsForValue().get(CACHE_KEY + md5SQL);
-            String cacheId = "1";
+            String cacheId = redisTemplate.opsForValue().get(CACHE_KEY + md5SQL).toString();
             if (StringUtils.isNotEmpty(cacheId)) {
                 ImpalaQueryHistoryWithBLOBs cacheItem = iImpalaQueryHistoryService.selectById(Long.valueOf(cacheId));
                 if (cacheItem != null && (cacheItem.getStatus() == AnalysisQueryStatusEnum.FINISHED.getIndex())) {

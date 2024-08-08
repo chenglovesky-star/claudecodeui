@@ -53,7 +53,7 @@ public class MetadataProfileCategoryController {
     @ApiOperation(value = "画像标签类别新增", notes = "画像标签类别新增")
     @PostMapping("/insert")
     @ResponseBody
-    public Response insert(@RequestHeader(value = "ldapUsername") String operator, @RequestBody MetadataProfileCategory item) {
+    public Response insert(@RequestHeader(value = "ldapUsername", required = false) String operator, @RequestBody MetadataProfileCategory item) {
         IMetadataProfileCategoryService.insert(item);
         return new Response("操作成功");
     }
@@ -61,8 +61,8 @@ public class MetadataProfileCategoryController {
     @ApiOperation(value = "画像标签类别修改", notes = "画像标签类别修改")
     @PostMapping("/update")
     @ResponseBody
-    public Response update(@RequestHeader(value = "ldapUsername") String operator, @RequestBody MetadataProfileCategory item) {
-        IMetadataProfileCategoryService.insert(item);
+    public Response update(@RequestHeader(value = "ldapUsername", required = false) String operator, @RequestBody MetadataProfileCategory item) {
+        IMetadataProfileCategoryService.update(item);
         return new Response("操作成功");
     }
 

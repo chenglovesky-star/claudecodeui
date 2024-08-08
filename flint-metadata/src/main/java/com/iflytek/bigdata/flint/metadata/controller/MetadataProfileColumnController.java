@@ -43,7 +43,7 @@ public class MetadataProfileColumnController {
     @ApiOperation(value = "画像标签新增", notes = "画像标签新增")
     @PostMapping("/insert")
     @ResponseBody
-    public Response insert(@RequestHeader(value = "ldapUsername") String operator, @RequestBody MetadataProfileColumn item) {
+    public Response insert(@RequestHeader(value = "ldapUsername", required = false) String operator, @RequestBody MetadataProfileColumn item) {
         IMetadataProfileColumnService.insert(item);
         return new Response("操作成功");
     }
@@ -51,7 +51,7 @@ public class MetadataProfileColumnController {
     @ApiOperation(value = "画像标签修改", notes = "画像标签修改")
     @PostMapping("/update")
     @ResponseBody
-    public Response update(@RequestHeader(value = "ldapUsername") String operator, @RequestBody MetadataProfileColumn item) {
+    public Response update(@RequestHeader(value = "ldapUsername", required = false) String operator, @RequestBody MetadataProfileColumn item) {
         IMetadataProfileColumnService.insert(item);
         return new Response("操作成功");
     }

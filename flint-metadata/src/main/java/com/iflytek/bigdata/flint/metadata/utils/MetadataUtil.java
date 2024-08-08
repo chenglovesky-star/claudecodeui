@@ -99,7 +99,7 @@ public class MetadataUtil {
 
     private volatile Map<String, String> mapVirtualEventMap = new ConcurrentHashMap<>();
 
-    //@PostConstruct
+    @PostConstruct
     public void init() {
         //埋点属性类型和平台类型对应
         typeMap.put("string", 2);
@@ -272,8 +272,10 @@ public class MetadataUtil {
     }
 
     public String getEventSql(List<EventDto> events) {
-        return getEventSql(events, STRING) + " | " + getEventSql(events, MAP) + " | " + getEventUnionSql(events, STRING)
-                + " | " + getEventUnionSql(events, MAP);
+//        return getEventSql(events, STRING) + " | " + getEventSql(events, MAP) + " | " + getEventUnionSql(events, STRING)
+//                + " | " + getEventUnionSql(events, MAP);
+
+        return  getEventSql(events, STRING);
     }
 
     public String getEventSql(List<EventDto> events, String propertyType) {
@@ -290,14 +292,14 @@ public class MetadataUtil {
                 }
                 eventSet.add("'" + event.getEvent() + "'");
             }
-            eventSql += String.format(" event in (%s) ", Joiner.on(",").join(eventSet));
+            eventSql += String.format(" opcode in (%s) ", Joiner.on(",").join(eventSet));
             if (hasFilter) {
                 List<String> eventSqlList = new ArrayList<>();
                 if (CollectionUtils.isNotEmpty(inSet)) {
-                    eventSqlList.add(String.format(" event in (%s) ", Joiner.on(",").join(inSet)));
+                    eventSqlList.add(String.format(" opcode in (%s) ", Joiner.on(",").join(inSet)));
                 }
                 for (EventDto event : events) {
-                    String filterSql = String.format(" event = '%s'", event.getEvent());
+                    String filterSql = String.format(" opcode = '%s'", event.getEvent());
                     if (CollectionUtils.isNotEmpty(event.getFilter().getSubFilters())) {
                         List<String> subSqlList = new ArrayList<>();
                         for (EventPropertyDto subFilter : event.getFilter().getSubFilters()) {
@@ -308,7 +310,7 @@ public class MetadataUtil {
                                 conditionDto.setColumnName(propertyName.substring(2));
                             } else {
                                 if (STRING.equalsIgnoreCase(propertyType)) {
-                                    conditionDto.setColumnName("get_json_object(properties,'$." + propertyName + "')");
+                                    conditionDto.setColumnName("ifly_map_get(tags,'" + propertyName + "')");
                                 } else {
                                     conditionDto.setColumnName("properties['" + propertyName + "']");
                                 }
@@ -348,6 +350,7 @@ public class MetadataUtil {
                             conditionDto.setColumnType(typeMap.get(type));
                             Operation operation = iOperationService.selectById(subFilter.getPropertyOperationId());
                             conditionDto.setOperationName(operation.getName());
+                            conditionDto.setColumnType(operation.getColumnType());
                             conditionDto.setOperationValue(subFilter.getPropertyOperationValue());
                             //等于操作转换为包含
                             if (conditionDto.getOperationName().startsWith("Equal") && conditionDto.getOperationValue().contains(",")) {
@@ -385,7 +388,7 @@ public class MetadataUtil {
                                 conditionDto.setColumnName(propertyName.substring(2));
                             } else {
                                 if (STRING.equalsIgnoreCase(propertyType)) {
-                                    conditionDto.setColumnName("get_json_object(properties,'$." + propertyName + "')");
+                                    conditionDto.setColumnName("ifly_map_gettagss,'" + propertyName + "')");
                                 } else {
                                     conditionDto.setColumnName("properties['" + propertyName + "']");
                                 }
@@ -400,7 +403,7 @@ public class MetadataUtil {
                                 }
                             }
                             String type = subFilter.getPropertyType();
-                            if (StringUtils.isEmpty(type)) {
+                            if (StringUtils.isEmpty(type) && CollectionUtils.isNotEmpty(list)) {
                                 for (PropertyDto propertyDto : list) {
                                     if (propertyDto.getName().equals(propertyName)) type = propertyDto.getType();
                                 }
@@ -423,6 +426,7 @@ public class MetadataUtil {
                             conditionDto.setColumnType(typeMap.get(type));
                             Operation operation = iOperationService.selectById(subFilter.getPropertyOperationId());
                             conditionDto.setOperationName(operation.getName());
+                            conditionDto.setColumnType(operation.getColumnType());
                             conditionDto.setOperationValue(subFilter.getPropertyOperationValue());
                             //等于操作转换为包含
                             if (conditionDto.getOperationName().startsWith("Equal") && conditionDto.getOperationValue().contains(",")) {
@@ -602,7 +606,7 @@ public class MetadataUtil {
                 case 0:
                     return "cast(" + column + " as float) " + operation + " " + value;
                 case 6:
-                    if (column.contains("get_json_object")) {
+                    if (column.contains("ifly_map_get")) {
                         return column + operation + " '" + value + "'";
                     } else {
                         return "if(" + column + ",'true','false') " + operation + " '" + value + "'";

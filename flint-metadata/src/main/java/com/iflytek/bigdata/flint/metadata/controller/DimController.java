@@ -66,7 +66,7 @@ public class DimController {
     @ApiOperation(value = "维度表详情新增", notes = "维度表详情新增")
     @PostMapping("/insert")
     @ResponseBody
-    public Response insert(@RequestHeader(value = "ldapUsername") String operator, @RequestBody DimDto item) {
+    public Response insert(@RequestHeader(value = "ldapUsername", required = false, defaultValue = "admin") String operator, @RequestBody DimDto item) {
         Dim dim = new Dim();
         dim.setName(item.getName());
         dim.setHiveTableName(item.getHiveTableName());
@@ -91,7 +91,7 @@ public class DimController {
     @ApiOperation(value = "维度表详情修改", notes = "维度表详情修改")
     @PostMapping("/update")
     @ResponseBody
-    public Response update(@RequestHeader(value = "ldapUsername") String operator, @RequestBody DimDto item) {
+    public Response update(@RequestHeader(value = "ldapUsername", required = false, defaultValue = "admin") String operator, @RequestBody DimDto item) {
         Dim dim = new Dim();
         dim.setId(item.getId());
         dim.setName(item.getName());
