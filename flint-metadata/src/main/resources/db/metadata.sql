@@ -217,56 +217,49 @@ VALUES('all', 'province', '省份', 'string', 1, 0);
 
 INSERT INTO flint.metadata_event_property
 (event_name, name, show_name, `type`, display, sort)
-VALUES('all', 'country', '城市', 'string', 1, 0);
+VALUES('all', 'city', '城市', 'string', 1, 0);
 
 
 INSERT INTO flint.metadata_event_property
 (event_name, name, show_name, `type`, display, sort)
-VALUES('all', 'country', '品牌', 'string', 1, 0);
+VALUES('all', 'brand', '品牌', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'model', '机型', 'string', 1, 0);
 
 
 INSERT INTO flint.metadata_event_property
 (event_name, name, show_name, `type`, display, sort)
-VALUES('all', 'country', '国家', 'string', 1, 0);
-
-
-
-INSERT INTO flint.metadata_event_property
-(event_name, name, show_name, `type`, display, sort)
-VALUES('all', 'country', '机型', 'string', 1, 0);
+VALUES('all', 'submodel', '子机型', 'string', 1, 0);
 
 
 INSERT INTO flint.metadata_event_property
 (event_name, name, show_name, `type`, display, sort)
-VALUES('all', 'country', '子机型', 'string', 1, 0);
+VALUES('all', 'os', '操作系统版本', 'string', 1, 0);
 
 
 INSERT INTO flint.metadata_event_property
 (event_name, name, show_name, `type`, display, sort)
-VALUES('all', 'country', '操作系统版本', 'string', 1, 0);
+VALUES('all', 'resolution', '分辨率', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'starttime', '开始时间', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'endtime', '结束时间', 'string', 1, 0);
+
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'ctm', '上传时间', 'string', 1, 0);
 
 
 INSERT INTO flint.metadata_event_property
 (event_name, name, show_name, `type`, display, sort)
-VALUES('all', 'country', '分辨率', 'string', 1, 0);
+VALUES('all', 'bizid', '产品', 'string', 1, 0);
 
 INSERT INTO flint.metadata_event_property
 (event_name, name, show_name, `type`, display, sort)
-VALUES('all', 'country', '开始时间', 'string', 1, 0);
-
-INSERT INTO flint.metadata_event_property
-(event_name, name, show_name, `type`, display, sort)
-VALUES('all', 'country', '结束时间', 'string', 1, 0);
-
-INSERT INTO flint.metadata_event_property
-(event_name, name, show_name, `type`, display, sort)
-VALUES('all', 'country', '上传时间', 'string', 1, 0);
-
-
-INSERT INTO flint.metadata_event_property
-(event_name, name, show_name, `type`, display, sort)
-VALUES('all', 'country', '产品', 'string', 1, 0);
-
-INSERT INTO flint.metadata_event_property
-(event_name, name, show_name, `type`, display, sort)
-VALUES('all', 'country', '平台', 'string', 1, 0);
+VALUES('all', 'osid', '平台', 'string', 1, 0);

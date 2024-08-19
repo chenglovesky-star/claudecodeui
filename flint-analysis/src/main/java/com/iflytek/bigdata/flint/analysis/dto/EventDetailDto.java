@@ -10,14 +10,26 @@ public class EventDetailDto {
 
     private Long id;
 
+    /**
+     * 时间区间 2024-06-10,2024-06-11
+     */
     private String timeValues;
 
+    /**
+     * 图表类型
+     */
     private Integer chartsType;
 
+    /**
+     * 时间类型 0 天，1 小时，2 分, 3 周， 4 月 ，5 总计
+     */
     private Integer timeBucket;
 
     private List<String> groupBy;
 
+    /**
+     * 分组的区间
+     */
     private String byValues;
 
     /**

@@ -46,7 +46,7 @@ public class AnalysisEventController {
     @ApiOperation(value = "事件分析查询提交", notes = "事件分析查询提交")
     @PostMapping("/event/query")
     @ResponseBody
-    public Response query(@RequestHeader(value = "ldapUsername") String operator,
+    public Response query(@RequestHeader(value = "ldapUsername", required = false , defaultValue = "admin") String operator,
                           @RequestBody EventDetailDto eventDetailDto) {
         Integer cache = eventDetailDto.getCache();
         if (cache == null) cache = 1;

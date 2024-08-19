@@ -14,6 +14,12 @@ spring:
     basename: ValidationMessages
     encoding: UTF-8
   datasource:
+    #数据源基本信息，也可放在druid下
+    impalaUrl: jdbc:mysql://172.31.114.188:9030/ods?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
+    impalaUsername: root
+    impalaPassword: root
+    impalaDriverClassName: com.mysql.cj.jdbc.Driver
+
     url: jdbc:mysql://localhost:3306/flint
     username: root
     password: 123456
@@ -35,15 +41,12 @@ spring:
     time-zone: GMT+8
 
   redis:
-    host: localhost
+    host: 127.0.0.1
     port: 6379
-
+    database: 0
 
 mybatis:
   mapper-locations: classpath*:mapper/*.xml
   type-aliases-package: com.iflytek.bigdata.flint.*.dao.model
   configuration:
     map-underscore-to-camel-case: true
-
-
-

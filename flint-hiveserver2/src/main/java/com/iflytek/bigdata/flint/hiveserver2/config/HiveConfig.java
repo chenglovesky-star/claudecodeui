@@ -14,37 +14,35 @@ import org.springframework.stereotype.Component;
 import javax.sql.DataSource;
 
 @Configuration
-@ConfigurationProperties(prefix = "hiveserver2")
+@ConfigurationProperties(prefix = "spring.datasource")
 @Component
 @Data
 public class HiveConfig {
 
-    @Value("${env:dev}")
-    private String env;
-
-    @Value("${url:url}")
-    private String url;
-
-    @Value("${backupUrl:backupUrl}")
-    private String backupUrl;
 
     @Value("${impalaUrl:impalaUrl}")
     private String impalaUrl;
 
-    @Value("${sparkUrl:sparkUrl}")
-    private String sparkUrl;
+//    @Value("${backupUrl:backupUrl}")
+//    private String backupUrl;
 
-    @Value("${user:user}")
-    private String user;
+//    @Value("${impalaUrl:impalaUrl}")
+//    private String impalaUrl;
 
-    @Value("${password:password}")
-    private String password;
+//    @Value("${sparkUrl:sparkUrl}")
+//    private String sparkUrl;
 
-    @Value("${driverClassName:driverClassName}")
-    private String driverClassName;
+    @Value("${impalaUsername:impalaUsername}")
+    private String impalaUsername;
+
+    @Value("${impalaPassword:impalaPassword}")
+    private String impalaPassword;
 
     @Value("${impalaDriverClassName:impalaDriverClassName}")
     private String impalaDriverClassName;
+
+//    @Value("${impalaDriverClassName:impalaDriverClassName}")
+//    private String impalaDriverClassName;
 
     @Value("${initialSize:1}")
     private int initialSize;
@@ -85,76 +83,13 @@ public class HiveConfig {
 
 
     @Primary
-    @Qualifier("hiveDataSource")
-    public DataSource hiveDataSource() {
-
-        DruidDataSource datasource = new DruidDataSource();
-        datasource.setUrl(url);
-        datasource.setUsername(user);
-        datasource.setPassword(password);
-        datasource.setDriverClassName(driverClassName);
-
-        // pool configuration
-        datasource.setInitialSize(initialSize);
-        datasource.setMinIdle(minIdle);
-        datasource.setMaxActive(maxActive);
-        datasource.setMaxWait(maxWait);
-        datasource.setTimeBetweenEvictionRunsMillis(timeBetweenEvictionRunsMillis);
-        datasource.setMinEvictableIdleTimeMillis(minEvictableIdleTimeMillis);
-        datasource.setValidationQuery(validationQuery);
-        datasource.setTestWhileIdle(testWhileIdle);
-        datasource.setTestOnBorrow(testOnBorrow);
-        datasource.setTestOnReturn(testOnReturn);
-        datasource.setPoolPreparedStatements(poolPreparedStatements);
-        datasource.setMaxPoolPreparedStatementPerConnectionSize(maxPoolPreparedStatementPerConnectionSize);
-        return datasource;
-    }
-
-    @Primary
-    public JdbcTemplate hiveJdbcTemplate(@Qualifier("hiveDataSource") DataSource dataSource) {
-        return new JdbcTemplate(dataSource);
-    }
-
-    @Primary
-    @Qualifier("hiveBackupDataSource")
-    public DataSource hiveBackupDataSource() {
-
-        DruidDataSource datasource = new DruidDataSource();
-        datasource.setUrl(backupUrl);
-        datasource.setUsername(user);
-        datasource.setPassword(password);
-        datasource.setDriverClassName(driverClassName);
-
-        // pool configuration
-        datasource.setInitialSize(initialSize);
-        datasource.setMinIdle(minIdle);
-        datasource.setMaxActive(maxActive);
-        datasource.setMaxWait(maxWait);
-        datasource.setTimeBetweenEvictionRunsMillis(timeBetweenEvictionRunsMillis);
-        datasource.setMinEvictableIdleTimeMillis(minEvictableIdleTimeMillis);
-        //datasource.setValidationQuery(validationQuery);
-        //datasource.setTestWhileIdle(testWhileIdle);
-        datasource.setTestOnBorrow(testOnBorrow);
-        datasource.setTestOnReturn(testOnReturn);
-        datasource.setPoolPreparedStatements(poolPreparedStatements);
-        datasource.setMaxPoolPreparedStatementPerConnectionSize(maxPoolPreparedStatementPerConnectionSize);
-        return datasource;
-    }
-
-    @Primary
-    public JdbcTemplate hiveBackupJdbcTemplate(@Qualifier("hiveBackupDataSource") DataSource dataSource) {
-        return new JdbcTemplate(dataSource);
-    }
-
-    @Primary
-    @Qualifier("impalaDataSource")
-    public DataSource impalaDataSource() {
+    public DataSource dataSource() {
 
         DruidDataSource datasource = new DruidDataSource();
         datasource.setUrl(impalaUrl);
-        datasource.setUsername(user);
-        datasource.setPassword(password);
-        datasource.setDriverClassName(impalaDriverClassName);
+        datasource.setUsername(impalaUsername);
+        datasource.setPassword(impalaPassword);
+        datasource.setDriverClassName(impalaPassword);
 
         // pool configuration
         datasource.setInitialSize(initialSize);
@@ -173,38 +108,7 @@ public class HiveConfig {
     }
 
     @Primary
-    public JdbcTemplate impalaJdbcTemplate(@Qualifier("impalaDataSource") DataSource impalaDataSource) {
-        return new JdbcTemplate(impalaDataSource);
-    }
-
-    @Primary
-    @Qualifier("sparkDataSource")
-    public DataSource sparkDataSource() {
-
-        DruidDataSource datasource = new DruidDataSource();
-        datasource.setUrl(sparkUrl);
-        datasource.setUsername(user);
-        datasource.setPassword(password);
-        datasource.setDriverClassName(driverClassName);
-
-        // pool configuration
-        datasource.setInitialSize(initialSize);
-        datasource.setMinIdle(minIdle);
-        datasource.setMaxActive(maxActive);
-        datasource.setMaxWait(maxWait);
-        datasource.setTimeBetweenEvictionRunsMillis(timeBetweenEvictionRunsMillis);
-        datasource.setMinEvictableIdleTimeMillis(minEvictableIdleTimeMillis);
-        //datasource.setValidationQuery(validationQuery);
-        //datasource.setTestWhileIdle(testWhileIdle);
-        datasource.setTestOnBorrow(testOnBorrow);
-        datasource.setTestOnReturn(testOnReturn);
-        datasource.setPoolPreparedStatements(poolPreparedStatements);
-        datasource.setMaxPoolPreparedStatementPerConnectionSize(maxPoolPreparedStatementPerConnectionSize);
-        return datasource;
-    }
-
-    @Primary
-    public JdbcTemplate sparkJdbcTemplate(@Qualifier("sparkDataSource") DataSource sparkDataSource) {
-        return new JdbcTemplate(sparkDataSource);
+    public JdbcTemplate hiveJdbcTemplate(DataSource dataSource) {
+        return new JdbcTemplate(dataSource);
     }
 }

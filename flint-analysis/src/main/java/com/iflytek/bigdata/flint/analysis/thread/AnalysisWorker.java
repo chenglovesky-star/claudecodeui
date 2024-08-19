@@ -82,36 +82,18 @@ public class AnalysisWorker implements Callable<String> {
         Statement statement = null;
         try {
             Properties info = new Properties();
-            info.setProperty("user", this.hiveConfig.getUser());
-            if (StringUtils.isNotEmpty(hiveConfig.getPassword())) {
-                info.setProperty("password", hiveConfig.getPassword());
+            info.setProperty("user", this.hiveConfig.getImpalaUsername());
+            if (StringUtils.isNotEmpty(hiveConfig.getImpalaPassword())) {
+                info.setProperty("password", hiveConfig.getImpalaPassword());
             }
-            if ("hive".equals(this.jdbcType)) {
-                Class.forName(hiveConfig.getDriverClassName());
-                if ("spark".equals(this.hiveEngine)) {
-                    connection = DriverManager
-                            .getConnection(hiveConfig.getSparkUrl(), info);
-                } else {
-                    connection = DriverManager
-                            .getConnection(hiveConfig.getUrl(), info);
-                }
-            } else {
-                Class.forName(hiveConfig.getImpalaDriverClassName());
-                connection = DriverManager
-                        .getConnection(hiveConfig.getImpalaUrl(), info);
-            }
+
+            Class.forName(hiveConfig.getImpalaDriverClassName());
+            connection = DriverManager.getConnection(hiveConfig.getImpalaUrl(), info);
+
             statement = connection.createStatement();
             String[] arr = sql.split("###");
             String query = arr[1];
-            if (HIVE.equals(jdbcType)) {
-                //initHiveUdfs(statement);
-                if (SPARK.equals(this.hiveEngine)) {
-                    statement.execute("refresh iflytek_dm_up.v_user");
-                    query = String.format(sqlComment_withJobId, "metis_analysis_" + queryHistoryId + "_" + arr[0]) + arr[1];
-                }
-            } else {
-                initImpalaUdfs(statement);
-            }
+
             List<Map<String, Object>> resultList = new ArrayList<>();
             ResultSet result = statement.executeQuery(query + " LIMIT " + LIMIT);
             if (result != null) {

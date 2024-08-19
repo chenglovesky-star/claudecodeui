@@ -42,6 +42,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @Author: linlong
@@ -102,11 +103,11 @@ public class AnalysisUtil {
     @Value("${hive.engine:hive}")
     private String hiveEngine;
 
-    @Value("${user_profile.table:hive.ossp.bxlabel}")
+    @Value("${user_profile.table:profile.dm_up_v_user}")
     private String profileTable;
 
 
-    @Value("${events.table:hive.ossp.dw_d_ime_inputkeyword_sr}")
+    @Value("${events.table:ossp.dw_d_ime_operationlog_sr}")
     private String eventsTable;
 
 
@@ -145,9 +146,9 @@ public class AnalysisUtil {
 
         //cache=1:非强制刷新，查询历史揭露
         if (cache != 0) {
-            String cacheId = redisTemplate.opsForValue().get(CACHE_KEY + md5SQL).toString();
-            if (StringUtils.isNotEmpty(cacheId)) {
-                ImpalaQueryHistoryWithBLOBs cacheItem = iImpalaQueryHistoryService.selectById(Long.valueOf(cacheId));
+            Object cacheId = redisTemplate.opsForValue().get(CACHE_KEY + md5SQL);
+            if (cacheId != null) {
+                ImpalaQueryHistoryWithBLOBs cacheItem = iImpalaQueryHistoryService.selectById(Long.valueOf(cacheId.toString()));
                 if (cacheItem != null && (cacheItem.getStatus() == AnalysisQueryStatusEnum.FINISHED.getIndex())) {
                     //根据 cache 新增 history和result
                     ImpalaQueryHistoryWithBLOBs item = new ImpalaQueryHistoryWithBLOBs();
@@ -182,6 +183,8 @@ public class AnalysisUtil {
         item.setQuerySql(sql);
         iImpalaQueryHistoryService.insert(item);
 
+        redisTemplate.opsForValue().set(CACHE_KEY + md5SQL, item.getId().toString(), 60, TimeUnit.MINUTES);
+
         ImpalaQueryResultWithBLOBs result = new ImpalaQueryResultWithBLOBs();
         result.setHistoryId(item.getId());
         result.setQuerySql(sql);
@@ -198,7 +201,8 @@ public class AnalysisUtil {
         String hiveEngine = this.hiveEngine;
         queryTask.setHiveEngine(hiveEngine);
 
-        return null;
+        queryTask.run();
+        return item;
     }
 
     private String getAnalysisQuerySql(EventDetailDto eventDetailDto, String engine) {
@@ -220,7 +224,7 @@ public class AnalysisUtil {
         Date startT = DateUtil.StringToDate(start, DateStyle.YYYYMMDD);
         Date endT = DateUtil.StringToDate(end, DateStyle.YYYYMMDD);
         //整体时间条件限制
-        String dateQuery = String.format(" and p_date>='%s' and p_date<='%s' ", start, end);
+        String dateQuery = String.format(" and proc_date>='%s' and proc_date<='%s' ", start, end);
 
         Set<String> eventSelectSet = new HashSet<>();//优化埋点表选择列
         eventSelectSet.add("proc_date");//默认加入 proc_date
@@ -346,22 +350,22 @@ public class AnalysisUtil {
         String timeFormat = " from_timestamp(time,'%s') ";
         switch (timeBucket) {
             case 0:
-                timeFormat = "p_date";
+                timeFormat = "proc_date";
                 break;
             case 1:
                 timeFormat = String.format(timeFormat, "yyyy-MM-dd HH");
-                eventSelectSet.add("time");
+                eventSelectSet.add("starttime");
                 break;
             case 2:
                 timeFormat = String.format(timeFormat, "yyyy-MM-dd HH:mm");
-                eventSelectSet.add("time");
+                eventSelectSet.add("starttime");
                 break;
             case 4:
-                timeFormat = "substr(p_date,1,6)";
+                timeFormat = "substr(proc_date,1,6)";
                 break;
             case 3:
                 timeFormat = "date_trunc('week', time)";
-                eventSelectSet.add("time");
+                eventSelectSet.add("starttime");
                 break;
             case 5:
                 timeFormat = "'" + tArr[0] + "至" + tArr[1] + "'";
@@ -436,7 +440,7 @@ public class AnalysisUtil {
                         throw new RuntimeException("虚拟事件包含的事件至少大于等于1个!");
                     }
                 } else {
-                    String eventQuery = String.format(" and event='%s' ", event);
+                    String eventQuery = String.format(" and opcode='%s' ", event);
                     sql.append(eventQuery);
                     totalSql.append(eventQuery);
                 }
@@ -687,19 +691,19 @@ public class AnalysisUtil {
 
             //埋点视图表拼接
             String eventTable = "";
-            eventTable = "( select " + Joiner.on(",").join(eventSelectSet) + " from keep_ods_event.d_events where 1=1 " + dateQuery + " ) events";
+            eventTable = "( select " + Joiner.on(",").join(eventSelectSet) + " from " + eventsTable + "  where 1=1 " + dateQuery + " ) events";
 
             if (groupByUser || joinUser) {
                 Set<String> userColumnSet = new HashSet<>(userColumns);
-                userColumnSet.remove("user_id");//单独处理画像的属性user_id造成的冲突
+                userColumnSet.remove("uid");//单独处理画像的属性user_id造成的冲突
                 String selectUserColumns = "";
                 if (CollectionUtils.isNotEmpty(userColumnSet)) {
                     selectUserColumns = "," + Joiner.on(",").join(userColumnSet);
                 }
-                String joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + "  left join ( select user_id" + selectUserColumns + " from " + profileTable + " ) u on events.user_id = u.user_id ) eu ";
+                String joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + "  left join ( select uid" + selectUserColumns + " from " + profileTable + " ) u on events.uid = u.uid ) eu ";
                 if (groupByDim || joinDim) {
                     String partitionWhere = StringUtils.isNotEmpty(dim.getPartition()) ? " where " + dim.getPartition() + "='" + lastPdate + "'" : "";
-                    joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + "  left join ( select user_id" + selectUserColumns + " from " + profileTable + " ) u on events.user_id = u.user_id  left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
+                    joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + "  left join ( select uid" + selectUserColumns + " from " + profileTable + " ) u on events.uid = u.uid  left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
                 }
                 String[] arr = finalSql.split("eventTable");
                 if (arr.length == 2) {
