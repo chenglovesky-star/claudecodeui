@@ -108,7 +108,7 @@
                             <goal>repackage</goal>
                         </goals>
                         <configuration>
-                            <finalName>flint-analysis</finalName>
+                            <finalName>flint</finalName>
                             <mainClass>com.iflytek.bigdata.flint.AnalysisApplication</mainClass>
                         </configuration>
                     </execution>
