@@ -86,10 +86,17 @@
         </dependency>
     </dependencies>
     <build>
+        <finalName>flint</finalName>
         <resources>
             <resource>
+                <directory>src/main/resources/config/local</directory>
+            </resource>
+            <resource>
                 <directory>src/main/resources</directory>
-                <filtering>true</filtering>
+            </resource>
+            <resource>
+                <directory>src/main/java</directory>
+                <filtering>false</filtering>
             </resource>
         </resources>
         <testResources>
