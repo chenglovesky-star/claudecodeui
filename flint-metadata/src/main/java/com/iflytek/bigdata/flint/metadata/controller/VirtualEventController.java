@@ -121,7 +121,7 @@ public class VirtualEventController {
     public Response detail(@RequestHeader(value = "ldapUsername", required = false) String operator, Integer id) {
         VirtualEventWithBLOBs event = iVirtualEventService.selectById(id);
         VirtualEventDto virtualEventDto = new VirtualEventDto();
-        if (virtualEventDto.getName() == null) {
+        if (event.getName() == null) {
             return new Response(200, "虚拟事件不存在");
         }
         virtualEventDto.setId(id);
