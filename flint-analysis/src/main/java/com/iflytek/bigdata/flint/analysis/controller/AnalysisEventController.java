@@ -23,6 +23,7 @@ import java.util.List;
  * @Desc:
  */
 @RestController
+@CrossOrigin(origins = "*")
 @Api(value = "事件分析接口")
 @RequestMapping("/iflytek/flint/analysis")
 public class AnalysisEventController {

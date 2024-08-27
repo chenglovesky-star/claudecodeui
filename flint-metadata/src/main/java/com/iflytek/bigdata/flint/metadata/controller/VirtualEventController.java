@@ -22,6 +22,7 @@ import java.util.List;
 
 @RestController
 @Api(value = "虚拟事件接口")
+@CrossOrigin(origins = "*")
 @RequestMapping("/iflytek/flint/metadata/virtual/event")
 public class VirtualEventController {
 

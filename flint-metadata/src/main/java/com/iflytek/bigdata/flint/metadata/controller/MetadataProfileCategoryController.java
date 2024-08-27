@@ -22,6 +22,7 @@ import java.util.Set;
 
 @RestController
 @Api(value = "画像标签类别接口")
+@CrossOrigin(origins = "*")
 @RequestMapping("/iflytek/flint/metadata/profile/category")
 public class MetadataProfileCategoryController {
 

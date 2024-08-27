@@ -14,6 +14,7 @@ import javax.annotation.Resource;
 
 @RestController
 @Api(value = "事件属性接口")
+@CrossOrigin(origins = "*")
 @RequestMapping("/iflytek/flint/metadata/property")
 public class MetadataEventPropertyController {
 

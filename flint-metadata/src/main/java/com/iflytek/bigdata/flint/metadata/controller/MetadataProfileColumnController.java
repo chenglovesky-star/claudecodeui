@@ -12,6 +12,7 @@ import javax.annotation.Resource;
 
 @RestController
 @Api(value = "画像标签接口")
+@CrossOrigin(origins = "*")
 @RequestMapping("/iflytek/flint/metadata/profile/label")
 public class MetadataProfileColumnController {
 

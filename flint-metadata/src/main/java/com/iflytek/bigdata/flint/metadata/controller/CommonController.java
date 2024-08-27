@@ -25,6 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Log4j2
 @RestController
+@CrossOrigin(origins = "*")
 @Api(value = "常用接口")
 @RequestMapping("/iflytek/flint/metadata/common")
 public class CommonController {
@@ -640,7 +641,7 @@ public class CommonController {
                         byList.add(tagColumn);
                     }
                 }
-            } else if (!metadataProfileColumn.getName().equals("user_id")) {
+            } else if (!metadataProfileColumn.getName().equals("uid")) {
                 MetadataEventProperty eventProperty = new MetadataEventProperty();
                 eventProperty.setEventName("all");
                 eventProperty.setName("U|" + metadataProfileColumn.getName());
@@ -982,7 +983,7 @@ public class CommonController {
                                 allList.add(tagColumn);
                             }
                         }
-                    } else if (!metadataProfileColumn.getName().equals("user_id")) {
+                    } else if (!metadataProfileColumn.getName().equals("uid")) {
                         MetadataEventProperty eventProperty = new MetadataEventProperty();
                         eventProperty.setEventName("all");
                         eventProperty.setName("U|" + metadataProfileColumn.getName());
@@ -1151,8 +1152,8 @@ public class CommonController {
     public Response eventViewBy(String event) {
         List<ViewByDto> allList = new ArrayList<>();
         allList.add(new ViewByDto("总次数", "count(1)"));
-        allList.add(new ViewByDto("用户数", "count(distinct user_id)"));
-        allList.add(new ViewByDto("人均次数", "count(1)/count(distinct user_id)"));
+        allList.add(new ViewByDto("用户数", "count(distinct uid)"));
+        allList.add(new ViewByDto("人均次数", "count(1)/count(distinct uid)"));
         MetadataEventProperty searchItem = new MetadataEventProperty();
         searchItem.setDisplay(1);
         searchItem.setEventName(event);
@@ -1162,7 +1163,9 @@ public class CommonController {
             viewByDto.setLabel("私有属性|" + property.getShowName());
             viewByDto.setValue("P|" + property.getName());
             allList.add(viewByDto);
-            setChildren(viewByDto, "get_json_object(properties,'$." + property.getName() + "')", property.getType());
+//            setChildren(viewByDto, "get_json_object(properties,'$." + property.getName() + "')", property.getType());
+            setChildren(viewByDto, "ifly_map_get(tags,'" + property.getName() + "')", property.getType());
+
         }
         MetadataEventProperty commonSearch = new MetadataEventProperty();
         commonSearch.setDisplay(1);

@@ -20,6 +20,7 @@ import java.util.Set;
 
 @RestController
 @Api(value = "维度表接口")
+@CrossOrigin(origins = "*")
 @RequestMapping("/iflytek/flint/metadata/dim")
 public class DimController {
 
