@@ -13,6 +13,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProbeController {
     @GetMapping("probe")
     public String liveness() {
-        return "success_20240827";
+        return "success";
     }
 }
