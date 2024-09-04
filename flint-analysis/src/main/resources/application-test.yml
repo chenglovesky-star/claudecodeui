@@ -18,7 +18,7 @@ spring:
     impalaUrl: jdbc:mysql://172.31.114.188:9030/ods?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
     impalaUsername: root
     impalaPassword: root
-    impalaDriverClassName: com.mysql.cj.jdbc.Driver
+    impalaDriverClassName: com.mysql.jdbc.Driver
 
     url: jdbc:mysql://172.31.114.194:4301/flint?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
     username: linlong
