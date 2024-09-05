@@ -1154,6 +1154,8 @@ public class CommonController {
         allList.add(new ViewByDto("总次数", "count(1)"));
         allList.add(new ViewByDto("用户数", "count(distinct uid)"));
         allList.add(new ViewByDto("人均次数", "count(1)/count(distinct uid)"));
+        return new Response(allList);
+        /*
         MetadataEventProperty searchItem = new MetadataEventProperty();
         searchItem.setDisplay(1);
         searchItem.setEventName(event);
@@ -1191,6 +1193,8 @@ public class CommonController {
             }
         }
         return new Response(allList);
+
+         */
     }
 
     @ApiOperation(value = "事件分析显示列表", notes = "事件分析显示列表")
