@@ -53,7 +53,7 @@ public class MetadataProfileColumnController {
     @PostMapping("/update")
     @ResponseBody
     public Response update(@RequestHeader(value = "ldapUsername", required = false) String operator, @RequestBody MetadataProfileColumn item) {
-        IMetadataProfileColumnService.insert(item);
+        IMetadataProfileColumnService.update(item);
         return new Response("操作成功");
     }
 

@@ -29,6 +29,9 @@ public class MetadataProfileCategoryServiceImpl implements IMetadataProfileCateg
             if (item.getDisplay() != null) {
                 criteria.andDisplayEqualTo(item.getDisplay());
             }
+            if (StringUtils.isNotEmpty(item.getShowName())) {
+                criteria.andShowNameLike("%" + item.getShowName() + "%");
+            }
         }
         return metadataProfileCategoryMapper.selectByExample(example);
     }

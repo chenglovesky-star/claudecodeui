@@ -30,13 +30,16 @@ public class MetadataProfileColumnServiceImpl implements IMetadataProfileColumnS
         MetadataProfileColumnExample.Criteria criteria = example.createCriteria();
         if (item != null) {
             if (StringUtils.isNotEmpty(item.getName())) {
-                criteria.andNameEqualTo(item.getName());
+                criteria.andNameLike("%" + item.getName() + "%");
             }
             if (item.getCategoryId() != null) {
                 criteria.andCategoryIdEqualTo(item.getCategoryId());
             }
             if (item.getDisplay() != null) {
                 criteria.andDisplayEqualTo(item.getDisplay());
+            }
+            if (item.getShowName() != null) {
+                criteria.andShowNameLike("%" + item.getShowName() + "%");
             }
         }
         return metadataProfileColumnMapper.selectByExample(example);
