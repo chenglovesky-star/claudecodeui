@@ -26,7 +26,8 @@ public class MetadataEventController {
     @ResponseBody
     public Response list(@RequestParam(value = "name", required = false) String name,
             @RequestParam(value = "tags", required = false) String tags,
-            @RequestParam(value = "show", required = false) Integer display,
+            @RequestParam(value = "showName", required = false) String showName,
+            @RequestParam(value = "display", required = false) Integer display,
             @RequestParam(value = "modules", required = false) String modules,
             @RequestParam(value = "pageNum", required = false, defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", required = false, defaultValue = "15") int pageSize) {
@@ -42,6 +43,9 @@ public class MetadataEventController {
         }
         if(StringUtils.isNotEmpty(modules)){
             metadataEvent.setModules(modules);
+        }
+        if(StringUtils.isNotEmpty(showName)){
+            metadataEvent.setShowName(showName);
         }
         PageInfo<MetadataEvent> pageInfo = iMetadataEventService.selectByPage(metadataEvent, pageNum, pageSize);
         return new Response(pageInfo);
