@@ -609,7 +609,7 @@ public class CommonController {
                     eventProperty.setShowName("实验标签|" + eventProperty.getName());
                 }
                 eventProperty.setCategory("E");
-                byList.add(eventProperty);
+                //byList.add(eventProperty);
             }
         }
         for (MetadataEventProperty eventProperty : commonList) {
@@ -618,7 +618,7 @@ public class CommonController {
                     eventProperty.setShowName("用户分群|" + eventProperty.getShowName());
                 }
                 eventProperty.setCategory("G");
-                byList.add(eventProperty);
+                //byList.add(eventProperty);
             }
         }
         MetadataProfileColumn search = new MetadataProfileColumn();
@@ -638,7 +638,7 @@ public class CommonController {
                         tagColumn.setType(metadataProfileColumn.getType());
                         // 定制标签设定分类为 T
                         tagColumn.setCategory("T");
-                        byList.add(tagColumn);
+                        //byList.add(tagColumn);
                     }
                 }
             } else if (!metadataProfileColumn.getName().equals("uid")) {

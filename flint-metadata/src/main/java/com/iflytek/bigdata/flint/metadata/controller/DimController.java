@@ -122,7 +122,7 @@ public class DimController {
         }
         for (DimColumn dimColumn : list) {
             if (!ids.contains(dimColumn.getId())) {
-                iDimColumnService.delete(dimColumn.getDimId());
+                iDimColumnService.delete(dimColumn.getId());
             }
         }
         return new Response("操作成功");
@@ -138,7 +138,7 @@ public class DimController {
         List<DimColumn> list = iDimColumnService.select(search);
         if (CollectionUtils.isNotEmpty(list)) {
             for (DimColumn dimColumn : list) {
-                iDimColumnService.delete(dimColumn.getDimId());
+                iDimColumnService.delete(dimColumn.getId());
             }
         }
         return new Response(0, "删除成功");
