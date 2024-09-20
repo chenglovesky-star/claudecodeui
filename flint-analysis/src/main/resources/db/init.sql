@@ -2,6 +2,7 @@
 
 CREATE DATABASE if not EXISTS flint;
 
+use flint;
 -- flint.impala_query_history definition
 
 CREATE TABLE `impala_query_history` (
