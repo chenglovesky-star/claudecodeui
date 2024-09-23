@@ -1,0 +1,57 @@
+server:
+  # 端口
+  port: 6002
+  servlet:
+    # 项目名称
+    # 开发环境
+    context-path : /
+
+
+spring:
+  application:
+    name: flint-analysis
+  messages:
+    basename: ValidationMessages
+    encoding: UTF-8
+  datasource:
+    #数据源基本信息，也可放在druid下
+    impalaUrl: jdbc:mysql://10.100.108.90:9030/ods?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
+    impalaUsername: root
+    impalaPassword: root@M2099
+    impalaDriverClassName: com.mysql.jdbc.Driver
+
+    url: jdbc:mysql://10.100.109.230:3320/flint?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
+    username: flint
+    password: flint_M2099
+    #driverClassName: com.mysql.cj.jdbc.Driver
+    driverClassName: com.mysql.jdbc.Driver
+    initialSize: 1
+    minIdle: 3
+    maxActive: 50
+    maxWait: 60000
+    timeBetweenEvictionRunsMillis: 60000
+    minEvictableIdleTimeMillis: 30000
+    validationQuery: select 1
+    testWhileIdle: true
+    testOnBorrow: false
+    testOnReturn: false
+    poolPreparedStatements: true
+    maxPoolPreparedStatementPerConnectionSize: 20
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+
+  redis:
+    host: 10.100.109.20
+    port: 19201
+    database: 0
+
+  hive:
+    profileTable: hive.profile.dm_up_v_user
+    eventsTable: hive.ossp.dw_d_ime_operationlog_sr
+
+mybatis:
+  mapper-locations: classpath*:mapper/*.xml
+  type-aliases-package: com.iflytek.bigdata.flint.*.dao.model
+  configuration:
+    map-underscore-to-camel-case: true
