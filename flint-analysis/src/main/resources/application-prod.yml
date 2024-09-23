@@ -20,9 +20,9 @@ spring:
     impalaPassword: root@M2099
     impalaDriverClassName: com.mysql.jdbc.Driver
 
-    url: jdbc:mysql://172.31.114.194:4301/flint?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
-    username: linlong
-    password: linlong_M2099
+    url: jdbc:mysql://10.100.109.230:3320/flint?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
+    username: flint
+    password: flint_M2099
     #driverClassName: com.mysql.cj.jdbc.Driver
     driverClassName: com.mysql.jdbc.Driver
     initialSize: 1
@@ -45,6 +45,10 @@ spring:
     host: 10.100.109.20
     port: 19201
     database: 0
+
+  hive:
+    profileTable: hive.profile.dm_up_v_user
+    eventsTable: hive.ossp.dw_d_ime_operationlog_sr
 
 mybatis:
   mapper-locations: classpath*:mapper/*.xml

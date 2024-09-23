@@ -32,6 +32,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.DigestUtils;
@@ -51,6 +52,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Component
 @Log4j2
+@ConfigurationProperties(prefix = "spring.hive")
 public class AnalysisUtil {
 
     private final static String STARROCKS = "starRocks";
@@ -103,13 +105,12 @@ public class AnalysisUtil {
     @Value("${hive.engine:hive}")
     private String hiveEngine;
 
-    @Value("${user_profile.table:profile.dm_up_v_user}")
+    @Value("${profileTable:profile.dm_up_v_user}")
     private String profileTable;
 
 
-    @Value("${events.table:ossp.dw_d_ime_operationlog_sr}")
+    @Value("${eventsTable:ossp.dw_d_ime_operationlog_sr}")
     private String eventsTable;
-
 
 
     private Set<String> commonPros() {
