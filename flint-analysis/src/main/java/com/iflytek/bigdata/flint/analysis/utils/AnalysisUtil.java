@@ -105,11 +105,11 @@ public class AnalysisUtil {
     @Value("${hive.engine:hive}")
     private String hiveEngine;
 
-    @Value("${profileTable:profile.dm_up_v_user}")
+    @Value("${profileTable:hive.profile.dm_up_v_user}")
     private String profileTable;
 
 
-    @Value("${eventsTable:ossp.dw_d_ime_operationlog_sr}")
+    @Value("${eventsTable:hive.ossp.dw_d_ime_operationlog_sr}")
     private String eventsTable;
 
 
