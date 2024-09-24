@@ -5,7 +5,7 @@ server:
   servlet:
     # 项目名称
     # 开发环境
-    context-path : /
+    context-path : /flint
   tomcat.uri-encoding: UTF-8
 
 
