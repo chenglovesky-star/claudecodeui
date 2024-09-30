@@ -15,6 +15,7 @@ import com.iflytek.bigdata.flint.analysis.service.IImpalaQueryResultService;
 import com.iflytek.bigdata.flint.analysis.thread.*;
 import com.iflytek.bigdata.flint.common.date.DateStyle;
 import com.iflytek.bigdata.flint.common.date.DateUtil;
+import com.iflytek.bigdata.flint.hiveserver2.config.AnalysisConfig;
 import com.iflytek.bigdata.flint.hiveserver2.config.HiveConfig;
 import com.iflytek.bigdata.flint.metadata.dao.model.*;
 import com.iflytek.bigdata.flint.metadata.dto.ConditionDto;
@@ -99,21 +100,16 @@ public class AnalysisUtil {
     @Resource
     private HiveConfig hiveConfig;
 
+    @Resource
+    private AnalysisConfig analysisConfig;
     private static final Logger logger = LoggerFactory.getLogger(AnalysisUtil.class);
 
-    @Value("${APP_ENV:dev}")
+    
+    @Value("${APP_ENV:production}")
     private String env;
 
     @Value("${hive.engine:hive}")
     private String hiveEngine;
-
-    @Value("${profileTable:hive.profile.dm_up_v_user}")
-    private String profileTable;
-
-
-    @Value("${eventsTable:hive.ossp.dw_d_ime_operationlog_sr}")
-    private String eventsTable;
-
 
     private Set<String> commonPros() {
         return metadataUtil.getCommonPros();
@@ -694,7 +690,7 @@ public class AnalysisUtil {
 
             //埋点视图表拼接
             String eventTable = "";
-            eventTable = "( select " + Joiner.on(",").join(eventSelectSet) + " from " + eventsTable + "  where 1=1 " + dateQuery + " ) events";
+            eventTable = "( select " + Joiner.on(",").join(eventSelectSet) + " from " + analysisConfig.getEventsTable() + "  where 1=1 " + dateQuery + " ) events";
 
             if (groupByUser || joinUser) {
                 Set<String> userColumnSet = new HashSet<>(userColumns);
@@ -703,10 +699,10 @@ public class AnalysisUtil {
                 if (CollectionUtils.isNotEmpty(userColumnSet)) {
                     selectUserColumns = "," + Joiner.on(",").join(userColumnSet);
                 }
-                String joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + "  left join ( select uid" + selectUserColumns + " from " + profileTable + " ) u on events.uid = u.uid ) eu ";
+                String joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + "  left join ( select uid" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid ) eu ";
                 if (groupByDim || joinDim) {
                     String partitionWhere = StringUtils.isNotEmpty(dim.getPartition()) ? " where " + dim.getPartition() + "='" + lastPdate + "'" : "";
-                    joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + "  left join ( select uid" + selectUserColumns + " from " + profileTable + " ) u on events.uid = u.uid  left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
+                    joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + "  left join ( select uid" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid  left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
                 }
                 String[] arr = finalSql.split("eventTable");
                 if (arr.length == 2) {

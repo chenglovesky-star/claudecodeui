@@ -49,8 +49,9 @@ spring:
     database: 0
 
   hive:
-    profileTable: hive.profile.dm_up_v_user
-    eventsTable: hive.ossp.dw_d_ime_operationlog_sr
+    profileTable: profile.dm_up_v_user
+    eventsTable: ossp.dw_d_ime_operationlog_sr
+
 mybatis:
   mapper-locations: classpath*:mapper/*.xml
   type-aliases-package: com.iflytek.bigdata.flint.*.dao.model
