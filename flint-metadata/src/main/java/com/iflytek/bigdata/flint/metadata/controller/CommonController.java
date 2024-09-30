@@ -234,6 +234,7 @@ public class CommonController {
         List<MetadataProfileColumn> profileList = iMetadataProfileColumnService.select(profile);
         for (MetadataProfileColumn metadataProfileColumn : profileList) {
             MetadataEventProperty eventProperty = new MetadataEventProperty();
+            eventProperty.setId(metadataProfileColumn.getId());
             eventProperty.setEventName("all");
             eventProperty.setName("U|" + metadataProfileColumn.getName());
             eventProperty.setShowName("用户属性|" + metadataProfileColumn.getShowName());
