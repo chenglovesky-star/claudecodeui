@@ -643,6 +643,7 @@ public class CommonController {
                 }
             } else if (!metadataProfileColumn.getName().equals("uid")) {
                 MetadataEventProperty eventProperty = new MetadataEventProperty();
+                eventProperty.setId(metadataProfileColumn.getId());
                 eventProperty.setEventName("all");
                 eventProperty.setName("U|" + metadataProfileColumn.getName());
                 if ("list".equals(returnType)) {
@@ -831,6 +832,7 @@ public class CommonController {
                 List<MetadataProfileColumn> list = iMetadataProfileColumnService.select(search);
                 for (MetadataProfileColumn metadataProfileColumn : list) {
                     MetadataEventProperty eventProperty = new MetadataEventProperty();
+                    eventProperty.setId(metadataProfileColumn.getId());
                     eventProperty.setEventName("all");
                     eventProperty.setName("U|" + metadataProfileColumn.getName());
                     if (multi) {
@@ -985,6 +987,7 @@ public class CommonController {
                         }
                     } else if (!metadataProfileColumn.getName().equals("uid")) {
                         MetadataEventProperty eventProperty = new MetadataEventProperty();
+                        eventProperty.setId(metadataProfileColumn.getId());
                         eventProperty.setEventName("all");
                         eventProperty.setName("U|" + metadataProfileColumn.getName());
                         if (multi) {
