@@ -902,8 +902,8 @@ public class AnalysisUtil {
         List<String> fields = new ArrayList<String>(fieldSet);
         //Collections.sort(fields);
         List<ResultRowDto> resultRowDtos = new ArrayList<>();
-        if (fields.size() >= 20) {
-            fields = fields.subList(0, 20);
+        if (fields.size() >= 100) { //限制了返回的数量
+            fields = fields.subList(0, 100);
             resultDto.setFull(false);
         } else {
             resultDto.setFull(true);
