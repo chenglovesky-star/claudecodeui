@@ -270,4 +270,4 @@ VALUES('all', 'osid', '平台', 'string', 1, 0);
 
 INSERT INTO flint.metadata_event_property
 (event_name, name, show_name, `type`, display, sort)
-VALUES('all', "tags['d_newflag']", '新用户', 'string', 1, 0);
+VALUES('all', "ifly_map_get(tags,'d_newflag')", '新用户', 'string', 1, 0);
