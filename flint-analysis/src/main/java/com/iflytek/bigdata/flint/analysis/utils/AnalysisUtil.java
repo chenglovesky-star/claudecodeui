@@ -306,7 +306,7 @@ public class AnalysisUtil {
                     userColumns.add(profileColumn);
 
                 } else if (groupBy.startsWith("C|") || groupBy.startsWith("$$")) {
-                    if(groupBy.contains("tags")){
+                    if(groupBy == "C|d_newflag"){
                         groupBy = groupBy.substring(2);
                         eventSelectSet.add("tags");
                         //分段转换caseSql

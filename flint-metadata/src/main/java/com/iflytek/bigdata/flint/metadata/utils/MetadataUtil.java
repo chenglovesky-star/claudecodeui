@@ -134,8 +134,8 @@ public class MetadataUtil {
                 commonMap.put(arrs[0], arrs[1]);
                 commonPros.add(arrs[0]);
             }
-            commonMap.put("ifly_map_get(tags,'d_newflag')","string");
-            commonPros.add("ifly_map_get(tags,'d_newflag')");
+            commonMap.put("d_newflag","string");
+            commonPros.add("d_newflag");
         }
         initConf();
 //        initArtemis();
