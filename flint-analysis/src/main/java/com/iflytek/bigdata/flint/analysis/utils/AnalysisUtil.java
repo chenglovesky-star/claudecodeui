@@ -307,8 +307,10 @@ public class AnalysisUtil {
 
                 } else if (groupBy.startsWith("C|") || groupBy.startsWith("$$")) {
                     log.info(groupBy);
-                    if(groupBy == "C|d_newflag"){
+                    log.info(groupBy.equals("C|d_newflag"));
+                    if(groupBy.equals("C|d_newflag")){
                         groupBy = groupBy.substring(2);
+                        log.info(groupBy);
                         eventSelectSet.add("tags");
                         selectGroupByList.add("ifly_map_get(tags,'" + groupBy + "') as `" + groupBy + "`");
                         groupByList.add("ifly_map_get(tags,'" + groupBy + "')");
