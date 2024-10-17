@@ -488,8 +488,16 @@ public class AnalysisUtil {
                         userColumns.add(GROUP_IDS_COLUMN);
                     } else {
                         if (propertyName.startsWith("C|") || propertyName.startsWith("$$")) {
+                            if(propertyName.equals("C|d_newflag")){
+                                log.info("pName:" + propertyName);
+                                propertyName = propertyName.substring(2);
+                                eventSelectSet.add("tags");
+                                String column = "ifly_map_get(tags,'" + propertyName + "')";
+                                conditionDto.setColumnName(column);
+                            }else{
                             conditionDto.setColumnName(propertyName.substring(2));
                             eventSelectSet.add(propertyName.substring(2));
+                            }
                         } else if (propertyName.startsWith("U|")) {
                             String profileColumn = propertyName.substring(2);
                             MetadataProfileColumn metadataProfileColumn = iMetadataProfileColumnService.selectByName(profileColumn);
@@ -594,8 +602,16 @@ public class AnalysisUtil {
                         userColumns.add(GROUP_IDS_COLUMN);
                     } else {
                         if (propertyName.startsWith("C|") || propertyName.startsWith("$$")) {
+                            if(propertyName.equals("C|d_newflag")){
+                                log.info("pName:" + propertyName);
+                                propertyName = propertyName.substring(2);
+                                eventSelectSet.add("tags");
+                                String column = "ifly_map_get(tags,'" + propertyName + "')";
+                                conditionDto.setColumnName(column);
+                            }else{
                             conditionDto.setColumnName(propertyName.substring(2));
                             eventSelectSet.add(propertyName.substring(2));
+                            }
                         } else if (propertyName.startsWith("U|")) {
                             String profileColumn = propertyName.substring(2);
                             MetadataProfileColumn metadataProfileColumn = iMetadataProfileColumnService.selectByName(profileColumn);
