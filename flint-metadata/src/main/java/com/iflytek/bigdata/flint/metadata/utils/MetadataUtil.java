@@ -40,7 +40,7 @@ public class MetadataUtil {
     @Resource
     private IMetadataEventService iMetadataEventService;
 
-    @Value("${common.properties:uid string,version string,df string,imei string,imsi string,ip string,country string,province string,city string,brand string,model string,submodel string,os string,resolution string,starttime string,endtime string,ctm string,bizid string,osid string,ifly_map_get(tags,'d_newflag') string}")
+    @Value("${common.properties:uid string,version string,df string,imei string,imsi string,ip string,country string,province string,city string,brand string,model string,submodel string,os string,resolution string,starttime string,endtime string,ctm string,bizid string,osid string}")
     private String commonProperties;
 
     @Resource
@@ -134,6 +134,8 @@ public class MetadataUtil {
                 commonMap.put(arrs[0], arrs[1]);
                 commonPros.add(arrs[0]);
             }
+            commonMap.put("ifly_map_get(tags,'d_newflag')","string");
+            commonPros.add("ifly_map_get(tags,'d_newflag')");
         }
         initConf();
 //        initArtemis();
