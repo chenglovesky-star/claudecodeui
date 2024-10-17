@@ -306,21 +306,15 @@ public class AnalysisUtil {
                     userColumns.add(profileColumn);
 
                 } else if (groupBy.startsWith("C|") || groupBy.startsWith("$$")) {
+                    log.info(groupBy);
                     if(groupBy == "C|d_newflag"){
                         groupBy = groupBy.substring(2);
                         eventSelectSet.add("tags");
-                        //分段转换caseSql
-                        if (StringUtils.isNotEmpty(values)) {
-                            String caseSql = getCaseSql("cast(ifly_map_get(tags,'" + groupBy + "') as double)", values, groupBy);
-                            String groupByCaseSql = getCaseSql("cast(ifly_map_get(tags,'" + groupBy + "') as double)", values);
-                            selectGroupByList.add(caseSql);
-                            groupByList.add(groupByCaseSql);
-                        } else {
-                            selectGroupByList.add("ifly_map_get(tags,'" + groupBy + "') as `" + groupBy + "`");
-                            groupByList.add("ifly_map_get(tags,'" + groupBy + "')");
-                        }
+                        selectGroupByList.add("ifly_map_get(tags,'" + groupBy + "') as `" + groupBy + "`");
+                        groupByList.add("ifly_map_get(tags,'" + groupBy + "')");
                         finalSelectList.add(groupBy);
-                        } else{
+                        }
+                    else{
                     groupBy = groupBy.substring(2);
                     if (commonPros().contains(groupBy)) {
                         eventSelectSet.add(groupBy);
