@@ -215,6 +215,23 @@ public class AnalysisUtil {
         List<String> querySqlList = new ArrayList<>();
 
 
+        String expGroupId ="";
+        Boolean isExp = false;
+        //实验处理
+        List<EventRuleDto> eventRuleDtos = eventDetailDto.getEventRules();
+        for (EventRuleDto eventRuleDto : eventRuleDtos) {
+            for (EventPropertyDto subFilter : eventRuleDto.getFilter().getSubFilters()) {
+                if(subFilter.getPropertyName().equals("U|expinfo") && !subFilter.getPropertyOperationValue().equals("")){
+                    expGroupId =  subFilter.getPropertyOperationValue();
+                    isExp = true;
+                    break;
+                }
+            }
+        }
+
+        log.info(isExp);
+        log.info(expGroupId);
+
         //时间处理
         String times = eventDetailDto.getTimeValues();
         String[] tArr = times.split(",");
@@ -231,6 +248,7 @@ public class AnalysisUtil {
         eventSelectSet.add("uid");//默认加入 uid
 
         List<String> groupBys = eventDetailDto.getGroupBy();
+
 
         String byValues = eventDetailDto.getByValues();
         JSONObject byJson = new JSONObject();
@@ -284,6 +302,11 @@ public class AnalysisUtil {
                 } else if (groupBy.startsWith("U|")) {
                     groupByUser = true;
                     String profileColumn = groupBy.substring(2);
+                    if(isExp){
+                        selectGroupByList.add("expinfo");
+                        groupByList.add(profileColumn);
+                        finalSelectList.add(profileColumn);
+                    }else{
                     //分段转换caseSql
                     if (StringUtils.isNotEmpty(values)) {
                         MetadataProfileColumn columnInfo = iMetadataProfileColumnService.selectByName(profileColumn);
@@ -302,6 +325,7 @@ public class AnalysisUtil {
                         selectGroupByList.add(profileColumn);
                         groupByList.add(profileColumn);
                         finalSelectList.add(profileColumn);
+                    }
                     }
                     userColumns.add(profileColumn);
 
@@ -383,7 +407,7 @@ public class AnalysisUtil {
                 break;
         }
 
-        List<EventRuleDto> eventRuleDtos = eventDetailDto.getEventRules();
+//        List<EventRuleDto> eventRuleDtos = eventDetailDto.getEventRules();
         for (EventRuleDto eventRuleDto : eventRuleDtos) {
 
             Integer countType = eventRuleDto.getCountType();
@@ -499,6 +523,11 @@ public class AnalysisUtil {
                             eventSelectSet.add(propertyName.substring(2));
                             }
                         } else if (propertyName.startsWith("U|")) {
+                            if(propertyName.equals("U|expinfo" )){
+                                String profileColumn = propertyName.substring(2);
+                                String column = "ifly_custom_map_get(expinfo," + subFilter.getPropertyOperationValue() + ",'|','#')";
+                                conditionDto.setColumnName(column);
+                            } else {
                             String profileColumn = propertyName.substring(2);
                             MetadataProfileColumn metadataProfileColumn = iMetadataProfileColumnService.selectByName(profileColumn);
                             conditionDto.setColumnType(Integer.valueOf(metadataProfileColumn.getType()));
@@ -508,6 +537,7 @@ public class AnalysisUtil {
                             conditionDto.setColumnName(profileColumn);
                             joinUser = true;
                             userColumns.add(conditionDto.getColumnName());
+                            }
                         } else {
                             eventSelectSet.add("tags");
                             String column = "ifly_map_get(tags,'" + propertyName + "')";
@@ -613,6 +643,9 @@ public class AnalysisUtil {
                             eventSelectSet.add(propertyName.substring(2));
                             }
                         } else if (propertyName.startsWith("U|")) {
+                            if(propertyName.startsWith("U|expinfo")){
+                                continue;
+                            }
                             String profileColumn = propertyName.substring(2);
                             MetadataProfileColumn metadataProfileColumn = iMetadataProfileColumnService.selectByName(profileColumn);
                             conditionDto.setColumnType(Integer.valueOf(metadataProfileColumn.getType()));
@@ -724,14 +757,44 @@ public class AnalysisUtil {
                 Set<String> userColumnSet = new HashSet<>(userColumns);
                 userColumnSet.remove("uid");//单独处理画像的属性user_id造成的冲突
                 String selectUserColumns = "";
+
                 if (CollectionUtils.isNotEmpty(userColumnSet)) {
                     selectUserColumns = "," + Joiner.on(",").join(userColumnSet);
                 }
-                String joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + "  left join ( select uid" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid ) eu ";
+
+                if(isExp && userColumnSet.contains("expinfo")){
+                    userColumnSet.remove("expinfo");
+                    userColumnSet.add("ifly_custom_map_get(expinfo," + expGroupId + ",'|','#') as expinfo");
+                }
+                String formatSelectUserColumns = selectUserColumns;
+                if (CollectionUtils.isNotEmpty(userColumnSet)) {
+                    formatSelectUserColumns  = "," + Joiner.on(",").join(userColumnSet);
+                }
+
+                log.info("switch to groupByUser or joinUser");
+                log.info(selectUserColumns);
+                String  joinTable = "";
+                //特殊处理AB实验
+                if(isExp){
+                    //组装事件表和画像表
+                     joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + "  left join " +
+                             "( select  distinct uid" + formatSelectUserColumns + " from " + analysisConfig.getAbtestTable()  +
+                             " where ifly_custom_map_get(expinfo," + expGroupId + ",'|','#') != '' "  + dateQuery +
+                             ")u on events.uid = u.uid ) eu ";
+                    if (groupByDim || joinDim) {
+                        String partitionWhere = StringUtils.isNotEmpty(dim.getPartition()) ? " where " + dim.getPartition() + "='" + lastPdate + "'" : "";
+                        joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + "  left join ( select uid" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid  left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
+                    }
+                } else {
+                //组装事件表和画像表
+                    joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + "  left join ( select uid" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid ) eu ";
                 if (groupByDim || joinDim) {
                     String partitionWhere = StringUtils.isNotEmpty(dim.getPartition()) ? " where " + dim.getPartition() + "='" + lastPdate + "'" : "";
                     joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + "  left join ( select uid" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid  left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
                 }
+                }
+
+                log.info(finalSql);
                 String[] arr = finalSql.split("eventTable");
                 if (arr.length == 2) {
                     finalSql = arr[0] + joinTable + arr[1];
@@ -770,6 +833,9 @@ public class AnalysisUtil {
 
         String finalSql = Joiner.on(";").join(querySqlList);
         finalSql = DateUtil.replaceFormat(finalSql);
+
+        log.info(finalSql);
+//        return "";
         return finalSql;
     }
 

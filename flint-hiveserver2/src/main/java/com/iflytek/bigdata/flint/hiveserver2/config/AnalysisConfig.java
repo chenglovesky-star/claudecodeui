@@ -29,4 +29,6 @@ public class AnalysisConfig {
     @Value("${eventsTable:hive.ossp.dw_d_ime_operationlog_sr}")
     private String eventsTable;
 
+    @Value("${abtestTable:hive.ossp.dw_d_ime_operationabtestlog_sr}")
+    private String abtestTable;
 }
