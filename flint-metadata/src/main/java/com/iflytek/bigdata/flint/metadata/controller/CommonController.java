@@ -550,8 +550,9 @@ public class CommonController {
             String[] eventArray = events.split(",");
             for (String e : eventArray) {
                 if (e.startsWith("V|")) {
+                    log.info(e);
                     VirtualEventWithBLOBs virtualEventWithBLOBs = iVirtualEventService.selectByName(e.substring(2));
-                    if (StringUtils.isNotEmpty(virtualEventWithBLOBs.getEventFilter())) {
+                    if (virtualEventWithBLOBs != null && StringUtils.isNotEmpty(virtualEventWithBLOBs.getEventFilter())) {
                         List<EventDto> vEvents = JSONArray.parseArray(virtualEventWithBLOBs.getEventFilter(), EventDto.class);
                         if (CollectionUtils.isNotEmpty(vEvents)) {
                             for (EventDto eventDto : vEvents) {
@@ -577,7 +578,11 @@ public class CommonController {
                     }
                 }
             } else {
-                List<MetadataEventProperty> properties = iMetadataEventPropertyService.selectCommonProperty(eventSet.toArray(new String[]{}), eventSet.size());
+                for (String event:eventArray){
+                    searchItem = new MetadataEventProperty();
+                    searchItem.setEventName(event);
+                List<MetadataEventProperty> properties = iMetadataEventPropertyService.select(searchItem);
+//                List<MetadataEventProperty> properties = iMetadataEventPropertyService.selectCommonProperty(eventSet.toArray(new String[]{}), eventSet.size());
                 if (CollectionUtils.isNotEmpty(properties)) {
                     for (MetadataEventProperty property : properties) {
                         if ("list".equals(returnType)) {
@@ -586,6 +591,7 @@ public class CommonController {
                         property.setCategory("P");
                         byList.add(property);
                     }
+                }
                 }
             }
         }

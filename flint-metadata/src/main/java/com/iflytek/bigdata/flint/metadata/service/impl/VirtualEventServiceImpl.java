@@ -6,6 +6,7 @@ import com.iflytek.bigdata.flint.metadata.dao.mapper.VirtualEventMapper;
 import com.iflytek.bigdata.flint.metadata.dao.model.VirtualEventExample;
 import com.iflytek.bigdata.flint.metadata.dao.model.VirtualEventWithBLOBs;
 import com.iflytek.bigdata.flint.metadata.service.IVirtualEventService;
+import lombok.extern.log4j.Log4j2;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -14,6 +15,7 @@ import javax.annotation.Resource;
 import java.util.List;
 
 @Service
+@Log4j2
 public class VirtualEventServiceImpl implements IVirtualEventService {
 
     @Resource
@@ -95,7 +97,9 @@ public class VirtualEventServiceImpl implements IVirtualEventService {
         VirtualEventExample example = new VirtualEventExample();
         VirtualEventExample.Criteria criteria = example.createCriteria();
         criteria.andNameEqualTo(event);
+        log.info(event);
         List<VirtualEventWithBLOBs> list = virtualEventMapper.selectByExampleWithBLOBs(example);
+        log.info(list.size());
         if (CollectionUtils.isNotEmpty(list)) {
             return list.get(0);
         }
