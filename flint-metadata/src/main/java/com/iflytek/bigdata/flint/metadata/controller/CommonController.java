@@ -215,9 +215,9 @@ public class CommonController {
                 eventProperty.setShowName("通用属性|" + eventProperty.getShowName());
             }
         }
-        if (event.startsWith("V|")) {
-            return new Response(commonList);
-        }
+//        if (event.startsWith("V|")) {
+//            return new Response(commonList);
+//        }
         MetadataEventProperty search = new MetadataEventProperty();
         search.setEventName(event);
         search.setDisplay(1);
