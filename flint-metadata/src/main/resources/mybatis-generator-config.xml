@@ -37,9 +37,9 @@
         </commentGenerator>
 
         <!-- 数据库的相关配置 -->
-        <jdbcConnection driverClass="com.mysql.cj.jdbc.Driver"
+        <jdbcConnection driverClass="com.mysql.jdbc.Driver"
                         connectionURL="jdbc:mysql://localhost:3306/flint?useUnicode=true&amp;characterEncoding=utf-8&amp;useSSL=false&amp;autoReconnect=true&amp;allowMultiQueries=true&amp;serverTimezone=Asia/Shanghai&amp;nullCatalogMeansCurrent=true"
-                        userId="root" password="123456"/>
+                        userId="root" password="zdd199212"/>
 
         <javaTypeResolver>
             <property name="forceBigDecimals" value="false"/>

@@ -22,4 +22,6 @@ public class VirtualEventDto {
     private Integer display;
 
     private String sql;
+
+    private Integer op;
 }

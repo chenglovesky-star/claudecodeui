@@ -724,6 +724,66 @@ public class VirtualEventExample {
             addCriterion("display not between", value1, value2, "display");
             return (Criteria) this;
         }
+
+        public Criteria andOpIsNull() {
+            addCriterion("op is null");
+            return (Criteria) this;
+        }
+
+        public Criteria andOpIsNotNull() {
+            addCriterion("op is not null");
+            return (Criteria) this;
+        }
+
+        public Criteria andOpEqualTo(Integer value) {
+            addCriterion("op =", value, "op");
+            return (Criteria) this;
+        }
+
+        public Criteria andOpNotEqualTo(Integer value) {
+            addCriterion("op <>", value, "op");
+            return (Criteria) this;
+        }
+
+        public Criteria andOpGreaterThan(Integer value) {
+            addCriterion("op >", value, "op");
+            return (Criteria) this;
+        }
+
+        public Criteria andOpGreaterThanOrEqualTo(Integer value) {
+            addCriterion("op >=", value, "op");
+            return (Criteria) this;
+        }
+
+        public Criteria andOpLessThan(Integer value) {
+            addCriterion("op <", value, "op");
+            return (Criteria) this;
+        }
+
+        public Criteria andOpLessThanOrEqualTo(Integer value) {
+            addCriterion("op <=", value, "op");
+            return (Criteria) this;
+        }
+
+        public Criteria andOpIn(List<Integer> values) {
+            addCriterion("op in", values, "op");
+            return (Criteria) this;
+        }
+
+        public Criteria andOpNotIn(List<Integer> values) {
+            addCriterion("op not in", values, "op");
+            return (Criteria) this;
+        }
+
+        public Criteria andOpBetween(Integer value1, Integer value2) {
+            addCriterion("op between", value1, value2, "op");
+            return (Criteria) this;
+        }
+
+        public Criteria andOpNotBetween(Integer value1, Integer value2) {
+            addCriterion("op not between", value1, value2, "op");
+            return (Criteria) this;
+        }
     }
 
     /**

@@ -86,6 +86,7 @@ public class VirtualEventController {
         event.setTags(virtualEvent.getTags());
         event.setDisplay(virtualEvent.getDisplay());
         event.setEventFilter(JSONArray.toJSONString(virtualEvent.getEvents()));
+        event.setOp(virtualEvent.getOp());
         String eventSql = metadataUtil.getEventSql(virtualEvent.getEvents());
         event.setEventSql(eventSql);
         iVirtualEventService.insert(event);
