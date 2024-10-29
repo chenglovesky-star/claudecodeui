@@ -87,7 +87,7 @@ public class VirtualEventController {
         event.setDisplay(virtualEvent.getDisplay());
         event.setEventFilter(JSONArray.toJSONString(virtualEvent.getEvents()));
         event.setOp(virtualEvent.getOp());
-        String eventSql = metadataUtil.getEventSql(virtualEvent.getEvents());
+        String eventSql = metadataUtil.getEventSql(virtualEvent.getEvents(),virtualEvent.getOp());
         event.setEventSql(eventSql);
         iVirtualEventService.insert(event);
         virtualEvent.setId(event.getId());
@@ -112,7 +112,7 @@ public class VirtualEventController {
         event.setDisplay(virtualEvent.getDisplay());
         event.setEventFilter(JSONArray.toJSONString(virtualEvent.getEvents()));
         event.setOp(virtualEvent.getOp());
-        String eventSql = metadataUtil.getEventSql(virtualEvent.getEvents());
+        String eventSql = metadataUtil.getEventSql(virtualEvent.getEvents(),virtualEvent.getOp());
         event.setEventSql(eventSql);
         iVirtualEventService.update(event);
         return new Response(virtualEvent);

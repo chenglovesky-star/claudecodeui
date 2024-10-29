@@ -469,6 +469,7 @@ public class AnalysisUtil {
                             eventSelectSet.add("tags");
                         }
                         String eventQuery = String.format(" and ( %s ) ", eventSql);
+                        eventQuery = eventQuery.replaceAll("filterDate",dateQuery.substring(5));
                         sql.append(eventQuery);
                         totalSql.append(eventQuery);
                     } else {

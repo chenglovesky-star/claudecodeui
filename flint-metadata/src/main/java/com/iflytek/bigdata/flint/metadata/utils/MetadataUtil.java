@@ -9,6 +9,7 @@ import com.iflytek.bigdata.flint.common.date.DateUtil;
 import com.iflytek.bigdata.flint.common.dto.Response;
 import com.iflytek.bigdata.flint.common.http.OkHttpUtil;
 import com.iflytek.bigdata.flint.common.http.RequestPair;
+import com.iflytek.bigdata.flint.hiveserver2.config.AnalysisConfig;
 import com.iflytek.bigdata.flint.metadata.dao.model.*;
 import com.iflytek.bigdata.flint.metadata.dto.*;
 import com.iflytek.bigdata.flint.metadata.service.*;
@@ -33,6 +34,9 @@ public class MetadataUtil {
     private final static String STRING = "string";
 
     private final static String MAP = "map";
+
+    @Resource
+    private AnalysisConfig analysisConfig;
 
     @Resource
     private IMetadataEventPropertyService iMetadataEventPropertyService;
@@ -205,8 +209,8 @@ public class MetadataUtil {
                     events.add("V|" + virtualEvent.getName());
                     if (StringUtils.isNotEmpty(virtualEvent.getEventFilter())) {
                         List<EventDto> events = JSONArray.parseArray(virtualEvent.getEventFilter(), EventDto.class);
-                        stringVirtualEventMap.put("V|" + virtualEvent.getName(), getEventSql(events, STRING));
-                        mapVirtualEventMap.put("V|" + virtualEvent.getName(), getEventSql(events, MAP));
+                        stringVirtualEventMap.put("V|" + virtualEvent.getName(), getEventSql(events, STRING,virtualEvent.getOp()));
+                        mapVirtualEventMap.put("V|" + virtualEvent.getName(), getEventSql(events, MAP,virtualEvent.getOp()));
                     }
                 }
             }
@@ -273,14 +277,14 @@ public class MetadataUtil {
         return commonMap;
     }
 
-    public String getEventSql(List<EventDto> events) {
+    public String getEventSql(List<EventDto> events,Integer op) {
 //        return getEventSql(events, STRING) + " | " + getEventSql(events, MAP) + " | " + getEventUnionSql(events, STRING)
 //                + " | " + getEventUnionSql(events, MAP);
 
-        return  getEventSql(events, STRING);
+        return  getEventSql(events, STRING,op);
     }
 
-    public String getEventSql(List<EventDto> events, String propertyType) {
+    public String getEventSql(List<EventDto> events, String propertyType,Integer op) {
         Set<String> eventSet = new HashSet<>();
         Set<String> inSet = new HashSet<>();
         String eventSql = "";
@@ -370,6 +374,17 @@ public class MetadataUtil {
                 eventSql += String.format(" and ( %s )", Joiner.on(" or ").join(eventSqlList));
             }
         }
+
+        log.info(op);
+        log.info(eventSql);
+        if(op==1 && CollectionUtils.size(events) > 1){
+            eventSql = "(select distinct concat(uid,proc_date) as uid,opcode from " + analysisConfig.getEventsTable() + " where filterDate and " + eventSql +")t";
+            eventSql = "select uid from " + eventSql + " group by uid having count(*) = " + eventSet.size();
+            eventSql =   String.format(" opcode in (%s) ", Joiner.on(",").join(eventSet))  +  " and concat(uid,proc_date) in (" + eventSql +")";
+        }
+
+        log.info(eventSql);
+
         return eventSql;
     }
 
