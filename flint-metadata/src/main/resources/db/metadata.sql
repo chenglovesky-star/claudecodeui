@@ -185,6 +185,9 @@ CREATE TABLE metadata_event_property_value
 
 
 
+INSERT INTO flint.metadata_event_property
+(event_name, name, show_name, `type`, display, sort)
+VALUES('all', 'opcode', '操作码', 'string', 1, 0);
 
 INSERT INTO flint.metadata_event_property
 (event_name, name, show_name, `type`, display, sort)

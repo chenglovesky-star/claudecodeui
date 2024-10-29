@@ -44,7 +44,7 @@ public class MetadataUtil {
     @Resource
     private IMetadataEventService iMetadataEventService;
 
-    @Value("${common.properties:uid string,version string,df string,imei string,imsi string,ip string,country string,province string,city string,brand string,model string,submodel string,os string,resolution string,starttime string,endtime string,ctm string,bizid string,osid string}")
+    @Value("${common.properties:opcode string,uid string,version string,df string,imei string,imsi string,ip string,country string,province string,city string,brand string,model string,submodel string,os string,resolution string,starttime string,endtime string,ctm string,bizid string,osid string}")
     private String commonProperties;
 
     @Resource
