@@ -834,7 +834,6 @@ public class AnalysisUtil {
 
         String finalSql = Joiner.on(";").join(querySqlList);
         finalSql = DateUtil.replaceFormat(finalSql);
-
         log.info(finalSql);
 //        return "";
         return finalSql;

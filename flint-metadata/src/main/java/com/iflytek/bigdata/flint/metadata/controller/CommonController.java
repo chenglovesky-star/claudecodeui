@@ -1164,6 +1164,8 @@ public class CommonController {
         allList.add(new ViewByDto("总次数", "count(1)"));
         allList.add(new ViewByDto("用户数", "count(distinct uid)"));
         allList.add(new ViewByDto("人均次数", "count(1)/count(distinct uid)"));
+        allList.add(new ViewByDto("近似用户数","approx_count_distinct(uid)"));
+        allList.add(new ViewByDto("收入总和","sum(ifly_map_get(tags,'d_price'))"));
         return new Response(allList);
         /*
         MetadataEventProperty searchItem = new MetadataEventProperty();

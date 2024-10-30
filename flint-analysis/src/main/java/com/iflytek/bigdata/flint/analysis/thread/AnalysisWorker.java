@@ -95,6 +95,7 @@ public class AnalysisWorker implements Callable<String> {
             String query = arr[1];
 
             List<Map<String, Object>> resultList = new ArrayList<>();
+            statement.setQueryTimeout(1800); //超时时间设置
             ResultSet result = statement.executeQuery(query + " LIMIT " + LIMIT);
             if (result != null) {
                 int i = 0;

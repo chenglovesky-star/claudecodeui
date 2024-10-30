@@ -10,6 +10,7 @@ CREATE TABLE virtual_event
     event_sql    text comment '事件解析sql',
     add_user     varchar(64)           DEFAULT '' COMMENT '添加人',
     add_time     timestamp    NULL COMMENT '添加时间',
+    op int default 0 COMMENT '0=或 1=且',
     PRIMARY KEY (id)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
