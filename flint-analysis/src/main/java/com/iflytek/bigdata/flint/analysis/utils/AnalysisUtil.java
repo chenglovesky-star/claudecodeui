@@ -423,6 +423,13 @@ public class AnalysisUtil {
                     case 2:
                         eventRuleDto.setViewBy("count(1)/count(distinct uid)");
                         break;
+                    case 3:
+                        eventRuleDto.setViewBy("approx_count_distinct(uid)");
+                        break;
+                    case 4:
+                        eventRuleDto.setViewBy("sum(ifly_map_get(tags,'d_price'))");
+                        break;
+
                 }
             } else {
                 //修复 view by没有加入select的问题
