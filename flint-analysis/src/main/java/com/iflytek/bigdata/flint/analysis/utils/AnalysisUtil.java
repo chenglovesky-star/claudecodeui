@@ -246,6 +246,7 @@ public class AnalysisUtil {
         eventSelectSet.add("proc_date");//默认加入 proc_date
         eventSelectSet.add("opcode");//默认加入 opcode
         eventSelectSet.add("uid");//默认加入 uid
+        eventSelectSet.add("tags");
 
         List<String> groupBys = eventDetailDto.getGroupBy();
 
