@@ -17,7 +17,7 @@ spring:
     encoding: UTF-8
   datasource:
     #数据源基本信息，也可放在druid下
-    impalaUrl: jdbc:mysql://10.100.108.90:9030/ods?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
+    impalaUrl: jdbc:mysql://10.100.106.35:9030/ods?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
     impalaUsername: root
     impalaPassword: root@M2099
     impalaDriverClassName: com.mysql.jdbc.Driver
