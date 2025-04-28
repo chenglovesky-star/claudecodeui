@@ -534,7 +534,7 @@ public class AnalysisUtil {
                         } else if (propertyName.startsWith("U|")) {
                             if(propertyName.equals("U|expinfo" )){
                                 String profileColumn = propertyName.substring(2);
-                                String column = "ifly_custom_map_get(expinfo," + subFilter.getPropertyOperationValue() + ",'|','#')";
+                                String column = "groupid";
                                 conditionDto.setColumnName(column);
                             } else {
                             String profileColumn = propertyName.substring(2);
@@ -773,7 +773,7 @@ public class AnalysisUtil {
 
                 if(isExp && userColumnSet.contains("expinfo")){
                     userColumnSet.remove("expinfo");
-                    userColumnSet.add("ifly_custom_map_get(expinfo," + expGroupId + ",'|','#') as expinfo");
+                    userColumnSet.add("groupid as expinfo");
                 }
                 String formatSelectUserColumns = selectUserColumns;
                 if (CollectionUtils.isNotEmpty(userColumnSet)) {
@@ -786,20 +786,20 @@ public class AnalysisUtil {
                 //特殊处理AB实验
                 if(isExp){
                     //组装事件表和画像表
-                     joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + "  left join " +
-                             "( select  distinct uid" + formatSelectUserColumns + " from " + analysisConfig.getAbtestTable()  +
-                             " where ifly_custom_map_get(expinfo," + expGroupId + ",'|','#') != '' "  + dateQuery +
-                             ")u on events.uid = u.uid ) eu ";
+                     joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + " join " +
+                             "( select  distinct uid, proc_date" + formatSelectUserColumns + " from " + analysisConfig.getAbtestTable()  +
+                             " where expid = " + expGroupId + dateQuery +
+                             ")u on events.uid = u.uid and events.proc_date = u.proc_date ) eu ";
                     if (groupByDim || joinDim) {
                         String partitionWhere = StringUtils.isNotEmpty(dim.getPartition()) ? " where " + dim.getPartition() + "='" + lastPdate + "'" : "";
-                        joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + "  left join ( select uid" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid  left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
+                        joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid and events.proc_date = u.proc_date left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
                     }
                 } else {
                 //组装事件表和画像表
-                    joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + "  left join ( select uid" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid ) eu ";
+                    joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid and events.proc_date = u.proc_date) eu ";
                 if (groupByDim || joinDim) {
                     String partitionWhere = StringUtils.isNotEmpty(dim.getPartition()) ? " where " + dim.getPartition() + "='" + lastPdate + "'" : "";
-                    joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + "  left join ( select uid" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid  left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
+                    joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid and events.proc_date = u.proc_date left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
                 }
                 }
 

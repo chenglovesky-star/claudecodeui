@@ -22,13 +22,13 @@ public class AnalysisConfig {
     private String env;
 
 
-    @Value("${profileTable:hive.profile.dm_up_v_user}")
+    @Value("${profileTable:profile.dm_up_v_user}")
     private String profileTable;
 
 
-    @Value("${eventsTable:hive.ossp.dw_d_ime_operationlog_sr}")
+    @Value("${eventsTable:ossp.dw_d_ime_operationlog_sr}")
     private String eventsTable;
 
-    @Value("${abtestTable:hive.ossp.dw_d_ime_operationabtestlog_sr}")
+    @Value("${abtestTable:ossp.dw_d_ime_operationabtestlog_new}")
     private String abtestTable;
 }
