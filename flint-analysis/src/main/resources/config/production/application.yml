@@ -17,7 +17,7 @@ spring:
     encoding: UTF-8
   datasource:
     #数据源基本信息，也可放在druid下
-    impalaUrl: jdbc:hive2://10.100.108.90:10009/ossp;#spark.yarn.queue=spark
+    impalaUrl: jdbc:hive2://10.100.108.90:10009/ossp;#spark.yarn.queue=spark;kyuubi.engine.share.level.subdomain=event_platform
     impalaUsername: iflyrd
     impalaPassword: iflyrd
     impalaDriverClassName: org.apache.hive.jdbc.HiveDriver
