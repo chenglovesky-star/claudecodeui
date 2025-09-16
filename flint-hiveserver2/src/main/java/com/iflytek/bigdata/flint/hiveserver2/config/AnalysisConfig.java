@@ -21,7 +21,6 @@ public class AnalysisConfig {
     @Value("${APP_ENV:production}")
     private String env;
 
-
     @Value("${profileTable:profile.dm_up_v_user}")
     private String profileTable;
 
@@ -29,6 +28,6 @@ public class AnalysisConfig {
     @Value("${eventsTable:ossp.dw_d_ime_operationlog_sr}")
     private String eventsTable;
 
-    @Value("${abtestTable:ossp.dw_d_ime_operationabtestlog_new}")
+    @Value("${abtestTable:paimon.dwd.dwd_operationabtestlog}")
     private String abtestTable;
 }

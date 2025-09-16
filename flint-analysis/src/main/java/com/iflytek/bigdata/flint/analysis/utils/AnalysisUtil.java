@@ -104,7 +104,7 @@ public class AnalysisUtil {
     private AnalysisConfig analysisConfig;
     private static final Logger logger = LoggerFactory.getLogger(AnalysisUtil.class);
 
-    
+
     @Value("${APP_ENV:production}")
     private String env;
 
@@ -247,6 +247,7 @@ public class AnalysisUtil {
         eventSelectSet.add("opcode");//默认加入 opcode
         eventSelectSet.add("uid");//默认加入 uid
         eventSelectSet.add("tags");
+        eventSelectSet.add("starttime");
 
         List<String> groupBys = eventDetailDto.getGroupBy();
 
@@ -308,25 +309,25 @@ public class AnalysisUtil {
                         groupByList.add(profileColumn);
                         finalSelectList.add(profileColumn);
                     }else{
-                    //分段转换caseSql
-                    if (StringUtils.isNotEmpty(values)) {
-                        MetadataProfileColumn columnInfo = iMetadataProfileColumnService.selectByName(profileColumn);
-                        // 日期格式单独处理
-                        String caseSql = "";
-                        if (columnInfo != null && columnInfo.getType().equals("5")) {
-                            caseSql = getCaseDateSql(profileColumn, values,"g_" + profileColumn);
+                        //分段转换caseSql
+                        if (StringUtils.isNotEmpty(values)) {
+                            MetadataProfileColumn columnInfo = iMetadataProfileColumnService.selectByName(profileColumn);
+                            // 日期格式单独处理
+                            String caseSql = "";
+                            if (columnInfo != null && columnInfo.getType().equals("5")) {
+                                caseSql = getCaseDateSql(profileColumn, values,"g_" + profileColumn);
+                            } else {
+                                caseSql = getCaseSql(profileColumn, values,"g_" + profileColumn);
+                            }
+                            //20230314 修复 group by case sql 问题
+                            groupByList.add(getCaseSql(profileColumn, values));
+                            finalSelectList.add("g_" + profileColumn);
+                            selectGroupByList.add(caseSql);
                         } else {
-                            caseSql = getCaseSql(profileColumn, values,"g_" + profileColumn);
+                            selectGroupByList.add(profileColumn);
+                            groupByList.add(profileColumn);
+                            finalSelectList.add(profileColumn);
                         }
-                        //20230314 修复 group by case sql 问题
-                        groupByList.add(getCaseSql(profileColumn, values));
-                        finalSelectList.add("g_" + profileColumn);
-                        selectGroupByList.add(caseSql);
-                    } else {
-                        selectGroupByList.add(profileColumn);
-                        groupByList.add(profileColumn);
-                        finalSelectList.add(profileColumn);
-                    }
                     }
                     userColumns.add(profileColumn);
 
@@ -340,24 +341,24 @@ public class AnalysisUtil {
                         selectGroupByList.add("ifly_map_get(tags,'" + groupBy + "') as `" + groupBy + "`");
                         groupByList.add("ifly_map_get(tags,'" + groupBy + "')");
                         finalSelectList.add(groupBy);
-                        }
+                    }
                     else{
-                    groupBy = groupBy.substring(2);
-                    if (commonPros().contains(groupBy)) {
-                        eventSelectSet.add(groupBy);
-                    }
-                    //分段转换caseSql
-                    if (StringUtils.isNotEmpty(values)) {
-                        String caseSql = getCaseSql(groupBy, values, "g_" + groupBy);
-                        selectGroupByList.add(caseSql);
-                        //20230314 修复 group by case sql 问题
-                        groupByList.add(getCaseSql(groupBy, values));
-                        finalSelectList.add("g_" + groupBy);
-                    } else {
-                        selectGroupByList.add(groupBy);
-                        groupByList.add(groupBy);
-                        finalSelectList.add(groupBy);
-                    }
+                        groupBy = groupBy.substring(2);
+                        if (commonPros().contains(groupBy)) {
+                            eventSelectSet.add(groupBy);
+                        }
+                        //分段转换caseSql
+                        if (StringUtils.isNotEmpty(values)) {
+                            String caseSql = getCaseSql(groupBy, values, "g_" + groupBy);
+                            selectGroupByList.add(caseSql);
+                            //20230314 修复 group by case sql 问题
+                            groupByList.add(getCaseSql(groupBy, values));
+                            finalSelectList.add("g_" + groupBy);
+                        } else {
+                            selectGroupByList.add(groupBy);
+                            groupByList.add(groupBy);
+                            finalSelectList.add(groupBy);
+                        }
                     }
                 } else {
                     eventSelectSet.add("tags");
@@ -528,8 +529,8 @@ public class AnalysisUtil {
                                 String column = "ifly_map_get(tags,'" + propertyName + "')";
                                 conditionDto.setColumnName(column);
                             }else{
-                            conditionDto.setColumnName(propertyName.substring(2));
-                            eventSelectSet.add(propertyName.substring(2));
+                                conditionDto.setColumnName(propertyName.substring(2));
+                                eventSelectSet.add(propertyName.substring(2));
                             }
                         } else if (propertyName.startsWith("U|")) {
                             if(propertyName.equals("U|expinfo" )){
@@ -537,15 +538,15 @@ public class AnalysisUtil {
                                 String column = "groupid";
                                 conditionDto.setColumnName(column);
                             } else {
-                            String profileColumn = propertyName.substring(2);
-                            MetadataProfileColumn metadataProfileColumn = iMetadataProfileColumnService.selectByName(profileColumn);
-                            conditionDto.setColumnType(Integer.valueOf(metadataProfileColumn.getType()));
-                            if (profileColumn.startsWith("temp_tags")) {
-                                profileColumn = "temp_tags";
-                            }
-                            conditionDto.setColumnName(profileColumn);
-                            joinUser = true;
-                            userColumns.add(conditionDto.getColumnName());
+                                String profileColumn = propertyName.substring(2);
+                                MetadataProfileColumn metadataProfileColumn = iMetadataProfileColumnService.selectByName(profileColumn);
+                                conditionDto.setColumnType(Integer.valueOf(metadataProfileColumn.getType()));
+                                if (profileColumn.startsWith("temp_tags")) {
+                                    profileColumn = "temp_tags";
+                                }
+                                conditionDto.setColumnName(profileColumn);
+                                joinUser = true;
+                                userColumns.add(conditionDto.getColumnName());
                             }
                         } else {
                             eventSelectSet.add("tags");
@@ -604,6 +605,7 @@ public class AnalysisUtil {
                     if (conditionDto.getOperationName().startsWith("Days")) {
                         conditionDto.setOperationName("Pdate" + conditionDto.getOperationName());
                     }
+
                     String subSql = metadataUtil.getSql(conditionDto);
                     globalSqlList.add(subSql);
                 }
@@ -648,8 +650,8 @@ public class AnalysisUtil {
                                 String column = "ifly_map_get(tags,'" + propertyName + "')";
                                 conditionDto.setColumnName(column);
                             }else{
-                            conditionDto.setColumnName(propertyName.substring(2));
-                            eventSelectSet.add(propertyName.substring(2));
+                                conditionDto.setColumnName(propertyName.substring(2));
+                                eventSelectSet.add(propertyName.substring(2));
                             }
                         } else if (propertyName.startsWith("U|")) {
                             if(propertyName.startsWith("U|expinfo")){
@@ -786,24 +788,25 @@ public class AnalysisUtil {
                 //特殊处理AB实验
                 if(isExp){
                     //组装事件表和画像表
-                     joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + " join " +
-                             "( select  distinct uid, proc_date" + formatSelectUserColumns + " from " + analysisConfig.getAbtestTable()  +
-                             " where expid = " + expGroupId + dateQuery +
-                             ")u on events.uid = u.uid and events.proc_date = u.proc_date ) eu ";
+                    joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + " join " +
+                            "( select uid, starttime, endtime" + formatSelectUserColumns + " from " + analysisConfig.getAbtestTable()  +
+                            " where expid = " + expGroupId +
+                            ")u on events.uid = u.uid and events.starttime>u.starttime and events.starttime<u.endtime) eu ";
                     if (groupByDim || joinDim) {
                         String partitionWhere = StringUtils.isNotEmpty(dim.getPartition()) ? " where " + dim.getPartition() + "='" + lastPdate + "'" : "";
                         joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid and events.proc_date = u.proc_date left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
                     }
                 } else {
-                //组装事件表和画像表
+                    //组装事件表和画像表
                     joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid and events.proc_date = u.proc_date) eu ";
-                if (groupByDim || joinDim) {
-                    String partitionWhere = StringUtils.isNotEmpty(dim.getPartition()) ? " where " + dim.getPartition() + "='" + lastPdate + "'" : "";
-                    joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid and events.proc_date = u.proc_date left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
+                    if (groupByDim || joinDim) {
+                        String partitionWhere = StringUtils.isNotEmpty(dim.getPartition()) ? " where " + dim.getPartition() + "='" + lastPdate + "'" : "";
+                        joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid and events.proc_date = u.proc_date left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
+                    }
                 }
-                }
-
+                System.out.println(finalSql);
                 log.info(finalSql);
+
                 String[] arr = finalSql.split("eventTable");
                 if (arr.length == 2) {
                     finalSql = arr[0] + joinTable + arr[1];
@@ -843,7 +846,7 @@ public class AnalysisUtil {
         String finalSql = Joiner.on(";").join(querySqlList);
         finalSql = DateUtil.replaceFormat(finalSql);
         log.info(finalSql);
-//        return "";
+
         return finalSql;
     }
 
