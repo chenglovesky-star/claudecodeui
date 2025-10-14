@@ -86,9 +86,21 @@ public class FunnelAnalysisServiceImpl implements IFunnelAnalysisService {
             step.setStepNumber(i + 1);
         }
         
-        // 验证窗口期
-        if (funnelAnalysisDto.getWindowPeriod() != null && funnelAnalysisDto.getWindowPeriod() <= 0) {
-            log.error("窗口期必须大于0");
+        // 验证窗口期和时间窗口类型
+        Integer windowType = funnelAnalysisDto.getWindowType();
+        if (windowType == null) windowType = 0; // 默认为自定义天数
+        
+        if (windowType == 0) {
+            // 自定义天数：验证窗口期（一天、七天等）
+            if (funnelAnalysisDto.getWindowPeriod() != null && funnelAnalysisDto.getWindowPeriod() <= 0) {
+                log.error("窗口期必须大于0");
+                return false;
+            }
+        } else if (windowType == 1 || windowType == 2) {
+            // 首日或次日：不需要验证窗口期
+            log.info("使用特殊时间窗口类型: {}", windowType == 1 ? "首日" : "次日");
+        } else {
+            log.error("时间窗口类型无效，应为0（自定义天数）、1（首日）或2（次日）");
             return false;
         }
         

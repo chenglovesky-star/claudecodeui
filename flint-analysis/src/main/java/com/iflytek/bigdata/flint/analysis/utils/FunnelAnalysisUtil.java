@@ -100,8 +100,7 @@ public class FunnelAnalysisUtil {
             validateFunnelAnalysisDto(funnelAnalysisDto);
             
             List<FunnelStepDto> steps = funnelAnalysisDto.getFunnelSteps();
-            
-            // 复用 AnalysisUtil 的时间处理逻辑
+
             String times = funnelAnalysisDto.getTimeValues();
             String[] timeArr = times.split(",");
             
@@ -117,15 +116,14 @@ public class FunnelAnalysisUtil {
                 throw new IllegalArgumentException("日期格式错误，请使用YYYY-MM-DD格式");
             }
 
-            // 构建基础查询条件
-            String dateCondition = String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, endDate);
-            
-            // 构建每个步骤的子查询 - 复用 AnalysisUtil 的事件处理逻辑
+            // 构建每个步骤的子查询
             List<String> stepQueries = new ArrayList<>();
             for (int i = 0; i < steps.size(); i++) {
                 FunnelStepDto step = steps.get(i);
                 try {
-                    String stepQuery = buildStepQueryUsingAnalysisUtil(step, i + 1, dateCondition, funnelAnalysisDto);
+                    // 为每个步骤计算合适的日期范围，考虑时间窗口
+                    String stepDateCondition = buildStepDateCondition(startDate, endDate, i, funnelAnalysisDto);
+                    String stepQuery = buildStepQueryUsingAnalysisUtil(step, i + 1, stepDateCondition, funnelAnalysisDto);
                     stepQueries.add(stepQuery);
                     log.debug("步骤{} SQL生成成功: {}", i + 1, stepQuery);
                 } catch (Exception e) {
@@ -142,6 +140,48 @@ public class FunnelAnalysisUtil {
         } catch (Exception e) {
             log.error("生成漏斗分析SQL失败", e);
             throw new RuntimeException("生成漏斗分析SQL失败: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * 为每个步骤构建合适的日期范围条件，考虑时间窗口
+     * 第一步不加时间窗，从第二步开始加时间窗
+     */
+    private String buildStepDateCondition(String startDate, String endDate, int stepIndex, FunnelAnalysisDto funnelAnalysisDto) {
+        // 第一步使用原始时间范围，不加时间窗
+        if (stepIndex == 0) {
+            return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, endDate);
+        }
+        
+        // 获取时间窗口类型和窗口期
+        Integer windowType = funnelAnalysisDto.getWindowType();
+        if (windowType == null) windowType = 0; // 默认为自定义天数
+        
+        if (windowType == 1) {
+            // 首日：所有步骤都使用相同的日期范围
+            return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, endDate);
+        } else if (windowType == 2) {
+            // 次日：所有步骤都使用相同的日期范围
+            return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, endDate);
+        } else {
+            // 自定义天数：从第二步开始考虑时间窗口扩展
+            Integer windowPeriod = funnelAnalysisDto.getWindowPeriod();
+            if (windowPeriod == null || windowPeriod <= 0) {
+                // 如果没有设置窗口期，使用原始时间范围
+                return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, endDate);
+            }
+            
+            // 计算该步骤的最大时间窗口
+            // 第n步的最大时间窗口 = 原始时间范围 + (n-1) * 窗口期
+            int maxWindowDays = windowPeriod * stepIndex;
+            
+            // 扩展结束日期
+            String extendedEndDate = DateUtil.addDay(endDate, maxWindowDays);
+            
+            log.info("步骤{}日期范围计算: 原始范围={}~{}, 窗口期={}, 扩展天数={}, 最终范围={}~{}", 
+                    stepIndex + 1, startDate, endDate, windowPeriod, maxWindowDays, startDate, extendedEndDate);
+            
+            return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, extendedEndDate);
         }
     }
     
@@ -174,9 +214,20 @@ public class FunnelAnalysisUtil {
             }
         }
         
-        // 验证窗口期
-        if (funnelAnalysisDto.getWindowPeriod() != null && funnelAnalysisDto.getWindowPeriod() <= 0) {
-            throw new IllegalArgumentException("窗口期必须大于0");
+        // 验证窗口期和时间窗口类型
+        Integer windowType = funnelAnalysisDto.getWindowType();
+        if (windowType == null) windowType = 0; // 默认为自定义天数
+        
+        if (windowType == 0) {
+            // 自定义天数：验证窗口期（一天、七天等）
+            if (funnelAnalysisDto.getWindowPeriod() != null && funnelAnalysisDto.getWindowPeriod() <= 0) {
+                throw new IllegalArgumentException("窗口期必须大于0");
+            }
+        } else if (windowType == 1 || windowType == 2) {
+            // 首日或次日：不需要验证窗口期
+            log.info("使用特殊时间窗口类型: {}", windowType == 1 ? "首日" : "次日");
+        } else {
+            throw new IllegalArgumentException("时间窗口类型无效，应为0（自定义天数）、1（首日）或2（次日）");
         }
         
         // 验证时间粒度
@@ -289,11 +340,11 @@ public class FunnelAnalysisUtil {
             // 添加事件名称条件
             addEventNameCondition(sql, step);
             
-            // 添加事件属性过滤（只包含事件表字段的条件）
+            // 添加事件属性过滤
             addEventFilterConditions(sql, step, new ArrayList<>());
             
             // 添加全局过滤条件（只包含事件表字段的条件）
-            addGlobalFilterConditions(sql, funnelAnalysisDto, new ArrayList<>());
+            addEventTableGlobalFilterConditions(sql, funnelAnalysisDto);
             
             sql.append(") events");
             
@@ -374,7 +425,7 @@ public class FunnelAnalysisUtil {
             addEventFilterConditions(sql, step, new ArrayList<>());
             
             // 添加全局过滤条件
-            addGlobalFilterConditions(sql, funnelAnalysisDto, new ArrayList<>());
+            addEventTableGlobalFilterConditions(sql, funnelAnalysisDto);
         }
         
         return sql.toString();
@@ -539,6 +590,18 @@ public class FunnelAnalysisUtil {
      * 添加全局过滤条件（只包含事件表字段的条件）
      */
     private void addGlobalFilterConditions(StringBuilder sql, FunnelAnalysisDto funnelAnalysisDto, List<String> userColumns) {
+        if (funnelAnalysisDto.getGlobalFilter() != null) {
+            String globalFilterSql = buildEventTableGlobalFilterSql(funnelAnalysisDto.getGlobalFilter());
+            if (StringUtils.isNotEmpty(globalFilterSql)) {
+                sql.append(" AND (").append(globalFilterSql).append(")");
+            }
+        }
+    }
+
+    /**
+     * 添加事件表全局过滤条件（只包含事件表字段的条件）
+     */
+    private void addEventTableGlobalFilterConditions(StringBuilder sql, FunnelAnalysisDto funnelAnalysisDto) {
         if (funnelAnalysisDto.getGlobalFilter() != null) {
             String globalFilterSql = buildEventTableGlobalFilterSql(funnelAnalysisDto.getGlobalFilter());
             if (StringUtils.isNotEmpty(globalFilterSql)) {
@@ -716,17 +779,34 @@ public class FunnelAnalysisUtil {
             if (i < stepQueries.size()) sql.append(", ");
         }
 
-        // FROM子句 - 以第一步为基础，LEFT JOIN其他步骤
+        // FROM子句 - 根据时间窗口类型决定JOIN逻辑
         sql.append(" FROM step_1");
         for (int i = 2; i <= stepQueries.size(); i++) {
             sql.append(" LEFT JOIN step_").append(i)
-               .append(" ON step_1.uid = step_").append(i).append(".uid")
-               .append(" AND step_1.starttime <= step_").append(i).append(".starttime");
+               .append(" ON step_1.uid = step_").append(i).append(".uid");
             
-            // 添加时间窗口限制
-            if (funnelAnalysisDto.getWindowPeriod() != null && funnelAnalysisDto.getWindowPeriod() > 0) {
-                sql.append(" AND step_").append(i).append(".starttime <= step_1.starttime + INTERVAL ")
-                   .append(funnelAnalysisDto.getWindowPeriod()).append(" DAY");
+            // 根据时间窗口类型添加不同的时间限制
+            Integer windowType = funnelAnalysisDto.getWindowType();
+            if (windowType == null) windowType = 0; // 默认为自定义天数
+            
+            if (windowType == 1) {
+                // 首日：只计算当日内的漏斗，不考虑事件先后顺序
+                sql.append(" AND DATE(step_1.starttime) = DATE(step_").append(i).append(".starttime)");
+            } else if (windowType == 2) {
+                // 次日：计算两日内的漏斗，不考虑事件先后顺序
+                sql.append(" AND DATE(step_").append(i).append(".starttime) BETWEEN DATE(step_1.starttime) AND DATE(step_1.starttime) + INTERVAL 1 DAY");
+            } else {
+                // 自定义天数：保持一天、七天等时间窗口的原有逻辑，考虑事件先后顺序和时间窗口
+                sql.append(" AND step_1.starttime <= step_").append(i).append(".starttime");
+                if (funnelAnalysisDto.getWindowPeriod() != null && funnelAnalysisDto.getWindowPeriod() > 0) {
+                    // 使用当前窗口期，而不是累积计算
+                    int windowPeriod = funnelAnalysisDto.getWindowPeriod();
+                    
+                    log.info("步骤{}时间限制计算: 窗口期={}", i, windowPeriod);
+                    
+                    sql.append(" AND step_").append(i).append(".starttime <= step_1.starttime + INTERVAL ")
+                       .append(windowPeriod).append(" DAY");
+                }
             }
         }
 
@@ -963,36 +1043,47 @@ public class FunnelAnalysisUtil {
         try {
             List<Map<String, Object>> rawData = JSONArray.parseObject(originResult, List.class);
             
-            // 提取步骤名称
+            // 提取步骤名称 - 优先使用eventAlias，否则使用eventName
             List<String> stepNames = originalRequest.getFunnelSteps().stream()
-                    .map(step -> StringUtils.isNotEmpty(step.getEventName()) ? step.getEventName() : step.getEventName())
+                    .map(step -> StringUtils.isNotEmpty(step.getEventAlias()) ? step.getEventAlias() : step.getEventName())
                     .collect(Collectors.toList());
             result.setStepNames(stepNames);
 
-            // 处理总体数据
+            // 处理总体数据 - 聚合所有行的数据
             if (CollectionUtils.isNotEmpty(rawData)) {
-                Map<String, Object> totalData = rawData.get(0);
                 List<Long> stepValues = new ArrayList<>();
                 List<Double> conversionRates = new ArrayList<>();
                 
-                Long firstStepValue = null;
+                // 聚合所有时间点的数据
                 for (int i = 0; i < stepNames.size(); i++) {
                     String stepKey = "step_" + (i + 1) + "_count";
-                    Long stepValue = getLongValue(totalData.get(stepKey));
-                    stepValues.add(stepValue);
+                    Long totalStepValue = 0L;
                     
+                    // 遍历所有行，累加每个步骤的计数
+                    for (Map<String, Object> rowData : rawData) {
+                        Long stepValue = getLongValue(rowData.get(stepKey));
+                        totalStepValue += stepValue;
+                    }
+                    
+                    stepValues.add(totalStepValue);
+                }
+                
+                // 计算转化率
+                Long firstStepValue = stepValues.get(0);
+                for (int i = 0; i < stepValues.size(); i++) {
                     if (i == 0) {
-                        firstStepValue = stepValue;
                         conversionRates.add(1.0); // 第一步转化率为100%
                     } else {
                         double rate = firstStepValue != null && firstStepValue > 0 ? 
-                                (double) stepValue / firstStepValue : 0.0;
+                                (double) stepValues.get(i) / firstStepValue : 0.0;
                         conversionRates.add(rate);
                     }
                 }
                 
                 result.setStepValues(stepValues);
                 result.setConversionRates(conversionRates);
+                
+                log.info("漏斗分析结果解析完成 - 步骤名称: {}, 步骤值: {}, 转化率: {}", stepNames, stepValues, conversionRates);
             }
 
             // 处理分组数据和时间序列数据
@@ -1038,11 +1129,66 @@ public class FunnelAnalysisUtil {
         
         // 处理时间序列数据
         if (originalRequest.getTimeBucket() != null && originalRequest.getTimeBucket() != 5) { // 5表示累计，不需要时间序列
+            // 1. 收集时间点列表
             Set<String> timeSet = rawData.stream()
                     .map(data -> String.valueOf(data.get("time_bucket")))
                     .collect(Collectors.toSet());
             result.setTimeSeries(new ArrayList<>(timeSet));
+            
+            // 2. 构建时间序列详细数据
+            List<FunnelTimeSeriesDto> timeSeriesDataList = buildTimeSeriesData(rawData, result.getStepNames().size());
+            result.setTimeSeriesData(timeSeriesDataList);
+            
+            log.info("时间序列数据构建完成，时间点数量: {}", timeSeriesDataList.size());
         }
+    }
+
+    /**
+     * 构建时间序列数据
+     */
+    private List<FunnelTimeSeriesDto> buildTimeSeriesData(List<Map<String, Object>> rawData, int stepCount) {
+        List<FunnelTimeSeriesDto> timeSeriesDataList = new ArrayList<>();
+        
+        // 按时间点分组
+        Map<String, List<Map<String, Object>>> groupedByTime = rawData.stream()
+                .collect(Collectors.groupingBy(data -> String.valueOf(data.get("time_bucket"))));
+        
+        // 对每个时间点构建数据
+        for (Map.Entry<String, List<Map<String, Object>>> entry : groupedByTime.entrySet()) {
+            String timePoint = entry.getKey();
+            List<Map<String, Object>> timePointData = entry.getValue();
+            
+            FunnelTimeSeriesDto timeSeriesDto = new FunnelTimeSeriesDto();
+            timeSeriesDto.setTimePoint(timePoint);
+            
+            // 聚合该时间点的各步骤数据
+            List<Long> stepValues = new ArrayList<>();
+            for (int i = 0; i < stepCount; i++) {
+                String stepKey = "step_" + (i + 1) + "_count";
+                Long totalStepValue = 0L;
+                
+                // 累加该时间点的数据
+                for (Map<String, Object> rowData : timePointData) {
+                    Long stepValue = getLongValue(rowData.get(stepKey));
+                    totalStepValue += stepValue;
+                }
+                
+                stepValues.add(totalStepValue);
+            }
+            
+            // 计算该时间点的转化率
+            List<Double> conversionRates = calculateConversionRates(stepValues);
+            
+            timeSeriesDto.setStepValues(stepValues);
+            timeSeriesDto.setConversionRates(conversionRates);
+            
+            timeSeriesDataList.add(timeSeriesDto);
+        }
+        
+        // 按时间点排序
+        timeSeriesDataList.sort(Comparator.comparing(FunnelTimeSeriesDto::getTimePoint));
+        
+        return timeSeriesDataList;
     }
 
     /**
@@ -1511,15 +1657,56 @@ public class FunnelAnalysisUtil {
         // 如果有用户属性条件，添加到WHERE子句中
         if (CollectionUtils.isNotEmpty(userConditions)) {
             sql.append(" WHERE ");
+            
+            // 分别处理步骤筛选条件和全局筛选条件的用户属性
+            List<String> stepUserConditions = new ArrayList<>();
+            List<String> globalUserConditions = new ArrayList<>();
+            
+            // 分离步骤筛选条件中的用户属性
             if (step.getFilter() != null && CollectionUtils.isNotEmpty(step.getFilter().getSubFilters())) {
-                // 使用步骤筛选条件的关系符
-                sql.append(Joiner.on(" " + step.getFilter().getRelation() + " ").join(userConditions));
-            } else if (funnelAnalysisDto.getGlobalFilter() != null) {
-                // 使用全局筛选条件的关系符
-                sql.append(Joiner.on(" " + funnelAnalysisDto.getGlobalFilter().getRelation() + " ").join(userConditions));
-            } else {
-                // 默认使用AND
-                sql.append(Joiner.on(" AND ").join(userConditions));
+                for (EventPropertyDto property : step.getFilter().getSubFilters()) {
+                    if (property.getPropertyName().startsWith("U|")) {
+                        String condition = buildUserPropertyCondition(property);
+                        if (StringUtils.isNotEmpty(condition)) {
+                            stepUserConditions.add(condition);
+                        }
+                    }
+                }
+            }
+            
+            // 分离全局筛选条件中的用户属性
+            if (funnelAnalysisDto.getGlobalFilter() != null && CollectionUtils.isNotEmpty(funnelAnalysisDto.getGlobalFilter().getSubFilters())) {
+                for (EventPropertyDto property : funnelAnalysisDto.getGlobalFilter().getSubFilters()) {
+                    if (property.getPropertyName().startsWith("U|")) {
+                        String condition = buildUserPropertyCondition(property);
+                        if (StringUtils.isNotEmpty(condition)) {
+                            globalUserConditions.add(condition);
+                        }
+                    }
+                }
+            }
+            
+            // 构建最终的WHERE条件
+            List<String> finalConditions = new ArrayList<>();
+            
+            if (CollectionUtils.isNotEmpty(stepUserConditions)) {
+                if (step.getFilter() != null) {
+                    finalConditions.add("(" + Joiner.on(" " + step.getFilter().getRelation() + " ").join(stepUserConditions) + ")");
+                } else {
+                    finalConditions.addAll(stepUserConditions);
+                }
+            }
+            
+            if (CollectionUtils.isNotEmpty(globalUserConditions)) {
+                if (funnelAnalysisDto.getGlobalFilter() != null) {
+                    finalConditions.add("(" + Joiner.on(" " + funnelAnalysisDto.getGlobalFilter().getRelation() + " ").join(globalUserConditions) + ")");
+                } else {
+                    finalConditions.addAll(globalUserConditions);
+                }
+            }
+            
+            if (CollectionUtils.isNotEmpty(finalConditions)) {
+                sql.append(Joiner.on(" AND ").join(finalConditions));
             }
         }
     }
@@ -1565,36 +1752,86 @@ public class FunnelAnalysisUtil {
      * 获取字段的实际类型
      */
     private Integer getActualColumnType(String propertyName) {
+        // 1. 处理公共属性 (C|)
         if (propertyName.startsWith("C|")) {
             String commonColumn = propertyName.substring(2);
             // 从MetadataUtil获取公共属性的实际类型
             Map<String, String> commonProsMap = metadataUtil.getCommonProsMap();
             String actualType = commonProsMap.get(commonColumn);
             if (actualType != null) {
-                switch (actualType.toLowerCase()) {
-                    case "string":
-                        return 2;
-                    case "int":
-                    case "long":
-                        return 0;
-                    case "double":
-                    case "number":
-                        return 1;
-                    case "bool":
-                    case "boolean":
-                        return 6;
-                    case "datetime":
-                        return 5;
-                    case "list":
-                        return 3;
-                    case "map":
-                        return 4;
-                    default:
-                        return 2; // 默认为字符串类型
-                }
+                return convertTypeStringToInteger(actualType);
             }
         }
-        return null; // 非公共属性，使用操作类型
+        
+        // 2. 处理用户属性 (U|)
+        if (propertyName.startsWith("U|")) {
+            String profileColumn = propertyName.substring(2);
+            try {
+                MetadataProfileColumn metadataProfileColumn = iMetadataProfileColumnService.selectByName(profileColumn);
+                if (metadataProfileColumn != null) {
+                    return Integer.valueOf(metadataProfileColumn.getType());
+                }
+            } catch (Exception e) {
+                log.warn("查询用户画像列类型失败: {}", profileColumn, e);
+            }
+        }
+        
+        // 3. 处理维度属性 (D|)
+        if (propertyName.startsWith("D|")) {
+            // 维度属性通常需要查询DimColumn表
+            return 2; // 默认字符串类型
+        }
+        
+        // 4. 处理私有属性
+        try {
+            // 尝试查询该属性的元数据信息
+            MetadataEventProperty metadataEventProperty = iMetadataEventPropertyService.selectByEventAndName("all", propertyName);
+            if (metadataEventProperty != null && StringUtils.isNotEmpty(metadataEventProperty.getType())) {
+                return convertTypeStringToInteger(metadataEventProperty.getType());
+            }
+        } catch (Exception e) {
+            log.debug("查询私有属性类型失败: {}, 使用默认类型", propertyName, e);
+        }
+        
+        // 5. 默认情况：返回null，让上层使用操作类型
+        return null;
+    }
+    
+    /**
+     * 将类型字符串转换为整数类型
+     */
+    private Integer convertTypeStringToInteger(String typeString) {
+        if (StringUtils.isEmpty(typeString)) {
+            return 2; // 默认为字符串类型
+        }
+        
+        switch (typeString.toLowerCase()) {
+            case "string":
+                return 2;
+            case "int":
+            case "long":
+            case "integer":
+                return 0;
+            case "double":
+            case "number":
+            case "float":
+                return 1;
+            case "bool":
+            case "boolean":
+                return 6;
+            case "datetime":
+            case "date":
+            case "timestamp":
+                return 5;
+            case "list":
+            case "array":
+                return 3;
+            case "map":
+            case "object":
+                return 4;
+            default:
+                return 2; // 默认为字符串类型
+        }
     }
     
     /**
@@ -1647,6 +1884,8 @@ public class FunnelAnalysisUtil {
         return "";
     }
     
+    
+
     /**
      * 获取用户属性的实际类型
      */
@@ -1668,5 +1907,62 @@ public class FunnelAnalysisUtil {
         }
         
         return 2; // 默认为字符串类型
+    }
+
+    /**
+     * 测试时间窗口修复的方法
+     * 验证第一步不加时间窗，从第二步开始加时间窗
+     */
+    public String testTimeWindowFix() {
+        // 创建测试用的漏斗分析DTO
+        FunnelAnalysisDto testDto = new FunnelAnalysisDto();
+        testDto.setTimeValues("2025-10-07,2025-10-14");
+        testDto.setWindowType(0); // 自定义天数
+        testDto.setWindowPeriod(2); // 2天窗口期
+        
+        // 创建测试步骤
+        List<FunnelStepDto> steps = new ArrayList<>();
+        
+        FunnelStepDto step1 = new FunnelStepDto();
+        step1.setEventName("FT45113");
+        step1.setEventAlias("步骤1");
+        steps.add(step1);
+        
+        FunnelStepDto step2 = new FunnelStepDto();
+        step2.setEventName("FT45114");
+        step2.setEventAlias("步骤2");
+        steps.add(step2);
+        
+        FunnelStepDto step3 = new FunnelStepDto();
+        step3.setEventName("FT45115");
+        step3.setEventAlias("步骤3");
+        steps.add(step3);
+        
+        testDto.setFunnelSteps(steps);
+        
+        // 生成SQL
+        String sql = generateFunnelAnalysisSql(testDto);
+        
+        log.info("=== 时间窗口修复测试 ===");
+        log.info("测试参数: 时间范围=2025-10-07~2025-10-14, 窗口期=3天");
+        log.info("期望结果:");
+        log.info("  步骤1: proc_date >= '20251007' AND proc_date <= '20251014' (原始范围，不加时间窗)");
+        log.info("  步骤2: proc_date >= '20251007' AND proc_date <= '20251017' (原始+3天)");
+        log.info("  步骤3: proc_date >= '20251007' AND proc_date <= '20251020' (原始+6天)");
+        log.info("生成的SQL:");
+        log.info(sql);
+        
+        // 验证每一步的时间范围
+        boolean step1Correct = sql.contains("proc_date >= '20251007' AND proc_date <= '20251014'");
+        boolean step2Correct = sql.contains("proc_date >= '20251007' AND proc_date <= '20251017'");
+        boolean step3Correct = sql.contains("proc_date >= '20251007' AND proc_date <= '20251020'");
+        
+        log.info("验证结果:");
+        log.info("  步骤1: {}", step1Correct ? "通过" : "失败");
+        log.info("  步骤2: {}", step2Correct ? "通过" : "失败");
+        log.info("  步骤3: {}", step3Correct ? "通过" : "失败");
+        log.info("总体结果: {}", (step1Correct && step2Correct && step3Correct) ? "通过" : "失败");
+        
+        return sql;
     }
 }
