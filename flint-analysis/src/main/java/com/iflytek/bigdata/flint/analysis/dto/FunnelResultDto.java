@@ -34,6 +34,11 @@ public class FunnelResultDto {
     private List<String> timeSeries;
 
     /**
+     * 时间序列详细数据（用于趋势图）
+     */
+    private List<FunnelTimeSeriesDto> timeSeriesData;
+
+    /**
      * 分组维度
      */
     private List<String> groupByFields;

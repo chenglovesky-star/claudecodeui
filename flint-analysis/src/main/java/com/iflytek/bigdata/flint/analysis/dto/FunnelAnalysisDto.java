@@ -27,6 +27,11 @@ public class FunnelAnalysisDto {
     private Integer windowPeriod = 7;
 
     /**
+     * 时间窗口类型：0-自定义天数，1-首日，2-次日
+     */
+    private Integer windowType = 0;
+
+    /**
      * 漏斗步骤配置
      */
     private List<FunnelStepDto> funnelSteps;
