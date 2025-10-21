@@ -219,7 +219,6 @@ public class FunnelAnalysisUtil {
         if (windowType == null) windowType = 0; // 默认为自定义天数
         
         if (windowType == 0) {
-            // 自定义天数：验证窗口期（一天、七天等）
             if (funnelAnalysisDto.getWindowPeriod() != null && funnelAnalysisDto.getWindowPeriod() <= 0) {
                 throw new IllegalArgumentException("窗口期必须大于0");
             }
@@ -763,9 +762,12 @@ public class FunnelAnalysisUtil {
             }
         }
 
-        // 时间维度处理
-        String timeFormat = getTimeFormat(funnelAnalysisDto.getTimeBucket());
-        sql.append(timeFormat).append(" as time_bucket, ");
+        // 时间维度处理 - 只要不是累计模式就添加时间维度
+        boolean hasTimeBucket = funnelAnalysisDto.getTimeBucket() != null && funnelAnalysisDto.getTimeBucket() != 5;
+        if (hasTimeBucket) {
+            String timeFormat = getTimeFormat(funnelAnalysisDto.getTimeBucket());
+            sql.append(timeFormat).append(" as time_bucket, ");
+        }
 
         // 各步骤的统计 - 根据漏斗类型决定统计方式
         for (int i = 1; i <= stepQueries.size(); i++) {
@@ -810,22 +812,31 @@ public class FunnelAnalysisUtil {
             }
         }
 
-        // GROUP BY子句
-        sql.append(" GROUP BY ");
-        if (CollectionUtils.isNotEmpty(groupByFields) && !groupByFields.contains(ALL)) {
-            String groupByClause = buildGroupByClause(groupByFields);
-            if (StringUtils.isNotEmpty(groupByClause)) {
-                sql.append(groupByClause).append(", ");
+        // GROUP BY子句 - 只要有分组字段或时间维度就添加GROUP BY
+        boolean hasGroupBy = CollectionUtils.isNotEmpty(groupByFields) && !groupByFields.contains(ALL);
+        
+        if (hasGroupBy || hasTimeBucket) {
+            sql.append(" GROUP BY ");
+            if (hasGroupBy) {
+                String groupByClause = buildGroupByClause(groupByFields);
+                if (StringUtils.isNotEmpty(groupByClause)) {
+                    sql.append(groupByClause).append(", ");
+                }
+            }
+            if (hasTimeBucket) {
+                String timeFormat = getTimeFormat(funnelAnalysisDto.getTimeBucket());
+                sql.append(timeFormat);
             }
         }
-        sql.append(timeFormat);
 
-        // ORDER BY子句
-        sql.append(" ORDER BY time_bucket");
-        if (CollectionUtils.isNotEmpty(groupByFields) && !groupByFields.contains(ALL)) {
-            // 使用SELECT子句中的别名，而不是表字段引用
-            for (String field : groupByFields) {
-                sql.append(", `").append(field).append("`");
+        // ORDER BY子句 - 只有在有GROUP BY时才添加ORDER BY
+        if (hasGroupBy || hasTimeBucket) {
+            sql.append(" ORDER BY time_bucket");
+            if (hasGroupBy) {
+                // 使用SELECT子句中的别名，而不是表字段引用
+                for (String field : groupByFields) {
+                    sql.append(", `").append(field).append("`");
+                }
             }
         }
 
