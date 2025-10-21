@@ -120,16 +120,4 @@ public class FunnelAnalysisController {
         }
     }
 
-    @ApiOperation(value = "测试数据解析", notes = "用于调试数据解析逻辑")
-    @GetMapping("/test/parsing")
-    @ResponseBody
-    public Response testDataParsing() {
-        try {
-            funnelAnalysisUtil.testDataParsing();
-            return new Response("数据解析测试完成，请查看日志");
-        } catch (Exception e) {
-            log.error("数据解析测试失败", e);
-            return new Response(1, "测试失败：" + e.getMessage());
-        }
-    }
 } 
