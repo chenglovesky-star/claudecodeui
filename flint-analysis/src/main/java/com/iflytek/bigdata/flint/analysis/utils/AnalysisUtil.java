@@ -794,14 +794,14 @@ public class AnalysisUtil {
                             ")u on events.uid = u.uid and events.starttime>u.starttime and events.starttime<u.endtime) eu ";
                     if (groupByDim || joinDim) {
                         String partitionWhere = StringUtils.isNotEmpty(dim.getPartition()) ? " where " + dim.getPartition() + "='" + lastPdate + "'" : "";
-                        joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid and events.proc_date = u.proc_date left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
+                        joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
                     }
                 } else {
                     //组装事件表和画像表
-                    joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid and events.proc_date = u.proc_date) eu ";
+                    joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid) eu ";
                     if (groupByDim || joinDim) {
                         String partitionWhere = StringUtils.isNotEmpty(dim.getPartition()) ? " where " + dim.getPartition() + "='" + lastPdate + "'" : "";
-                        joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid and events.proc_date = u.proc_date left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
+                        joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
                     }
                 }
                 System.out.println(finalSql);
