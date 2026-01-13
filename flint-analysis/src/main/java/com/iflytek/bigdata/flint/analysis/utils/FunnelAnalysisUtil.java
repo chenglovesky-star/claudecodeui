@@ -1,6 +1,6 @@
 package com.iflytek.bigdata.flint.analysis.utils;
 
-import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Joiner;
 import com.iflytek.bigdata.flint.analysis.dao.model.ImpalaQueryHistory;
@@ -44,9 +44,6 @@ import java.util.stream.Collectors;
 public class FunnelAnalysisUtil {
 
     @Autowired
-    private AnalysisUtil analysisUtil;
-
-    @Autowired
     private IImpalaQueryHistoryService iImpalaQueryHistoryService;
 
     @Autowired
@@ -64,11 +61,6 @@ public class FunnelAnalysisUtil {
     @Autowired
     private MetadataUtil metadataUtil;
 
-    @Autowired
-    private IDimService iDimService;
-
-    @Autowired
-    private IDimColumnService iDimColumnService;
 
     @Autowired
     private IMetadataProfileColumnService iMetadataProfileColumnService;
@@ -82,14 +74,18 @@ public class FunnelAnalysisUtil {
     @Autowired
     private IOperationService iOperationService;
     
+    @Autowired
+    private IDimColumnService iDimColumnService;
+    
+    @Autowired
+    private IDimService iDimService;
+    
     @Value("${hive.engine:STARROCKS}")
     private String hiveEngine;
 
     private static final String CACHE_KEY = "funnel_analysis_cache_";
     private static final String STARROCKS = "STARROCKS";
     private static final String ALL = "all";
-    private static final String ALL_CN = "全部";
-    private static final String GROUP_IDS_COLUMN = "group_ids";
 
     /**
      * 生成漏斗分析SQL
@@ -123,7 +119,7 @@ public class FunnelAnalysisUtil {
                 try {
                     // 为每个步骤计算合适的日期范围，考虑时间窗口
                     String stepDateCondition = buildStepDateCondition(startDate, endDate, i, funnelAnalysisDto);
-                    String stepQuery = buildStepQueryUsingAnalysisUtil(step, i + 1, stepDateCondition, funnelAnalysisDto);
+                    String stepQuery = buildStepQueryDirectly(step, i + 1, stepDateCondition, funnelAnalysisDto);
                     stepQueries.add(stepQuery);
                     log.debug("步骤{} SQL生成成功: {}", i + 1, stepQuery);
                 } catch (Exception e) {
@@ -142,15 +138,20 @@ public class FunnelAnalysisUtil {
             throw new RuntimeException("生成漏斗分析SQL失败: " + e.getMessage(), e);
         }
     }
-    
+
     /**
      * 为每个步骤构建合适的日期范围条件，考虑时间窗口
      * 第一步不加时间窗，从第二步开始加时间窗
+     * 确保每一步的结束日期都不超过当前日期
      */
     private String buildStepDateCondition(String startDate, String endDate, int stepIndex, FunnelAnalysisDto funnelAnalysisDto) {
+        // 获取当前日期（YYYYMMDD格式），确保结束日期不超过当前日期
+        String currentDate = DateUtil.DateToString(new Date(), DateStyle.YYYYMMDD);
+        
         // 第一步使用原始时间范围，不加时间窗
         if (stepIndex == 0) {
-            return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, endDate);
+            String finalEndDate = compareAndGetMinDate(endDate, currentDate);
+            return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, finalEndDate);
         }
         
         // 获取时间窗口类型和窗口期
@@ -159,16 +160,19 @@ public class FunnelAnalysisUtil {
         
         if (windowType == 1) {
             // 首日：所有步骤都使用相同的日期范围
-            return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, endDate);
+            String finalEndDate = compareAndGetMinDate(endDate, currentDate);
+            return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, finalEndDate);
         } else if (windowType == 2) {
             // 次日：所有步骤都使用相同的日期范围
-            return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, endDate);
+            String finalEndDate = compareAndGetMinDate(endDate, currentDate);
+            return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, finalEndDate);
         } else {
             // 自定义天数：从第二步开始考虑时间窗口扩展
             Integer windowPeriod = funnelAnalysisDto.getWindowPeriod();
             if (windowPeriod == null || windowPeriod <= 0) {
                 // 如果没有设置窗口期，使用原始时间范围
-                return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, endDate);
+                String finalEndDate = compareAndGetMinDate(endDate, currentDate);
+                return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, finalEndDate);
             }
             
             // 计算该步骤的最大时间窗口
@@ -178,11 +182,26 @@ public class FunnelAnalysisUtil {
             // 扩展结束日期
             String extendedEndDate = DateUtil.addDay(endDate, maxWindowDays);
             
-            log.info("步骤{}日期范围计算: 原始范围={}~{}, 窗口期={}, 扩展天数={}, 最终范围={}~{}", 
-                    stepIndex + 1, startDate, endDate, windowPeriod, maxWindowDays, startDate, extendedEndDate);
+            // 确保扩展后的结束日期不超过当前日期
+            String finalEndDate = compareAndGetMinDate(extendedEndDate, currentDate);
             
-            return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, extendedEndDate);
+            log.info("步骤{}日期范围计算: 原始范围={}~{}, 窗口期={}, 扩展天数={}, 扩展后日期={}, 当前日期={}, 最终范围={}~{}", 
+                    stepIndex + 1, startDate, endDate, windowPeriod, maxWindowDays, extendedEndDate, currentDate, startDate, finalEndDate);
+            
+            return String.format(" proc_date >= '%s' AND proc_date <= '%s' ", startDate, finalEndDate);
         }
+    }
+    
+    /**
+     * 比较两个日期字符串（YYYYMMDD格式），返回较小的日期
+     */
+    private String compareAndGetMinDate(String date1, String date2) {
+        if (StringUtils.isEmpty(date1) || StringUtils.isEmpty(date2)) {
+            return StringUtils.isEmpty(date1) ? date2 : date1;
+        }
+        
+        // 直接比较字符串（YYYYMMDD格式可以直接字符串比较）
+        return date1.compareTo(date2) <= 0 ? date1 : date2;
     }
     
     /**
@@ -216,7 +235,7 @@ public class FunnelAnalysisUtil {
         
         // 验证窗口期和时间窗口类型
         Integer windowType = funnelAnalysisDto.getWindowType();
-        if (windowType == null) windowType = 0; // 默认为自定义天数
+        if (windowType == null) windowType = 0;
         
         if (windowType == 0) {
             if (funnelAnalysisDto.getWindowPeriod() != null && funnelAnalysisDto.getWindowPeriod() <= 0) {
@@ -236,15 +255,6 @@ public class FunnelAnalysisUtil {
         }
     }
 
-    /**
-     * 使用 AnalysisUtil 构建单个步骤的查询SQL
-     */
-    private String buildStepQueryUsingAnalysisUtil(FunnelStepDto step, int stepNumber, String dateCondition, FunnelAnalysisDto funnelAnalysisDto) {
-        // 将漏斗步骤转换为事件分析参数
-        EventDetailDto eventDetail = convertStepToEventDetail(step, funnelAnalysisDto);
-
-        return buildStepQueryDirectly(step, stepNumber, dateCondition, funnelAnalysisDto);
-    }
 
     /**
      * 直接构建步骤查询SQL
@@ -278,6 +288,78 @@ public class FunnelAnalysisUtil {
         
         log.info("实验分组检测 - isExp: {}, expGroupId: {}", isExp, expGroupId);
         
+        // 检测维度
+        Dim dim = null;
+        String dimSelectColumn = "";
+        boolean groupByDim = false;
+        boolean joinDim = false;
+        
+        // 检查分组字段中的维度
+        if (CollectionUtils.isNotEmpty(funnelAnalysisDto.getGroupBy())) {
+            for (String groupField : funnelAnalysisDto.getGroupBy()) {
+                if (groupField.startsWith("D|")) {
+                    String value = groupField.substring(2);
+                    try {
+                        Integer columnId = Integer.valueOf(value);
+                        DimColumn dimColumn = iDimColumnService.selectById(columnId);
+                        if (dimColumn != null) {
+                            dim = iDimService.selectById(dimColumn.getDimId());
+                            dimSelectColumn = ",d." + dimColumn.getName() + " as dim_column";
+                            groupByDim = true;
+                            break;
+                        }
+                    } catch (Exception e) {
+                        log.warn("解析维度列ID失败: {}", value, e);
+                    }
+                }
+            }
+        }
+        
+        // 检查筛选条件中的维度
+        if (dim == null) {
+            // 检查步骤筛选条件
+            if (step.getFilter() != null && CollectionUtils.isNotEmpty(step.getFilter().getSubFilters())) {
+                for (EventPropertyDto property : step.getFilter().getSubFilters()) {
+                    if (property.getPropertyName().startsWith("D|")) {
+                        String value = property.getPropertyName().substring(2);
+                        try {
+                            Integer columnId = Integer.valueOf(value);
+                            DimColumn dimColumn = iDimColumnService.selectById(columnId);
+                            if (dimColumn != null) {
+                                dim = iDimService.selectById(dimColumn.getDimId());
+                                dimSelectColumn = ",d." + dimColumn.getName() + " as dim_column";
+                                joinDim = true;
+                                break;
+                            }
+                        } catch (Exception e) {
+                            log.warn("解析维度列ID失败: {}", value, e);
+                        }
+                    }
+                }
+            }
+            
+            // 检查全局筛选条件
+            if (dim == null && funnelAnalysisDto.getGlobalFilter() != null && CollectionUtils.isNotEmpty(funnelAnalysisDto.getGlobalFilter().getSubFilters())) {
+                for (EventPropertyDto property : funnelAnalysisDto.getGlobalFilter().getSubFilters()) {
+                    if (property.getPropertyName().startsWith("D|")) {
+                        String value = property.getPropertyName().substring(2);
+                        try {
+                            Integer columnId = Integer.valueOf(value);
+                            DimColumn dimColumn = iDimColumnService.selectById(columnId);
+                            if (dimColumn != null) {
+                                dim = iDimService.selectById(dimColumn.getDimId());
+                                dimSelectColumn = ",d." + dimColumn.getName() + " as dim_column";
+                                joinDim = true;
+                                break;
+                            }
+                        } catch (Exception e) {
+                            log.warn("解析维度列ID失败: {}", value, e);
+                        }
+                    }
+                }
+            }
+        }
+        
         // 检测是否需要JOIN用户表
         boolean needJoinUser = checkNeedJoinUser(step, funnelAnalysisDto);
         List<String> userColumns = new ArrayList<>();
@@ -285,6 +367,26 @@ public class FunnelAnalysisUtil {
         if (needJoinUser) {
             userColumns = collectUserColumns(step, funnelAnalysisDto);
         }
+        
+        // 准备用户列字符串
+        Set<String> userColumnSet = new HashSet<>(userColumns);
+        userColumnSet.remove("uid"); // 单独处理画像的属性user_id造成的冲突
+        String selectUserColumns = "";
+        if (CollectionUtils.isNotEmpty(userColumnSet)) {
+            selectUserColumns = "," + Joiner.on(",").join(userColumnSet);
+        }
+        
+        if (isExp && userColumnSet.contains("expinfo")) {
+            userColumnSet.remove("expinfo");
+            userColumnSet.add("groupid as expinfo");
+        }
+        String formatSelectUserColumns = selectUserColumns;
+        if (CollectionUtils.isNotEmpty(userColumnSet)) {
+            formatSelectUserColumns = "," + Joiner.on(",").join(userColumnSet);
+        }
+        
+        // 获取最后的分区日期
+        String lastPdate = DateUtil.DateToString(DateUtil.addDay(new Date(), -1), DateStyle.YYYY_MM_DD);
         
         StringBuilder sql = new StringBuilder();
         
@@ -323,60 +425,56 @@ public class FunnelAnalysisUtil {
                         } else {
                             sql.append(", ifly_map_get(events.tags,'").append(commonColumn).append("') as `").append(groupField).append("`");
                         }
-                    } else if (!groupField.startsWith("U|") && !groupField.startsWith("D|")) {
+                    } else if (groupField.startsWith("D|")) {
+                        sql.append(", events.dim_column as `").append(groupField).append("`");
+                    } else if (!groupField.startsWith("U|")) {
                         sql.append(", ifly_map_get(events.tags,'").append(groupField).append("') as `").append(groupField).append("`");
                     }
                 }
             }
             
-            sql.append(" FROM (");
-            
-            // 构建事件表子查询
-            sql.append("SELECT ").append(buildEventSelectColumns(userColumns))
-               .append(" FROM ").append(analysisConfig.getEventsTable())
-               .append(" WHERE 1=1 AND ").append(dateCondition);
+            // 构建事件表
+            String eventTable = "( select " + buildEventSelectColumns(userColumns) + " from " + analysisConfig.getEventsTable() + " where 1=1 and " + dateCondition;
             
             // 添加事件名称条件
-            addEventNameCondition(sql, step);
+            StringBuilder eventTableBuilder = new StringBuilder(eventTable);
+            addEventNameCondition(eventTableBuilder, step);
             
             // 添加事件属性过滤
-            addEventFilterConditions(sql, step, new ArrayList<>());
+            addEventFilterConditions(eventTableBuilder, step, new ArrayList<>());
             
             // 添加全局过滤条件（只包含事件表字段的条件）
-            addEventTableGlobalFilterConditions(sql, funnelAnalysisDto);
+            addEventTableGlobalFilterConditions(eventTableBuilder, funnelAnalysisDto);
             
-            sql.append(") events");
+            eventTableBuilder.append(" ) events");
+            eventTable = eventTableBuilder.toString();
             
-            // JOIN用户画像表或AB实验表
+            // 组装事件表和画像表
+            String joinTable = "";
             if (isExp) {
                 // 特殊处理AB实验
-                sql.append(" JOIN (");
-                sql.append("SELECT DISTINCT uid, proc_date");
-                if (CollectionUtils.isNotEmpty(userColumns)) {
-                    // 处理实验分组的特殊列名映射
-                    List<String> formatUserColumns = new ArrayList<>();
-                    for (String userColumn : userColumns) {
-                        if ("expinfo".equals(userColumn)) {
-                            formatUserColumns.add("groupid as expinfo");
-                        } else {
-                            formatUserColumns.add(userColumn);
-                        }
-                    }
-                    sql.append(", ").append(Joiner.on(", ").join(formatUserColumns));
+                if (groupByDim || joinDim) {
+                    // 有维度时，使用profileTable
+                    String partitionWhere = StringUtils.isNotEmpty(dim.getPartition()) ? " where " + dim.getPartition() + "='" + lastPdate + "'" : "";
+                    joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
+                } else {
+                    // 组装事件表和AB实验表，使用starttime和endtime进行时间范围匹配
+                    joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + " join " +
+                            "( select uid, starttime, endtime" + formatSelectUserColumns + " from " + analysisConfig.getAbtestTable() +
+                            " where expid = " + expGroupId +
+                            ")u on events.uid = u.uid and events.starttime>u.starttime and events.starttime<u.endtime) eu ";
                 }
-                sql.append(" FROM ").append(analysisConfig.getAbtestTable())
-                   .append(" WHERE expid = ").append(expGroupId).append(" AND ").append(dateCondition)
-                   .append(") u ON events.uid = u.uid AND events.proc_date = u.proc_date");
             } else {
                 // 普通用户画像表JOIN
-                sql.append(" JOIN (");
-                sql.append("SELECT uid, proc_date");
-                if (CollectionUtils.isNotEmpty(userColumns)) {
-                    sql.append(", ").append(Joiner.on(", ").join(userColumns));
+                if (groupByDim || joinDim) {
+                    String partitionWhere = StringUtils.isNotEmpty(dim.getPartition()) ? " where " + dim.getPartition() + "='" + lastPdate + "'" : "";
+                    joinTable = " ( select  events.*" + selectUserColumns + dimSelectColumn + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
+                } else {
+                    joinTable = " ( select  events.*" + selectUserColumns + " from " + eventTable + " join ( select uid, proc_date" + selectUserColumns + " from " + analysisConfig.getProfileTable() + " ) u on events.uid = u.uid) eu ";
                 }
-                sql.append(" FROM ").append(analysisConfig.getProfileTable())
-                   .append(") u ON events.uid = u.uid AND events.proc_date = u.proc_date");
             }
+            
+            sql.append(" FROM ").append(joinTable);
             
             // 在JOIN后添加用户属性相关的过滤条件
             addUserPropertyFilterConditions(sql, step, funnelAnalysisDto);
@@ -396,7 +494,7 @@ public class FunnelAnalysisUtil {
                    .append(stepNumber).append("' as step_name");
             }
             
-            // 添加分组字段（如果有的话）
+            // 添加分组字段
             if (CollectionUtils.isNotEmpty(funnelAnalysisDto.getGroupBy())) {
                 for (String groupField : funnelAnalysisDto.getGroupBy()) {
                     if (groupField.startsWith("C|")) {
@@ -408,23 +506,38 @@ public class FunnelAnalysisUtil {
                         } else {
                             sql.append(", ifly_map_get(tags,'").append(commonColumn).append("') as `").append(groupField).append("`");
                         }
-                    } else if (!groupField.startsWith("U|") && !groupField.startsWith("D|")) {
+                    } else if (groupField.startsWith("D|")) {
+                        sql.append(", dim_column as `").append(groupField).append("`");
+                    } else if (!groupField.startsWith("U|")) {
                         sql.append(", ifly_map_get(tags,'").append(groupField).append("') as `").append(groupField).append("`");
                     }
                 }
             }
             
-            sql.append(" FROM ").append(analysisConfig.getEventsTable())
-               .append(" WHERE 1=1 AND ").append(dateCondition);
+            // 构建事件表
+            String eventTable = "( select uid, starttime, proc_date, opcode, tags from " + analysisConfig.getEventsTable() + " where 1=1 and " + dateCondition;
             
+            StringBuilder eventTableBuilder = new StringBuilder(eventTable);
             // 添加事件名称条件
-            addEventNameCondition(sql, step);
+            addEventNameCondition(eventTableBuilder, step);
             
             // 添加事件属性过滤
-            addEventFilterConditions(sql, step, new ArrayList<>());
+            addEventFilterConditions(eventTableBuilder, step, new ArrayList<>());
             
             // 添加全局过滤条件
-            addEventTableGlobalFilterConditions(sql, funnelAnalysisDto);
+            addEventTableGlobalFilterConditions(eventTableBuilder, funnelAnalysisDto);
+            
+            eventTableBuilder.append(" ) events");
+            eventTable = eventTableBuilder.toString();
+            
+            // 如果有维度，需要LEFT JOIN维度表
+            if (groupByDim || joinDim) {
+                String partitionWhere = StringUtils.isNotEmpty(dim.getPartition()) ? " where " + dim.getPartition() + "='" + lastPdate + "'" : "";
+                String joinTable = " ( select  events.*" + dimSelectColumn + " from " + eventTable + "  left join (select * from " + dim.getHiveTableName() + partitionWhere + ") d on d." + dim.getDimColumn() + "=ifly_map_get(events.tags,'" + dim.getProperty() + "')) eu ";
+                sql.append(" FROM ").append(joinTable);
+            } else {
+                sql.append(" FROM ").append(eventTable);
+            }
         }
         
         return sql.toString();
@@ -586,18 +699,6 @@ public class FunnelAnalysisUtil {
     }
     
     /**
-     * 添加全局过滤条件（只包含事件表字段的条件）
-     */
-    private void addGlobalFilterConditions(StringBuilder sql, FunnelAnalysisDto funnelAnalysisDto, List<String> userColumns) {
-        if (funnelAnalysisDto.getGlobalFilter() != null) {
-            String globalFilterSql = buildEventTableGlobalFilterSql(funnelAnalysisDto.getGlobalFilter());
-            if (StringUtils.isNotEmpty(globalFilterSql)) {
-                sql.append(" AND (").append(globalFilterSql).append(")");
-            }
-        }
-    }
-
-    /**
      * 添加事件表全局过滤条件（只包含事件表字段的条件）
      */
     private void addEventTableGlobalFilterConditions(StringBuilder sql, FunnelAnalysisDto funnelAnalysisDto) {
@@ -621,28 +722,6 @@ public class FunnelAnalysisUtil {
         VirtualEventWithBLOBs virtualEvent = iVirtualEventService.selectByName(eventName);
         if (virtualEvent != null) {
             return virtualEvent.getEventSql();
-        }
-        return "";
-    }
-
-    /**
-     * 构建事件过滤条件SQL
-     */
-    private String buildEventFilterSql(PropertyFilterDto filter) {
-        if (filter == null || CollectionUtils.isEmpty(filter.getSubFilters())) {
-            return "";
-        }
-
-        List<String> conditions = new ArrayList<>();
-        for (EventPropertyDto property : filter.getSubFilters()) {
-            String condition = buildPropertyCondition(property);
-            if (StringUtils.isNotEmpty(condition)) {
-                conditions.add(condition);
-            }
-        }
-
-        if (CollectionUtils.isNotEmpty(conditions)) {
-            return Joiner.on(" " + filter.getRelation() + " ").join(conditions);
         }
         return "";
     }
@@ -712,28 +791,6 @@ public class FunnelAnalysisUtil {
     }
 
     /**
-     * 构建全局筛选条件SQL
-     */
-    private String buildGlobalFilterSql(PropertyFilterDto globalFilter) {
-        if (globalFilter == null || CollectionUtils.isEmpty(globalFilter.getSubFilters())) {
-            return "";
-        }
-        
-        List<String> filterSqls = new ArrayList<>();
-        for (EventPropertyDto subFilter : globalFilter.getSubFilters()) {
-            String condition = buildPropertyCondition(subFilter);
-            if (StringUtils.isNotEmpty(condition)) {
-                filterSqls.add(condition);
-            }
-        }
-        
-        if (CollectionUtils.isNotEmpty(filterSqls)) {
-            return Joiner.on(" " + globalFilter.getRelation() + " ").join(filterSqls);
-        }
-        return "";
-    }
-
-    /**
      * 构建最终的漏斗分析SQL
      */
     private String buildFunnelSql(List<String> stepQueries, FunnelAnalysisDto funnelAnalysisDto) {
@@ -753,7 +810,7 @@ public class FunnelAnalysisUtil {
         // 构建漏斗主查询
         sql.append(" SELECT ");
         
-        // 分组字段处理 - 复用 AnalysisUtil 的逻辑
+        // 分组字段处理
         List<String> groupByFields = funnelAnalysisDto.getGroupBy();
         if (CollectionUtils.isNotEmpty(groupByFields) && !groupByFields.contains(ALL)) {
             String groupBySelect = buildGroupBySelect(groupByFields);
@@ -794,9 +851,15 @@ public class FunnelAnalysisUtil {
             if (windowType == 1) {
                 // 首日：只计算当日内的漏斗，不考虑事件先后顺序
                 sql.append(" AND DATE(step_1.starttime) = DATE(step_").append(i).append(".starttime)");
+                // 确保每一步的时间都不超过当前日期
+                sql.append(" AND DATE(step_1.starttime) <= CURRENT_DATE()");
+                sql.append(" AND DATE(step_").append(i).append(".starttime) <= CURRENT_DATE()");
             } else if (windowType == 2) {
                 // 次日：计算两日内的漏斗，不考虑事件先后顺序
                 sql.append(" AND DATE(step_").append(i).append(".starttime) BETWEEN DATE(step_1.starttime) AND DATE(step_1.starttime) + INTERVAL 1 DAY");
+                // 确保每一步的时间都不超过当前日期
+                sql.append(" AND DATE(step_1.starttime) <= CURRENT_DATE()");
+                sql.append(" AND DATE(step_").append(i).append(".starttime) <= CURRENT_DATE()");
             } else {
                 // 自定义天数：保持一天、七天等时间窗口的原有逻辑，考虑事件先后顺序和时间窗口
                 sql.append(" AND step_1.starttime <= step_").append(i).append(".starttime");
@@ -809,6 +872,9 @@ public class FunnelAnalysisUtil {
                     sql.append(" AND step_").append(i).append(".starttime <= step_1.starttime + INTERVAL ")
                        .append(windowPeriod).append(" DAY");
                 }
+                // 确保每一步的时间都不超过当前日期
+                sql.append(" AND DATE(step_1.starttime) <= CURRENT_DATE()");
+                sql.append(" AND DATE(step_").append(i).append(".starttime) <= CURRENT_DATE()");
             }
         }
 
@@ -844,7 +910,7 @@ public class FunnelAnalysisUtil {
     }
 
     /**
-     * 构建分组查询的SELECT部分 - 复用 AnalysisUtil 的逻辑
+     * 构建分组查询的SELECT部分
      */
     private String buildGroupBySelect(List<String> groupByFields) {
         List<String> selectFields = new ArrayList<>();
@@ -1052,7 +1118,8 @@ public class FunnelAnalysisUtil {
         FunnelResultDto result = new FunnelResultDto();
         
         try {
-            List<Map<String, Object>> rawData = JSONArray.parseObject(originResult, List.class);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> rawData = (List<Map<String, Object>>) (List<?>) JSON.parseArray(originResult, Map.class);
             
             // 提取步骤名称 - 优先使用eventAlias，否则使用eventName
             List<String> stepNames = originalRequest.getFunnelSteps().stream()
@@ -1199,7 +1266,7 @@ public class FunnelAnalysisUtil {
         // 按时间点排序
         timeSeriesDataList.sort(Comparator.comparing(FunnelTimeSeriesDto::getTimePoint));
         
-        return timeSeriesDataList;
+        return timeSeriesDataList;                           
     }
 
     /**
@@ -1207,7 +1274,6 @@ public class FunnelAnalysisUtil {
      */
     private String extractGroupKey(Map<String, Object> data) {
         // 这里需要根据实际的分组字段来提取键值
-        // 简化处理，实际需要根据具体的分组字段来实现
         return "default_group";
     }
 
@@ -1413,188 +1479,6 @@ public class FunnelAnalysisUtil {
         }
     }
 
-    /**
-     * 生成简化的漏斗分析SQL - 用于快速验证
-     * 根据基本的漏斗参数生成简化的SQL，便于调试和验证
-     * 
-     * @param steps 漏斗步骤列表
-     * @param timeRange 时间范围，格式："2024-01-01,2024-01-31"
-     * @param groupBy 分组字段列表（可选）
-     * @param windowPeriod 时间窗口（天，可选）
-     * @return 生成的简化SQL
-     */
-    public String generateSimpleFunnelSql(List<String> steps, String timeRange, List<String> groupBy, Integer windowPeriod) {
-        if (CollectionUtils.isEmpty(steps)) {
-            return "-- 漏斗步骤不能为空";
-        }
-
-        if (StringUtils.isEmpty(timeRange)) {
-            return "-- 时间范围不能为空";
-        }
-
-        try {
-            // 构建基础漏斗分析DTO
-            FunnelAnalysisDto dto = new FunnelAnalysisDto();
-            dto.setTimeValues(timeRange);
-            dto.setTimeBucket(0); // 默认按天
-            dto.setGroupBy(groupBy);
-            dto.setWindowPeriod(windowPeriod);
-
-            // 构建漏斗步骤
-            List<FunnelStepDto> funnelSteps = new ArrayList<>();
-            for (int i = 0; i < steps.size(); i++) {
-                FunnelStepDto step = new FunnelStepDto();
-                step.setEventName(steps.get(i));
-                step.setEventAlias("步骤" + (i + 1));
-                funnelSteps.add(step);
-            }
-            dto.setFunnelSteps(funnelSteps);
-
-            // 生成SQL
-            return generateFunnelAnalysisSql(dto);
-
-        } catch (Exception e) {
-            log.error("生成简化漏斗分析SQL失败", e);
-            return "-- 生成SQL失败：" + e.getMessage();
-        }
-    }
-
-    /**
-     * 验证漏斗分析参数并生成SQL
-     * 对前端传入的参数进行验证，并生成对应的SQL语句
-     * 
-     * @param requestJson 前端传入的JSON字符串
-     * @return 验证结果和生成的SQL
-     */
-    public Map<String, Object> validateAndGenerateSql(String requestJson) {
-        Map<String, Object> result = new HashMap<>();
-        
-        try {
-            // 解析JSON参数
-            FunnelAnalysisDto funnelAnalysisDto = JSONObject.parseObject(requestJson, FunnelAnalysisDto.class);
-            
-            if (funnelAnalysisDto == null) {
-                result.put("success", false);
-                result.put("message", "参数解析失败");
-                result.put("sql", "-- 参数解析失败");
-                return result;
-            }
-
-            // 参数验证
-            List<String> errors = new ArrayList<>();
-            
-            if (CollectionUtils.isEmpty(funnelAnalysisDto.getFunnelSteps())) {
-                errors.add("漏斗步骤不能为空");
-            }
-            
-            if (StringUtils.isEmpty(funnelAnalysisDto.getTimeValues())) {
-                errors.add("时间范围不能为空");
-            }
-            
-            if (funnelAnalysisDto.getTimeValues() != null && !funnelAnalysisDto.getTimeValues().contains(",")) {
-                errors.add("时间范围格式错误，应为：开始日期,结束日期");
-            }
-
-            if (!errors.isEmpty()) {
-                result.put("success", false);
-                result.put("message", String.join("; ", errors));
-                result.put("sql", "-- " + String.join("; ", errors));
-                return result;
-            }
-
-            // 生成SQL
-            String sql = generateFunnelAnalysisSql(funnelAnalysisDto);
-            
-            result.put("success", true);
-            result.put("message", "SQL生成成功");
-            result.put("sql", sql);
-            result.put("parameters", funnelAnalysisDto);
-            
-            return result;
-            
-        } catch (Exception e) {
-            log.error("验证参数并生成SQL失败", e);
-            result.put("success", false);
-            result.put("message", "处理失败：" + e.getMessage());
-            result.put("sql", "-- 处理失败：" + e.getMessage());
-            return result;
-        }
-    }
-
-    /**
-     * 将漏斗步骤转换为事件详情对象
-     */
-    private EventDetailDto convertStepToEventDetail(FunnelStepDto step, FunnelAnalysisDto funnelAnalysisDto) {
-        EventDetailDto eventDetail = new EventDetailDto();
-        eventDetail.setTimeValues(funnelAnalysisDto.getTimeValues());
-        eventDetail.setTimeBucket(funnelAnalysisDto.getTimeBucket());
-        eventDetail.setGroupBy(funnelAnalysisDto.getGroupBy());
-        eventDetail.setGlobalFilter(funnelAnalysisDto.getGlobalFilter());
-        
-        // 创建事件规则
-        EventRuleDto eventRule = new EventRuleDto();
-        eventRule.setEventName(step.getEventName());
-        eventRule.setFilter(step.getFilter());
-        
-        // 根据漏斗类型设置统计方式
-        if (funnelAnalysisDto.getFunnelType() != null && funnelAnalysisDto.getFunnelType() == 1) {
-            eventRule.setViewBy("count(1)"); // 按次数分析
-        } else {
-            eventRule.setViewBy("count(distinct uid)"); // 按人数分析
-        }
-        
-        eventDetail.setEventRules(Collections.singletonList(eventRule));
-        
-        return eventDetail;
-    }
-
-    /**
-     * 将事件分析SQL转换为漏斗步骤SQL
-     */
-    private String convertAnalysisSqlToStepSql(String analysisSql, int stepNumber, FunnelAnalysisDto funnelAnalysisDto) {
-        // 从事件分析SQL中提取核心查询部分，添加步骤标识
-        StringBuilder stepSql = new StringBuilder();
-        
-        // 根据漏斗类型决定是否使用DISTINCT
-        if (funnelAnalysisDto.getFunnelType() != null && funnelAnalysisDto.getFunnelType() == 1) {
-            // 按次数分析：不使用DISTINCT，保留所有记录
-            stepSql.append("SELECT uid, starttime, proc_date, ")
-                   .append(stepNumber).append(" as step_number, '")
-                   .append(stepNumber).append("' as step_name ");
-        } else {
-            // 按人数分析：使用DISTINCT，去重用户
-            stepSql.append("SELECT DISTINCT uid, starttime, proc_date, ")
-                   .append(stepNumber).append(" as step_number, '")
-                   .append(stepNumber).append("' as step_name ");
-        }
-        
-        // 从原始SQL中提取FROM和WHERE部分
-        String fromWherePart = extractFromWherePart(analysisSql);
-        stepSql.append(fromWherePart);
-        
-        return stepSql.toString();
-    }
-    
-    /**
-     * 从事件分析SQL中提取FROM和WHERE部分
-     */
-    private String extractFromWherePart(String analysisSql) {
-        // 简化处理：从原始SQL中提取FROM子句和WHERE条件
-        int fromIndex = analysisSql.toUpperCase().indexOf("FROM");
-        if (fromIndex == -1) {
-            return " FROM " + analysisConfig.getEventsTable() + " WHERE 1=1";
-        }
-        
-        String fromWherePart = analysisSql.substring(fromIndex);
-        
-        // 移除GROUP BY和ORDER BY部分，只保留FROM和WHERE
-        int groupByIndex = fromWherePart.toUpperCase().indexOf("GROUP BY");
-        if (groupByIndex != -1) {
-            fromWherePart = fromWherePart.substring(0, groupByIndex);
-        }
-        
-        return fromWherePart;
-    }
 
     /**
      * 获取列名 - 处理不同类型的属性前缀
@@ -1756,7 +1640,7 @@ public class FunnelAnalysisUtil {
         }
         
         // 默认等于条件
-        return "u." + userColumn + " = '" + operationValue + "'";
+        return "u." + userColumn + " = '" + operationValue + "'"; 
     }
     
     /**
@@ -1920,60 +1804,5 @@ public class FunnelAnalysisUtil {
         return 2; // 默认为字符串类型
     }
 
-    /**
-     * 测试时间窗口修复的方法
-     * 验证第一步不加时间窗，从第二步开始加时间窗
-     */
-    public String testTimeWindowFix() {
-        // 创建测试用的漏斗分析DTO
-        FunnelAnalysisDto testDto = new FunnelAnalysisDto();
-        testDto.setTimeValues("2025-10-07,2025-10-14");
-        testDto.setWindowType(0); // 自定义天数
-        testDto.setWindowPeriod(2); // 2天窗口期
-        
-        // 创建测试步骤
-        List<FunnelStepDto> steps = new ArrayList<>();
-        
-        FunnelStepDto step1 = new FunnelStepDto();
-        step1.setEventName("FT45113");
-        step1.setEventAlias("步骤1");
-        steps.add(step1);
-        
-        FunnelStepDto step2 = new FunnelStepDto();
-        step2.setEventName("FT45114");
-        step2.setEventAlias("步骤2");
-        steps.add(step2);
-        
-        FunnelStepDto step3 = new FunnelStepDto();
-        step3.setEventName("FT45115");
-        step3.setEventAlias("步骤3");
-        steps.add(step3);
-        
-        testDto.setFunnelSteps(steps);
-        
-        // 生成SQL
-        String sql = generateFunnelAnalysisSql(testDto);
-        
-        log.info("=== 时间窗口修复测试 ===");
-        log.info("测试参数: 时间范围=2025-10-07~2025-10-14, 窗口期=3天");
-        log.info("期望结果:");
-        log.info("  步骤1: proc_date >= '20251007' AND proc_date <= '20251014' (原始范围，不加时间窗)");
-        log.info("  步骤2: proc_date >= '20251007' AND proc_date <= '20251017' (原始+3天)");
-        log.info("  步骤3: proc_date >= '20251007' AND proc_date <= '20251020' (原始+6天)");
-        log.info("生成的SQL:");
-        log.info(sql);
-        
-        // 验证每一步的时间范围
-        boolean step1Correct = sql.contains("proc_date >= '20251007' AND proc_date <= '20251014'");
-        boolean step2Correct = sql.contains("proc_date >= '20251007' AND proc_date <= '20251017'");
-        boolean step3Correct = sql.contains("proc_date >= '20251007' AND proc_date <= '20251020'");
-        
-        log.info("验证结果:");
-        log.info("  步骤1: {}", step1Correct ? "通过" : "失败");
-        log.info("  步骤2: {}", step2Correct ? "通过" : "失败");
-        log.info("  步骤3: {}", step3Correct ? "通过" : "失败");
-        log.info("总体结果: {}", (step1Correct && step2Correct && step3Correct) ? "通过" : "失败");
-        
-        return sql;
-    }
+   
 }
