@@ -1118,17 +1118,98 @@ public class FunnelAnalysisUtil {
         FunnelResultDto result = new FunnelResultDto();
         
         try {
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> rawData = (List<Map<String, Object>>) (List<?>) JSON.parseArray(originResult, Map.class);
+            log.info("开始解析漏斗分析结果，原始结果长度: {}", originResult != null ? originResult.length() : 0);
+            log.debug("原始结果前500字符: {}", originResult != null && originResult.length() > 500 ? originResult.substring(0, 500) + "..." : originResult);
+            
+            // 解析原始结果 - 处理可能的嵌套数组结构
+            List<Map<String, Object>> rawData = null;
+            if (StringUtils.isNotEmpty(originResult)) {
+                try {
+                    // 先尝试解析为JSON（可能是嵌套数组）
+                    Object parsedObj = JSON.parse(originResult);
+                    log.info("解析后的对象类型: {}", parsedObj != null ? parsedObj.getClass().getName() : "null");
+                    
+                    // 处理嵌套数组的情况（AnalysisQueryTask返回List<JSONArray>，格式为[[{...}]]
+                    if (parsedObj instanceof List) {
+                        List<?> parsedList = (List<?>) parsedObj;
+                        log.info("第一层数组大小: {}", parsedList.size());
+                        
+                        if (!parsedList.isEmpty()) {
+                            Object firstElement = parsedList.get(0);
+                            log.info("第一个元素类型: {}", firstElement != null ? firstElement.getClass().getName() : "null");
+                            
+                            // 如果第一个元素也是数组，说明是嵌套数组，取第一个数组
+                            if (firstElement instanceof List) {
+                                List<?> innerList = (List<?>) firstElement;
+                                log.info("检测到嵌套数组结构，内层数组大小: {}", innerList.size());
+                                
+                                // 将内层数组转换为Map列表
+                                rawData = new ArrayList<>();
+                                for (Object item : innerList) {
+                                    if (item instanceof Map) {
+                                        @SuppressWarnings("unchecked")
+                                        Map<String, Object> mapItem = (Map<String, Object>) item;
+                                        rawData.add(mapItem);
+                                    } else {
+                                        log.warn("内层数组元素不是Map类型: {}", item != null ? item.getClass().getName() : "null");
+                                    }
+                                }
+                                log.info("嵌套数组解析成功，数据行数: {}", rawData.size());
+                            } else if (firstElement instanceof Map) {
+                                // 如果第一个元素是Map，说明是直接的数组
+                                rawData = new ArrayList<>();
+                                for (Object item : parsedList) {
+                                    if (item instanceof Map) {
+                                        @SuppressWarnings("unchecked")
+                                        Map<String, Object> mapItem = (Map<String, Object>) item;
+                                        rawData.add(mapItem);
+                                    }
+                                }
+                                log.info("直接数组解析成功，数据行数: {}", rawData.size());
+                            }
+                        }
+                    } else if (parsedObj instanceof Map) {
+                        // 单个对象，包装成列表
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> singleMap = (Map<String, Object>) parsedObj;
+                        rawData = new ArrayList<>();
+                        rawData.add(singleMap);
+                        log.info("检测到单个对象，包装成列表");
+                    }
+                    
+                    if (rawData == null) {
+                        log.warn("无法通过JSON.parse解析，尝试其他方式");
+                        // 如果上面的解析都失败，说明可能是其他格式，这里不应该到达
+                    }
+                    
+                    log.info("最终解析结果，数据行数: {}", rawData != null ? rawData.size() : 0);
+                } catch (Exception e) {
+                    log.error("解析原始结果JSON失败: {}", e.getMessage(), e);
+                    log.error("原始结果前500字符: {}", originResult.length() > 500 ? originResult.substring(0, 500) + "..." : originResult);
+                    // 解析失败时，rawData保持为null，后续会初始化为空列表
+                }
+            } else {
+                log.warn("原始结果为空");
+            }
             
             // 提取步骤名称 - 优先使用eventAlias，否则使用eventName
             List<String> stepNames = originalRequest.getFunnelSteps().stream()
                     .map(step -> StringUtils.isNotEmpty(step.getEventAlias()) ? step.getEventAlias() : step.getEventName())
                     .collect(Collectors.toList());
             result.setStepNames(stepNames);
+            log.info("提取步骤名称: {}", stepNames);
 
             // 处理总体数据 - 聚合所有行的数据
             if (CollectionUtils.isNotEmpty(rawData)) {
+                log.info("开始处理总体数据，数据行数: {}", rawData.size());
+                
+                // 打印第一行数据的字段名，用于调试
+                if (!rawData.isEmpty()) {
+                    Map<String, Object> firstRow = rawData.get(0);
+                    log.info("第一行数据的字段名: {}", firstRow.keySet());
+                    log.info("第一行数据内容: {}", firstRow);
+                }
+                
                 List<Long> stepValues = new ArrayList<>();
                 List<Double> conversionRates = new ArrayList<>();
                 
@@ -1139,11 +1220,32 @@ public class FunnelAnalysisUtil {
                     
                     // 遍历所有行，累加每个步骤的计数
                     for (Map<String, Object> rowData : rawData) {
-                        Long stepValue = getLongValue(rowData.get(stepKey));
+                        // 尝试多种可能的字段名格式（处理大小写问题）
+                        Object stepValueObj = rowData.get(stepKey);
+                        if (stepValueObj == null) {
+                            // 尝试大写格式
+                            stepValueObj = rowData.get(stepKey.toUpperCase());
+                        }
+                        if (stepValueObj == null) {
+                            // 尝试其他可能的格式
+                            for (String key : rowData.keySet()) {
+                                if (key != null && key.equalsIgnoreCase(stepKey)) {
+                                    stepValueObj = rowData.get(key);
+                                    log.info("找到匹配的字段名: {} (原始: {})", key, stepKey);
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        Long stepValue = getLongValue(stepValueObj);
+                        if (stepValueObj != null) {
+                            log.debug("步骤{} 行数据: {} = {}", i + 1, stepKey, stepValue);
+                        }
                         totalStepValue += stepValue;
                     }
                     
                     stepValues.add(totalStepValue);
+                    log.info("步骤{} 聚合值: {}", i + 1, totalStepValue);
                 }
                 
                 // 计算转化率
@@ -1162,13 +1264,44 @@ public class FunnelAnalysisUtil {
                 result.setConversionRates(conversionRates);
                 
                 log.info("漏斗分析结果解析完成 - 步骤名称: {}, 步骤值: {}, 转化率: {}", stepNames, stepValues, conversionRates);
+            } else {
+                // 如果没有数据，初始化所有步骤的值为0
+                log.warn("查询结果为空，初始化所有步骤值为0");
+                List<Long> stepValues = new ArrayList<>();
+                List<Double> conversionRates = new ArrayList<>();
+                for (int i = 0; i < stepNames.size(); i++) {
+                    stepValues.add(0L);
+                    conversionRates.add(i == 0 ? 1.0 : 0.0);
+                }
+                result.setStepValues(stepValues);
+                result.setConversionRates(conversionRates);
             }
 
-            // 处理分组数据和时间序列数据
-            processGroupAndTimeData(result, rawData, originalRequest);
+            // 处理分组数据和时间序列数据（确保rawData不为null）
+            processGroupAndTimeData(result, rawData != null ? rawData : new ArrayList<>(), originalRequest);
+            
+            log.info("漏斗分析结果解析完成，最终结果 - stepNames: {}, stepValues: {}, conversionRates: {}", 
+                    result.getStepNames(), result.getStepValues(), result.getConversionRates());
             
         } catch (Exception e) {
             log.error("解析漏斗分析结果失败", e);
+            // 即使解析失败，也返回一个基本结构，避免返回null
+            if (result.getStepNames() == null) {
+                List<String> stepNames = originalRequest.getFunnelSteps().stream()
+                        .map(step -> StringUtils.isNotEmpty(step.getEventAlias()) ? step.getEventAlias() : step.getEventName())
+                        .collect(Collectors.toList());
+                result.setStepNames(stepNames);
+            }
+            if (result.getStepValues() == null) {
+                List<Long> stepValues = new ArrayList<>();
+                List<Double> conversionRates = new ArrayList<>();
+                for (int i = 0; i < result.getStepNames().size(); i++) {
+                    stepValues.add(0L);
+                    conversionRates.add(i == 0 ? 1.0 : 0.0);
+                }
+                result.setStepValues(stepValues);
+                result.setConversionRates(conversionRates);
+            }
         }
         
         return result;
@@ -1186,7 +1319,7 @@ public class FunnelAnalysisUtil {
             // 处理分组数据
             List<FunnelGroupResultDto> groupResults = new ArrayList<>();
             Map<String, List<Map<String, Object>>> groupedData = rawData.stream()
-                    .collect(Collectors.groupingBy(this::extractGroupKey));
+                    .collect(Collectors.groupingBy(data -> extractGroupKey(data, groupByFields)));
             
             for (Map.Entry<String, List<Map<String, Object>>> entry : groupedData.entrySet()) {
                 FunnelGroupResultDto groupResult = new FunnelGroupResultDto();
@@ -1272,9 +1405,53 @@ public class FunnelAnalysisUtil {
     /**
      * 提取分组键
      */
-    private String extractGroupKey(Map<String, Object> data) {
-        // 这里需要根据实际的分组字段来提取键值
-        return "default_group";
+    private String extractGroupKey(Map<String, Object> data, List<String> groupByFields) {
+        if (CollectionUtils.isEmpty(groupByFields)) {
+            return "default_group";
+        }
+        
+        List<String> keyParts = new ArrayList<>();
+        for (String field : groupByFields) {
+            if (ALL.equals(field)) {
+                continue;
+            }
+            
+            Object value = null;
+            
+            // 根据分组字段类型从数据中提取值
+            if (field.startsWith("C|")) {
+                String commonColumn = field.substring(2);
+                // 尝试从原始字段名获取
+                value = data.get(field);
+                if (value == null) {
+                    // 尝试从去掉前缀的字段名获取
+                    value = data.get(commonColumn);
+                }
+            } else if (field.startsWith("U|")) {
+                String profileColumn = field.substring(2);
+                // 尝试从原始字段名获取
+                value = data.get(field);
+                if (value == null) {
+                    // 尝试从去掉前缀的字段名获取
+                    value = data.get(profileColumn);
+                }
+            } else if (field.startsWith("D|")) {
+                // 维度字段使用dim_column
+                value = data.get("dim_column");
+                if (value == null) {
+                    value = data.get(field);
+                }
+            } else {
+                // 私有属性，直接使用字段名
+                value = data.get(field);
+            }
+            
+            // 处理null值
+            String valueStr = value == null ? "NULL" : String.valueOf(value);
+            keyParts.add(valueStr);
+        }
+        
+        return Joiner.on("#").join(keyParts);
     }
 
     /**
@@ -1384,7 +1561,7 @@ public class FunnelAnalysisUtil {
                 line.append(conversionRate != null ? String.format("%.2f%%", conversionRate * 100) : "0.00%");
                 writer.println(line);
             }
-        }
+        } 
 
         // 写入分组维度数据
         if (resultDto.getGroupResults() != null && resultDto.getGroupResults().size() > 0) {
