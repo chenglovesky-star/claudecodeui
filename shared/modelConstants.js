@@ -73,6 +73,21 @@ export const CODEX_MODELS = {
 /**
  * Gemini Models
  */
+/**
+ * Claude CLI Models
+ */
+export const CLAUDE_CLI_MODELS = {
+  OPTIONS: [
+    { value: 'sonnet', label: 'Sonnet' },
+    { value: 'opus', label: 'Opus' },
+    { value: 'haiku', label: 'Haiku' },
+  ],
+  DEFAULT: 'sonnet'
+};
+
+/**
+ * Gemini Models
+ */
 export const GEMINI_MODELS = {
   OPTIONS: [
     { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },

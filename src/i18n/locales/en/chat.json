@@ -177,10 +177,12 @@
       "anthropic": "by Anthropic",
       "openai": "by OpenAI",
       "cursorEditor": "AI Code Editor",
-      "google": "by Google"
+      "google": "by Google",
+      "claudeCli": "CLI Mode"
     },
     "readyPrompt": {
       "claude": "Ready to use Claude with {{model}}. Start typing your message below.",
+      "claudeCli": "Ready to use Claude CLI with {{model}}. Start typing your message below.",
       "cursor": "Ready to use Cursor with {{model}}. Start typing your message below.",
       "codex": "Ready to use Codex with {{model}}. Start typing your message below.",
       "gemini": "Ready to use Gemini with {{model}}. Start typing your message below.",

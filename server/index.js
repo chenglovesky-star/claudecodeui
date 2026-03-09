@@ -49,6 +49,7 @@ import { queryClaudeSDK, abortClaudeSDKSession, isClaudeSDKSessionActive, getAct
 import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursorSessions } from './cursor-cli.js';
 import { queryCodex, abortCodexSession, isCodexSessionActive, getActiveCodexSessions } from './openai-codex.js';
 import { spawnGemini, abortGeminiSession, isGeminiSessionActive, getActiveGeminiSessions } from './gemini-cli.js';
+import { spawnClaudeCLI, abortClaudeCLISession, isClaudeCLISessionActive, testContextContinuity } from './claude-cli.js';
 import sessionManager from './sessionManager.js';
 import gitRoutes from './routes/git.js';
 import authRoutes from './routes/auth.js';
@@ -414,6 +415,18 @@ app.use(express.static(path.join(__dirname, '../dist'), {
 // API Routes (protected)
 // /api/config endpoint removed - no longer needed
 // Frontend now uses window.location for WebSocket URLs
+
+// Claude CLI context continuity test endpoint
+app.post('/api/claude-cli/test-context', authenticateToken, async (req, res) => {
+    try {
+        const { projectPath, model } = req.body;
+        const result = await testContextContinuity({ projectPath, model });
+        res.json(result);
+    } catch (error) {
+        console.error('Claude CLI context test error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 // System update endpoint
 app.post('/api/system/update', authenticateToken, async (req, res) => {
@@ -1432,6 +1445,12 @@ function handleChatConnection(ws) {
                 console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
                 console.log('🤖 Model:', data.options?.model || 'default');
                 await spawnGemini(data.command, data.options, writer);
+            } else if (data.type === 'claude-cli-command') {
+                console.log('[DEBUG] Claude CLI message:', data.command || '[Continue/Resume]');
+                console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
+                console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
+                console.log('🤖 Model:', data.options?.model || 'default');
+                await spawnClaudeCLI(data.command, data.options, writer);
             } else if (data.type === 'cursor-resume') {
                 // Backward compatibility: treat as cursor-command with resume and no prompt
                 console.log('[DEBUG] Cursor resume session (compat):', data.sessionId);
@@ -1451,6 +1470,8 @@ function handleChatConnection(ws) {
                     success = abortCodexSession(data.sessionId);
                 } else if (provider === 'gemini') {
                     success = abortGeminiSession(data.sessionId);
+                } else if (provider === 'claude-cli') {
+                    success = abortClaudeCLISession(data.sessionId);
                 } else {
                     // Use Claude Agents SDK
                     success = await abortClaudeSDKSession(data.sessionId);
@@ -1495,6 +1516,8 @@ function handleChatConnection(ws) {
                     isActive = isCodexSessionActive(sessionId);
                 } else if (provider === 'gemini') {
                     isActive = isGeminiSessionActive(sessionId);
+                } else if (provider === 'claude-cli') {
+                    isActive = isClaudeCLISessionActive(sessionId);
                 } else {
                     // Use Claude Agents SDK
                     isActive = isClaudeSDKSessionActive(sessionId);

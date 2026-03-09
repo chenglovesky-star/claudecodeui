@@ -27,6 +27,8 @@ interface ChatMessagesPaneProps {
   setCodexModel: (model: string) => void;
   geminiModel: string;
   setGeminiModel: (model: string) => void;
+  claudeCliModel: string;
+  setClaudeCliModel: (model: string) => void;
   tasksEnabled: boolean;
   isTaskMasterInstalled: boolean | null;
   onShowAllTasks?: (() => void) | null;
@@ -52,6 +54,7 @@ interface ChatMessagesPaneProps {
   showThinking?: boolean;
   selectedProject: Project;
   isLoading: boolean;
+  selectedProjectPath?: string;
 }
 
 export default function ChatMessagesPane({
@@ -73,6 +76,8 @@ export default function ChatMessagesPane({
   setCodexModel,
   geminiModel,
   setGeminiModel,
+  claudeCliModel,
+  setClaudeCliModel,
   tasksEnabled,
   isTaskMasterInstalled,
   onShowAllTasks,
@@ -98,6 +103,7 @@ export default function ChatMessagesPane({
   showThinking,
   selectedProject,
   isLoading,
+  selectedProjectPath,
 }: ChatMessagesPaneProps) {
   const { t } = useTranslation('chat');
   const messageKeyMapRef = useRef<WeakMap<ChatMessage, string>>(new WeakMap());
@@ -157,10 +163,13 @@ export default function ChatMessagesPane({
           setCodexModel={setCodexModel}
           geminiModel={geminiModel}
           setGeminiModel={setGeminiModel}
+          claudeCliModel={claudeCliModel}
+          setClaudeCliModel={setClaudeCliModel}
           tasksEnabled={tasksEnabled}
           isTaskMasterInstalled={isTaskMasterInstalled}
           onShowAllTasks={onShowAllTasks}
           setInput={setInput}
+          selectedProjectPath={selectedProjectPath}
         />
       ) : (
         <>

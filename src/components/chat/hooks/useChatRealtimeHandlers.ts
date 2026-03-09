@@ -147,6 +147,7 @@ export function useChatRealtimeHandlers({
       'cursor-error',
       'codex-error',
       'gemini-error',
+      'claude-cli-error',
       'error',
     ]);
 
@@ -183,7 +184,8 @@ export function useChatRealtimeHandlers({
       (latestMessage.type === 'claude-error' ||
         latestMessage.type === 'cursor-error' ||
         latestMessage.type === 'codex-error' ||
-        latestMessage.type === 'gemini-error');
+        latestMessage.type === 'gemini-error' ||
+        latestMessage.type === 'claude-cli-error');
 
     const handleBackgroundLifecycle = (sessionId?: string) => {
       if (!sessionId) {
@@ -988,6 +990,18 @@ export function useChatRealtimeHandlers({
           {
             type: 'error',
             content: latestMessage.error || 'An error occurred with Gemini',
+            timestamp: new Date(),
+          },
+        ]);
+        break;
+
+      case 'claude-cli-error':
+        finalizeLifecycleForCurrentView(latestMessage.sessionId, currentSessionId, selectedSession?.id);
+        setChatMessages((previous) => [
+          ...previous,
+          {
+            type: 'error',
+            content: latestMessage.error || 'An error occurred with Claude CLI',
             timestamp: new Date(),
           },
         ]);

@@ -25,5 +25,9 @@ export default function SessionProviderLogo({
     return <GeminiLogo className={className} />;
   }
 
+  if (provider === 'claude-cli') {
+    return <ClaudeLogo className={className} />;
+  }
+
   return <ClaudeLogo className={className} />;
 }
