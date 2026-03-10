@@ -204,6 +204,12 @@ function mapCliOptionsToSDK(options = {}) {
     sdkOptions.resume = sessionId;
   }
 
+  // Clear CLAUDECODE from child process env to prevent nested-instance detection.
+  // The server may itself be running inside Claude Code, inheriting CLAUDECODE=1.
+  const cleanEnv = { ...process.env };
+  delete cleanEnv.CLAUDECODE;
+  sdkOptions.env = cleanEnv;
+
   return sdkOptions;
 }
 

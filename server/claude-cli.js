@@ -168,14 +168,15 @@ async function spawnClaudeCLI(command, options = {}, ws) {
     console.log('Working directory:', workingDir);
     console.log('Session info - Input sessionId:', sessionId, 'Resume:', resume);
 
+    // Build a clean environment for the child process.
+    // Remove CLAUDECODE to avoid triggering nested-instance detection in Claude CLI.
+    const childEnv = { ...process.env, HTTPS_PROXY: process.env.HTTPS_PROXY || '' };
+    delete childEnv.CLAUDECODE;
+
     const cliProcess = spawnFunction(cliCommand, args, {
       cwd: workingDir,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        CLAUDECODE: '',  // Bypass nested detection
-        HTTPS_PROXY: process.env.HTTPS_PROXY || '',
-      }
+      env: childEnv
     });
 
     // Store process reference for potential abort
@@ -242,17 +243,60 @@ async function spawnClaudeCLI(command, options = {}, ws) {
 
             case 'assistant':
               if (response.message && response.message.content && response.message.content.length > 0) {
-                const textContent = response.message.content[0].text;
-                messageBuffer += textContent;
+                // Flush any ongoing streaming text before sending structured content
+                const hasToolUse = response.message.content.some(b => b.type === 'tool_use');
 
+                if (hasToolUse && messageBuffer) {
+                  // Finalize previous streaming text block
+                  ws.send({
+                    type: 'claude-response',
+                    data: { type: 'content_block_stop' },
+                    sessionId: capturedSessionId || sessionId || null
+                  });
+                  messageBuffer = '';
+                }
+
+                // Check if this message only has text blocks (use streaming mode)
+                const onlyText = response.message.content.every(b => b.type === 'text');
+
+                if (onlyText) {
+                  // Stream text blocks via content_block_delta for real-time display
+                  for (const block of response.message.content) {
+                    if (block.text) {
+                      messageBuffer += block.text;
+                      ws.send({
+                        type: 'claude-response',
+                        data: {
+                          type: 'content_block_delta',
+                          delta: { type: 'text_delta', text: block.text }
+                        },
+                        sessionId: capturedSessionId || sessionId || null
+                      });
+                    }
+                  }
+                } else {
+                  // Mixed content (text + tool_use) → send as structured message
+                  // so the frontend can render tool_use cards
+                  ws.send({
+                    type: 'claude-response',
+                    data: {
+                      role: 'assistant',
+                      content: response.message.content
+                    },
+                    sessionId: capturedSessionId || sessionId || null
+                  });
+                }
+              }
+              break;
+
+            case 'user':
+              // Forward tool_result messages so the frontend can update tool cards
+              if (response.message && response.message.content && response.message.content.length > 0) {
                 ws.send({
                   type: 'claude-response',
                   data: {
-                    type: 'content_block_delta',
-                    delta: {
-                      type: 'text_delta',
-                      text: textContent
-                    }
+                    role: 'user',
+                    content: response.message.content
                   },
                   sessionId: capturedSessionId || sessionId || null
                 });
@@ -262,12 +306,29 @@ async function spawnClaudeCLI(command, options = {}, ws) {
             case 'result':
               console.log('Claude CLI session result:', response);
 
+              // Finalize any streaming text
               if (messageBuffer) {
                 ws.send({
                   type: 'claude-response',
+                  data: { type: 'content_block_stop' },
+                  sessionId: capturedSessionId || sessionId || null
+                });
+                messageBuffer = '';
+              }
+
+              // Send result text as final response if present
+              if (response.result && typeof response.result === 'string' && response.result.trim()) {
+                ws.send({
+                  type: 'claude-response',
                   data: {
-                    type: 'content_block_stop'
+                    type: 'content_block_delta',
+                    delta: { type: 'text_delta', text: response.result }
                   },
+                  sessionId: capturedSessionId || sessionId || null
+                });
+                ws.send({
+                  type: 'claude-response',
+                  data: { type: 'content_block_stop' },
                   sessionId: capturedSessionId || sessionId || null
                 });
               }
@@ -308,14 +369,13 @@ async function spawnClaudeCLI(command, options = {}, ws) {
       }
     });
 
-    // Handle stderr
+    // Handle stderr – accumulate for diagnostics but do NOT finalize lifecycle here.
+    // Stderr can contain warnings during normal operation; only the 'close' event is terminal.
+    let stderrBuffer = '';
     cliProcess.stderr.on('data', (data) => {
-      console.error('Claude CLI stderr:', data.toString());
-      ws.send({
-        type: 'claude-cli-error',
-        error: data.toString(),
-        sessionId: capturedSessionId || sessionId || null
-      });
+      const text = data.toString();
+      console.error('Claude CLI stderr:', text);
+      stderrBuffer += text;
     });
 
     // Handle process completion
@@ -328,6 +388,15 @@ async function spawnClaudeCLI(command, options = {}, ws) {
       // Cleanup temp files
       await cleanupTempFiles(tempImagePaths, tempDir);
 
+      // If the process failed, send stderr as an error message so the frontend can display it.
+      if (code !== 0 && stderrBuffer.trim()) {
+        ws.send({
+          type: 'claude-cli-error',
+          error: stderrBuffer.trim(),
+          sessionId: finalSessionId
+        });
+      }
+
       ws.send({
         type: 'claude-complete',
         sessionId: finalSessionId,
@@ -335,11 +404,9 @@ async function spawnClaudeCLI(command, options = {}, ws) {
         isNewSession: !sessionId && !!command
       });
 
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`Claude CLI exited with code ${code}`));
-      }
+      // Always resolve – errors are communicated via WebSocket messages above.
+      // Rejecting here would cause the server catch block to send a duplicate generic error.
+      resolve();
     });
 
     // Handle process errors
@@ -403,14 +470,13 @@ async function testContextContinuity(options = {}) {
         args.push('--model', model);
       }
 
+      const testEnv = { ...process.env, HTTPS_PROXY: process.env.HTTPS_PROXY || '' };
+      delete testEnv.CLAUDECODE;
+
       const proc = spawnFunction(cliCommand, args, {
         cwd: workingDir,
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          CLAUDECODE: '',
-          HTTPS_PROXY: process.env.HTTPS_PROXY || '',
-        }
+        env: testEnv
       });
 
       let sessionId = null;

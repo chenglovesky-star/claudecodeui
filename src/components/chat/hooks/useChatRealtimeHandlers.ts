@@ -554,7 +554,7 @@ export function useChatRealtimeHandlers({
         break;
 
       case 'claude-permission-request':
-        if (provider !== 'claude' || !latestMessage.requestId) {
+        if ((provider !== 'claude' && provider !== 'claude-cli') || !latestMessage.requestId) {
           break;
         }
         {
@@ -760,6 +760,24 @@ export function useChatRealtimeHandlers({
           selectedSession?.id,
           pendingSessionId,
         );
+
+        if (latestMessage.exitCode !== 0 && latestMessage.exitCode !== undefined) {
+          // Show a fallback error if no prior claude-cli-error was displayed
+          setChatMessages((previous) => {
+            const hasRecentError = previous.length > 0 && previous[previous.length - 1]?.type === 'error';
+            if (hasRecentError) {
+              return previous; // stderr error already shown
+            }
+            return [
+              ...previous,
+              {
+                type: 'error' as const,
+                content: `Claude CLI exited with code ${latestMessage.exitCode}`,
+                timestamp: new Date(),
+              },
+            ];
+          });
+        }
 
         if (pendingSessionId && !currentSessionId && latestMessage.exitCode === 0) {
           setCurrentSessionId(pendingSessionId);
@@ -996,7 +1014,9 @@ export function useChatRealtimeHandlers({
         break;
 
       case 'claude-cli-error':
-        finalizeLifecycleForCurrentView(latestMessage.sessionId, currentSessionId, selectedSession?.id);
+        // Display the error but do NOT finalize lifecycle here.
+        // Stderr may arrive before the process closes; the 'claude-complete' event
+        // is the authoritative signal that the CLI process has exited.
         setChatMessages((previous) => [
           ...previous,
           {
@@ -1153,6 +1173,16 @@ export function useChatRealtimeHandlers({
         // Generic backend failure (e.g., provider process failed before a provider-specific
         // completion event was emitted). Treat it as terminal for current view lifecycle.
         finalizeLifecycleForCurrentView(latestMessage.sessionId, currentSessionId, selectedSession?.id);
+        if (latestMessage.error) {
+          setChatMessages((previous) => [
+            ...previous,
+            {
+              type: 'error' as const,
+              content: `Error: ${latestMessage.error}`,
+              timestamp: new Date(),
+            },
+          ]);
+        }
         break;
 
       default:

@@ -1,8 +1,6 @@
 // Service Worker for Claude Code UI PWA
-const CACHE_NAME = 'claude-ui-v1';
+const CACHE_NAME = 'claude-ui-v2';
 const urlsToCache = [
-  '/',
-  '/index.html',
   '/manifest.json'
 ];
 
@@ -10,30 +8,35 @@ const urlsToCache = [
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => {
-        return cache.addAll(urlsToCache);
-      })
+      .then(cache => cache.addAll(urlsToCache))
   );
   self.skipWaiting();
 });
 
-// Fetch event
+// Fetch event - network-first strategy to avoid stale cache issues
 self.addEventListener('fetch', event => {
   event.respondWith(
-    caches.match(event.request)
+    fetch(event.request)
       .then(response => {
-        // Return cached response if found
-        if (response) {
-          return response;
+        // Only cache successful GET requests for static assets
+        if (response.ok && event.request.method === 'GET') {
+          const url = new URL(event.request.url);
+          // Only cache manifest and icon assets, not HTML/JS/CSS which change frequently
+          if (url.pathname === '/manifest.json' || url.pathname.startsWith('/icons/')) {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
+          }
         }
-        // Otherwise fetch from network
-        return fetch(event.request);
-      }
-    )
+        return response;
+      })
+      .catch(() => {
+        // Fallback to cache only when network fails
+        return caches.match(event.request);
+      })
   );
 });
 
-// Activate event
+// Activate event - clean up old caches immediately
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(cacheNames => {
@@ -44,6 +47,6 @@ self.addEventListener('activate', event => {
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
 });

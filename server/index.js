@@ -1560,9 +1560,13 @@ function handleChatConnection(ws) {
             }
         } catch (error) {
             console.error('[ERROR] Chat WebSocket error:', error.message);
+            // Include sessionId so the frontend session filter doesn't discard this event,
+            // which would leave the UI stuck in "Processing" forever.
+            const errorSessionId = data?.options?.sessionId || data?.sessionId || writer.getSessionId() || null;
             writer.send({
                 type: 'error',
-                error: error.message
+                error: error.message,
+                sessionId: errorSessionId
             });
         }
     });
