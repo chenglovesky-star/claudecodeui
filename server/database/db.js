@@ -103,6 +103,18 @@ const runMigrations = () => {
     )`);
     db.exec('CREATE INDEX IF NOT EXISTS idx_session_names_lookup ON session_names(session_id, provider)');
 
+    // Create user_projects table if it doesn't exist (multi-user project isolation)
+    db.exec(`CREATE TABLE IF NOT EXISTS user_projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      project_name TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(user_id, project_name)
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_user_projects_user_id ON user_projects(user_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_user_projects_project_name ON user_projects(project_name)');
+
     console.log('Database migrations completed successfully');
   } catch (error) {
     console.error('Error running migrations:', error.message);
@@ -177,7 +189,7 @@ const userDb = {
 
   getFirstUser: () => {
     try {
-      const row = db.prepare('SELECT id, username, created_at, last_login FROM users WHERE is_active = 1 LIMIT 1').get();
+      const row = db.prepare('SELECT id, username, created_at, last_login FROM users WHERE is_active = 1 ORDER BY id ASC LIMIT 1').get();
       return row;
     } catch (err) {
       throw err;
@@ -414,6 +426,113 @@ function applyCustomSessionNames(sessions, provider) {
   }
 }
 
+// User-project ownership mapping (multi-user isolation)
+const userProjectsDb = {
+  // Associate a project with a user
+  addProject: (userId, projectName) => {
+    try {
+      db.prepare(
+        'INSERT OR IGNORE INTO user_projects (user_id, project_name) VALUES (?, ?)'
+      ).run(userId, projectName);
+    } catch (err) {
+      throw err;
+    }
+  },
+
+  // Get all project names owned by a user
+  getProjectNames: (userId) => {
+    try {
+      const rows = db.prepare(
+        'SELECT project_name FROM user_projects WHERE user_id = ?'
+      ).all(userId);
+      return new Set(rows.map(r => r.project_name));
+    } catch (err) {
+      throw err;
+    }
+  },
+
+  // Check if a user owns a specific project
+  hasProject: (userId, projectName) => {
+    try {
+      const row = db.prepare(
+        'SELECT 1 FROM user_projects WHERE user_id = ? AND project_name = ?'
+      ).get(userId, projectName);
+      return !!row;
+    } catch (err) {
+      throw err;
+    }
+  },
+
+  // Remove a project association for a user
+  removeProject: (userId, projectName) => {
+    try {
+      db.prepare(
+        'DELETE FROM user_projects WHERE user_id = ? AND project_name = ?'
+      ).run(userId, projectName);
+    } catch (err) {
+      throw err;
+    }
+  },
+
+  // Assign all given project names to a user (for first-user migration)
+  assignAllToUser: (userId, projectNames) => {
+    const stmt = db.prepare(
+      'INSERT OR IGNORE INTO user_projects (user_id, project_name) VALUES (?, ?)'
+    );
+    const transaction = db.transaction((names) => {
+      for (const name of names) {
+        stmt.run(userId, name);
+      }
+    });
+    transaction(projectNames);
+  },
+
+  // One-time fix: reassign all projects from a wrong user to the correct first user
+  reassignAllToFirstUser: (firstUserId) => {
+    try {
+      const rows = db.prepare('SELECT DISTINCT user_id FROM user_projects WHERE user_id != ?').all(firstUserId);
+      if (rows.length > 0) {
+        const firstUserProjects = db.prepare('SELECT project_name FROM user_projects WHERE user_id = ?').all(firstUserId);
+        if (firstUserProjects.length === 0) {
+          // First user has no projects but other users do — likely a mis-migration
+          const transaction = db.transaction(() => {
+            // Move all orphan records to the first user
+            db.prepare('UPDATE user_projects SET user_id = ? WHERE user_id != ?').run(firstUserId, firstUserId);
+            // Remove duplicates that might result
+            db.prepare(`DELETE FROM user_projects WHERE rowid NOT IN (
+              SELECT MIN(rowid) FROM user_projects GROUP BY user_id, project_name
+            )`).run();
+          });
+          transaction();
+          console.log(`[Migration] Reassigned orphan project records to first user (id=${firstUserId})`);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to reassign orphan projects:', err.message);
+    }
+  },
+
+  // Get all project names that are assigned to any user
+  getAllAssignedProjectNames: () => {
+    try {
+      const rows = db.prepare('SELECT DISTINCT project_name FROM user_projects').all();
+      return new Set(rows.map(r => r.project_name));
+    } catch (err) {
+      return new Set();
+    }
+  },
+
+  // Check if any records exist (for first-run migration)
+  hasAnyRecords: () => {
+    try {
+      const row = db.prepare('SELECT COUNT(*) as count FROM user_projects').get();
+      return row.count > 0;
+    } catch (err) {
+      return false;
+    }
+  },
+};
+
 // Backward compatibility - keep old names pointing to new system
 const githubTokensDb = {
   createGithubToken: (userId, tokenName, githubToken, description = null) => {
@@ -441,5 +560,6 @@ export {
   credentialsDb,
   sessionNamesDb,
   applyCustomSessionNames,
+  userProjectsDb,
   githubTokensDb // Backward compatibility
 };

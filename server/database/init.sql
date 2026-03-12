@@ -63,3 +63,16 @@ CREATE TABLE IF NOT EXISTS session_names (
 );
 
 CREATE INDEX IF NOT EXISTS idx_session_names_lookup ON session_names(session_id, provider);
+
+-- User-project ownership mapping (multi-user isolation)
+CREATE TABLE IF NOT EXISTS user_projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    project_name TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(user_id, project_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_projects_user_id ON user_projects(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_projects_project_name ON user_projects(project_name);

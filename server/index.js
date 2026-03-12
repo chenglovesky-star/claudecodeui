@@ -65,7 +65,7 @@ import cliAuthRoutes from './routes/cli-auth.js';
 import userRoutes from './routes/user.js';
 import codexRoutes from './routes/codex.js';
 import geminiRoutes from './routes/gemini.js';
-import { initializeDatabase, sessionNamesDb, applyCustomSessionNames } from './database/db.js';
+import { initializeDatabase, sessionNamesDb, applyCustomSessionNames, userProjectsDb, userDb } from './database/db.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 import { IS_PLATFORM } from './constants/config.js';
 
@@ -147,18 +147,22 @@ async function setupProjectsWatcher() {
                 // Get updated projects list
                 const updatedProjects = await getProjects(broadcastProgress);
 
-                // Notify all connected clients about the project changes
-                const updateMessage = JSON.stringify({
-                    type: 'projects_updated',
-                    projects: updatedProjects,
-                    timestamp: new Date().toISOString(),
-                    changeType: eventType,
-                    changedFile: path.relative(rootPath, filePath),
-                    watchProvider: provider
-                });
-
+                // Notify all connected clients about the project changes (per-user filtering)
                 connectedClients.forEach(client => {
                     if (client.readyState === WebSocket.OPEN) {
+                        let projectsForClient = updatedProjects;
+                        if (client.userId) {
+                            const ownedNames = userProjectsDb.getProjectNames(client.userId);
+                            projectsForClient = updatedProjects.filter(p => ownedNames.has(p.name));
+                        }
+                        const updateMessage = JSON.stringify({
+                            type: 'projects_updated',
+                            projects: projectsForClient,
+                            timestamp: new Date().toISOString(),
+                            changeType: eventType,
+                            changedFile: path.relative(rootPath, filePath),
+                            watchProvider: provider
+                        });
                         client.send(updateMessage);
                     }
                 });
@@ -495,16 +499,40 @@ app.post('/api/system/update', authenticateToken, async (req, res) => {
     }
 });
 
+// Middleware: verify current user owns the project specified in :projectName
+const authorizeProject = (req, res, next) => {
+    const projectName = req.params.projectName;
+    if (!projectName) return next();
+    if (!userProjectsDb.hasProject(req.user.id, projectName)) {
+        return res.status(403).json({ error: 'Access denied' });
+    }
+    next();
+};
+
 app.get('/api/projects', authenticateToken, async (req, res) => {
     try {
-        const projects = await getProjects(broadcastProgress);
+        const allProjects = await getProjects(broadcastProgress);
+        const userId = req.user.id;
+
+        // First-run migration: assign all projects to first user only when user_projects is completely empty
+        if (!userProjectsDb.hasAnyRecords() && allProjects.length > 0) {
+            const firstUser = userDb.getFirstUser();
+            if (firstUser) {
+                const projectNames = allProjects.map(p => p.name);
+                userProjectsDb.assignAllToUser(firstUser.id, projectNames);
+            }
+        }
+
+        // Filter projects by user ownership
+        const ownedNames = userProjectsDb.getProjectNames(userId);
+        const projects = allProjects.filter(p => ownedNames.has(p.name));
         res.json(projects);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-app.get('/api/projects/:projectName/sessions', authenticateToken, async (req, res) => {
+app.get('/api/projects/:projectName/sessions', authenticateToken, authorizeProject, async (req, res) => {
     try {
         const { limit = 5, offset = 0 } = req.query;
         const result = await getSessions(req.params.projectName, parseInt(limit), parseInt(offset));
@@ -516,7 +544,7 @@ app.get('/api/projects/:projectName/sessions', authenticateToken, async (req, re
 });
 
 // Get messages for a specific session
-app.get('/api/projects/:projectName/sessions/:sessionId/messages', authenticateToken, async (req, res) => {
+app.get('/api/projects/:projectName/sessions/:sessionId/messages', authenticateToken, authorizeProject, async (req, res) => {
     try {
         const { projectName, sessionId } = req.params;
         const { limit, offset } = req.query;
@@ -541,7 +569,7 @@ app.get('/api/projects/:projectName/sessions/:sessionId/messages', authenticateT
 });
 
 // Rename project endpoint
-app.put('/api/projects/:projectName/rename', authenticateToken, async (req, res) => {
+app.put('/api/projects/:projectName/rename', authenticateToken, authorizeProject, async (req, res) => {
     try {
         const { displayName } = req.body;
         await renameProject(req.params.projectName, displayName);
@@ -552,7 +580,7 @@ app.put('/api/projects/:projectName/rename', authenticateToken, async (req, res)
 });
 
 // Delete session endpoint
-app.delete('/api/projects/:projectName/sessions/:sessionId', authenticateToken, async (req, res) => {
+app.delete('/api/projects/:projectName/sessions/:sessionId', authenticateToken, authorizeProject, async (req, res) => {
     try {
         const { projectName, sessionId } = req.params;
         console.log(`[API] Deleting session: ${sessionId} from project: ${projectName}`);
@@ -593,11 +621,15 @@ app.put('/api/sessions/:sessionId/rename', authenticateToken, async (req, res) =
 });
 
 // Delete project endpoint (force=true to delete with sessions)
-app.delete('/api/projects/:projectName', authenticateToken, async (req, res) => {
+app.delete('/api/projects/:projectName', authenticateToken, authorizeProject, async (req, res) => {
     try {
         const { projectName } = req.params;
         const force = req.query.force === 'true';
         await deleteProject(projectName, force);
+
+        // Remove project ownership record for this user
+        userProjectsDb.removeProject(req.user.id, projectName);
+
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -614,6 +646,10 @@ app.post('/api/projects/create', authenticateToken, async (req, res) => {
         }
 
         const project = await addProjectManually(projectPath.trim());
+
+        // Associate the new project with the current user
+        userProjectsDb.addProject(req.user.id, project.name);
+
         res.json({ success: true, project });
     } catch (error) {
         console.error('Error creating project:', error);
@@ -754,7 +790,7 @@ app.post('/api/create-folder', authenticateToken, async (req, res) => {
 });
 
 // Read file content endpoint
-app.get('/api/projects/:projectName/file', authenticateToken, async (req, res) => {
+app.get('/api/projects/:projectName/file', authenticateToken, authorizeProject, async (req, res) => {
     try {
         const { projectName } = req.params;
         const { filePath } = req.query;
@@ -794,7 +830,7 @@ app.get('/api/projects/:projectName/file', authenticateToken, async (req, res) =
 });
 
 // Serve binary file content endpoint (for images, etc.)
-app.get('/api/projects/:projectName/files/content', authenticateToken, async (req, res) => {
+app.get('/api/projects/:projectName/files/content', authenticateToken, authorizeProject, async (req, res) => {
     try {
         const { projectName } = req.params;
         const { path: filePath } = req.query;
@@ -847,7 +883,7 @@ app.get('/api/projects/:projectName/files/content', authenticateToken, async (re
 });
 
 // Save file content endpoint
-app.put('/api/projects/:projectName/file', authenticateToken, async (req, res) => {
+app.put('/api/projects/:projectName/file', authenticateToken, authorizeProject, async (req, res) => {
     try {
         const { projectName } = req.params;
         const { filePath, content } = req.body;
@@ -896,7 +932,7 @@ app.put('/api/projects/:projectName/file', authenticateToken, async (req, res) =
     }
 });
 
-app.get('/api/projects/:projectName/files', authenticateToken, async (req, res) => {
+app.get('/api/projects/:projectName/files', authenticateToken, authorizeProject, async (req, res) => {
     try {
 
         // Using fsPromises from import
@@ -975,7 +1011,7 @@ function validateFilename(name) {
 }
 
 // POST /api/projects/:projectName/files/create - Create new file or directory
-app.post('/api/projects/:projectName/files/create', authenticateToken, async (req, res) => {
+app.post('/api/projects/:projectName/files/create', authenticateToken, authorizeProject, async (req, res) => {
     try {
         const { projectName } = req.params;
         const { path: parentPath, type, name } = req.body;
@@ -1052,7 +1088,7 @@ app.post('/api/projects/:projectName/files/create', authenticateToken, async (re
 });
 
 // PUT /api/projects/:projectName/files/rename - Rename file or directory
-app.put('/api/projects/:projectName/files/rename', authenticateToken, async (req, res) => {
+app.put('/api/projects/:projectName/files/rename', authenticateToken, authorizeProject, async (req, res) => {
     try {
         const { projectName } = req.params;
         const { oldPath, newName } = req.body;
@@ -1129,7 +1165,7 @@ app.put('/api/projects/:projectName/files/rename', authenticateToken, async (req
 });
 
 // DELETE /api/projects/:projectName/files - Delete file or directory
-app.delete('/api/projects/:projectName/files', authenticateToken, async (req, res) => {
+app.delete('/api/projects/:projectName/files', authenticateToken, authorizeProject, async (req, res) => {
     try {
         const { projectName } = req.params;
         const { path: targetPath, type } = req.body;
@@ -1355,7 +1391,7 @@ const uploadFilesHandler = async (req, res) => {
     });
 };
 
-app.post('/api/projects/:projectName/files/upload', authenticateToken, uploadFilesHandler);
+app.post('/api/projects/:projectName/files/upload', authenticateToken, authorizeProject, uploadFilesHandler);
 
 // WebSocket connection handler that routes based on URL path
 wss.on('connection', (ws, request) => {
@@ -1369,7 +1405,7 @@ wss.on('connection', (ws, request) => {
     if (pathname === '/shell') {
         handleShellConnection(ws);
     } else if (pathname === '/ws') {
-        handleChatConnection(ws);
+        handleChatConnection(ws, request);
     } else {
         console.log('[WARN] Unknown WebSocket path:', pathname);
         ws.close();
@@ -1407,8 +1443,13 @@ class WebSocketWriter {
 }
 
 // Handle chat WebSocket connections
-function handleChatConnection(ws) {
-    console.log('[INFO] Chat WebSocket connected');
+function handleChatConnection(ws, request) {
+    // 绑定 userId 到 ws 对象，用于按用户过滤广播
+    // 注意: authenticateWebSocket 返回 JWT payload { userId, username }，不是数据库对象 { id, username }
+    if (request && request.user) {
+        ws.userId = request.user.userId || request.user.id;
+    }
+    console.log('[INFO] Chat WebSocket connected, userId:', ws.userId);
 
     // Add to connected clients for project updates
     connectedClients.add(ws);
@@ -2096,7 +2137,7 @@ Agent instructions:`;
 });
 
 // Image upload endpoint
-app.post('/api/projects/:projectName/upload-images', authenticateToken, async (req, res) => {
+app.post('/api/projects/:projectName/upload-images', authenticateToken, authorizeProject, async (req, res) => {
     try {
         const multer = (await import('multer')).default;
         const path = (await import('path')).default;
@@ -2181,7 +2222,7 @@ app.post('/api/projects/:projectName/upload-images', authenticateToken, async (r
 });
 
 // Get token usage for a specific session
-app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authenticateToken, async (req, res) => {
+app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authenticateToken, authorizeProject, async (req, res) => {
     try {
         const { projectName, sessionId } = req.params;
         const { provider = 'claude' } = req.query;
@@ -2486,6 +2527,12 @@ async function startServer() {
     try {
         // Initialize authentication database
         await initializeDatabase();
+
+        // One-time fix: reassign wrongly-assigned projects to the first user
+        const firstUser = userDb.getFirstUser();
+        if (firstUser) {
+            userProjectsDb.reassignAllToFirstUser(firstUser.id);
+        }
 
         // Check if running in production mode (dist folder exists)
         const distIndexPath = path.join(__dirname, '../dist/index.html');
