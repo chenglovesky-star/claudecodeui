@@ -64,7 +64,8 @@
     "save": "Save",
     "delete": "Delete",
     "rename": "Rename",
-    "joinCommunity": "Join Community"
+    "joinCommunity": "Join Community",
+    "logout": "Sign Out"
   },
   "status": {
     "active": "Active",

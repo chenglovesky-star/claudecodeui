@@ -64,7 +64,8 @@
     "save": "保存",
     "delete": "删除",
     "rename": "重命名",
-    "joinCommunity": "加入社区"
+    "joinCommunity": "加入社区",
+    "logout": "退出登录"
   },
   "status": {
     "active": "活动",

@@ -5,12 +5,15 @@ import { generateToken, authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
+const ALLOW_REGISTRATION = process.env.ALLOW_REGISTRATION !== 'false';
+
 // Check auth status and setup requirements
 router.get('/status', async (req, res) => {
   try {
     const hasUsers = await userDb.hasUsers();
-    res.json({ 
+    res.json({
       needsSetup: !hasUsers,
+      allowRegistration: ALLOW_REGISTRATION,
       isAuthenticated: false // Will be overridden by frontend if token exists
     });
   } catch (error) {
@@ -19,55 +22,51 @@ router.get('/status', async (req, res) => {
   }
 });
 
-// User registration (setup) - only allowed if no users exist
+// User registration - open to new users (controlled by ALLOW_REGISTRATION env var)
 router.post('/register', async (req, res) => {
   try {
+    const hasUsers = await userDb.hasUsers();
+
+    // If users already exist, check if registration is allowed
+    if (hasUsers && !ALLOW_REGISTRATION) {
+      return res.status(403).json({ error: 'Registration is currently disabled.' });
+    }
+
     const { username, password } = req.body;
-    
+
     // Validate input
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
-    
+
     if (username.length < 3 || password.length < 6) {
       return res.status(400).json({ error: 'Username must be at least 3 characters, password at least 6 characters' });
     }
-    
-    // Use a transaction to prevent race conditions
-    db.prepare('BEGIN').run();
-    try {
-      // Check if users already exist (only allow one user)
-      const hasUsers = userDb.hasUsers();
-      if (hasUsers) {
-        db.prepare('ROLLBACK').run();
-        return res.status(403).json({ error: 'User already exists. This is a single-user system.' });
-      }
-      
-      // Hash password
-      const saltRounds = 12;
-      const passwordHash = await bcrypt.hash(password, saltRounds);
-      
-      // Create user
-      const user = userDb.createUser(username, passwordHash);
-      
-      // Generate token
-      const token = generateToken(user);
-      
-      db.prepare('COMMIT').run();
 
-      // Update last login (non-fatal, outside transaction)
-      userDb.updateLastLogin(user.id);
-
-      res.json({
-        success: true,
-        user: { id: user.id, username: user.username },
-        token
-      });
-    } catch (error) {
-      db.prepare('ROLLBACK').run();
-      throw error;
+    // Validate username format
+    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+      return res.status(400).json({ error: 'Username can only contain letters, numbers, underscores and hyphens' });
     }
-    
+
+    // Hash password
+    const saltRounds = 12;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    // Create user
+    const user = userDb.createUser(username, passwordHash);
+
+    // Generate token
+    const token = generateToken(user);
+
+    // Update last login (non-fatal)
+    userDb.updateLastLogin(user.id);
+
+    res.json({
+      success: true,
+      user: { id: user.id, username: user.username },
+      token
+    });
+
   } catch (error) {
     console.error('Registration error:', error);
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
