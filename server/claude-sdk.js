@@ -18,6 +18,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { CLAUDE_MODELS } from '../shared/modelConstants.js';
+import { enforceSandbox } from './utils/pathSandbox.js';
 
 const activeSessions = new Map();
 const pendingToolApprovals = new Map();
@@ -490,6 +491,12 @@ async function queryClaudeSDK(command, options = {}, ws) {
     tempDir = imageResult.tempDir;
 
     sdkOptions.canUseTool = async (toolName, input, context) => {
+      // ★ Path sandbox check — highest priority, independent of permission mode
+      const sandboxResult = await enforceSandbox(toolName, input, sdkOptions.cwd);
+      if (!sandboxResult.allowed) {
+        return { behavior: 'deny', message: `Sandbox: ${sandboxResult.reason}` };
+      }
+
       const requiresInteraction = TOOLS_REQUIRING_INTERACTION.has(toolName);
 
       if (!requiresInteraction) {

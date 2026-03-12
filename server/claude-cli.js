@@ -173,6 +173,11 @@ async function spawnClaudeCLI(command, options = {}, ws) {
     const childEnv = { ...process.env, HTTPS_PROXY: process.env.HTTPS_PROXY || '' };
     delete childEnv.CLAUDECODE;
 
+    // Inject sandbox directory hint for CLI mode
+    if (workingDir) {
+      childEnv.CLAUDE_SANDBOX_DIR = workingDir;
+    }
+
     const cliProcess = spawnFunction(cliCommand, args, {
       cwd: workingDir,
       stdio: ['pipe', 'pipe', 'pipe'],
