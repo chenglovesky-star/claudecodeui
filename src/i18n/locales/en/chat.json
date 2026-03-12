@@ -13,6 +13,7 @@
     "error": "Error",
     "tool": "Tool",
     "claude": "Claude",
+    "claudeCli": "Claude CLI",
     "cursor": "Cursor",
     "codex": "Codex",
     "gemini": "Gemini"

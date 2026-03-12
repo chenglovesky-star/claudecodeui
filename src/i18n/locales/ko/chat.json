@@ -13,6 +13,7 @@
     "error": "오류",
     "tool": "도구",
     "claude": "Claude",
+    "claudeCli": "Claude CLI",
     "cursor": "Cursor",
     "codex": "Codex",
     "gemini": "Gemini"

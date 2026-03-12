@@ -54,17 +54,26 @@ export default function ChatInputControls({
         title={t('input.clickToChangeMode')}
       >
         <div className="flex items-center gap-1.5">
-          <div
-            className={`h-1.5 w-1.5 rounded-full ${
-              permissionMode === 'default'
-                ? 'bg-muted-foreground'
-                : permissionMode === 'acceptEdits'
-                  ? 'bg-green-500'
-                  : permissionMode === 'bypassPermissions'
-                    ? 'bg-orange-500'
-                    : 'bg-primary'
-            }`}
-          />
+          {permissionMode === 'default' ? (
+            <svg className="h-3.5 w-3.5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+          ) : permissionMode === 'acceptEdits' ? (
+            <svg className="h-3.5 w-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+          ) : permissionMode === 'bypassPermissions' ? (
+            <svg className="h-3.5 w-3.5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          ) : (
+            <svg className="h-3.5 w-3.5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M14 2v6h6" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 13H8M16 17H8M10 9H8" />
+            </svg>
+          )}
           <span>
             {permissionMode === 'default' && t('codex.modes.default')}
             {permissionMode === 'acceptEdits' && t('codex.modes.acceptEdits')}
@@ -74,7 +83,7 @@ export default function ChatInputControls({
         </div>
       </button>
 
-      {provider === 'claude' && (
+      {(provider === 'claude' || provider === 'claude-cli') && (
         <ThinkingModeSelector selectedMode={thinkingMode} onModeChange={setThinkingMode} onClose={() => {}} className="" />
       )}
 

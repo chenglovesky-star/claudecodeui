@@ -312,8 +312,14 @@ export function useChatRealtimeHandlers({
         if (messageData && typeof messageData === 'object' && messageData.type) {
           if (messageData.type === 'content_block_delta' && messageData.delta?.text) {
             const decodedText = decodeHtmlEntities(messageData.delta.text);
+            const isFirstChunk = !streamBufferRef.current && !streamTimerRef.current;
             streamBufferRef.current += decodedText;
-            if (!streamTimerRef.current) {
+            if (isFirstChunk) {
+              const chunk = streamBufferRef.current;
+              streamBufferRef.current = '';
+              appendStreamingChunk(setChatMessages, chunk, false);
+              setClaudeStatus(null);
+            } else if (!streamTimerRef.current) {
               streamTimerRef.current = window.setTimeout(() => {
                 const chunk = streamBufferRef.current;
                 streamBufferRef.current = '';
@@ -520,8 +526,14 @@ export function useChatRealtimeHandlers({
       case 'claude-output': {
         const cleaned = String(latestMessage.data || '');
         if (cleaned.trim()) {
+          const isFirstChunk = !streamBufferRef.current && !streamTimerRef.current;
           streamBufferRef.current += streamBufferRef.current ? `\n${cleaned}` : cleaned;
-          if (!streamTimerRef.current) {
+          if (isFirstChunk) {
+            const chunk = streamBufferRef.current;
+            streamBufferRef.current = '';
+            appendStreamingChunk(setChatMessages, chunk, true);
+            setClaudeStatus(null);
+          } else if (!streamTimerRef.current) {
             streamTimerRef.current = window.setTimeout(() => {
               const chunk = streamBufferRef.current;
               streamBufferRef.current = '';
@@ -734,8 +746,14 @@ export function useChatRealtimeHandlers({
             .trim();
 
           if (cleaned) {
+            const isFirstChunk = !streamBufferRef.current && !streamTimerRef.current;
             streamBufferRef.current += streamBufferRef.current ? `\n${cleaned}` : cleaned;
-            if (!streamTimerRef.current) {
+            if (isFirstChunk) {
+              const chunk = streamBufferRef.current;
+              streamBufferRef.current = '';
+              appendStreamingChunk(setChatMessages, chunk, true);
+              setClaudeStatus(null);
+            } else if (!streamTimerRef.current) {
               streamTimerRef.current = window.setTimeout(() => {
                 const chunk = streamBufferRef.current;
                 streamBufferRef.current = '';
@@ -986,16 +1004,24 @@ export function useChatRealtimeHandlers({
               appendStreamingChunk(setChatMessages, chunk, true);
             }
             finalizeStreamingMessage(setChatMessages);
-          } else if (!streamTimerRef.current && streamBufferRef.current) {
-            streamTimerRef.current = window.setTimeout(() => {
+          } else if (streamBufferRef.current) {
+            const isFirstChunk = !streamTimerRef.current && streamBufferRef.current === content;
+            if (isFirstChunk) {
               const chunk = streamBufferRef.current;
               streamBufferRef.current = '';
-              streamTimerRef.current = null;
+              appendStreamingChunk(setChatMessages, chunk, true);
+              setClaudeStatus(null);
+            } else if (!streamTimerRef.current) {
+              streamTimerRef.current = window.setTimeout(() => {
+                const chunk = streamBufferRef.current;
+                streamBufferRef.current = '';
+                streamTimerRef.current = null;
 
-              if (chunk) {
-                appendStreamingChunk(setChatMessages, chunk, true);
-              }
-            }, 100);
+                if (chunk) {
+                  appendStreamingChunk(setChatMessages, chunk, true);
+                }
+              }, 100);
+            }
           }
         }
         break;

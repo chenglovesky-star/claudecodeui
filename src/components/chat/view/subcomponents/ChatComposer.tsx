@@ -170,16 +170,7 @@ export default function ChatComposer({
 
   return (
     <div className={`flex-shrink-0 p-2 pb-2 sm:p-4 sm:pb-4 md:p-4 md:pb-6 ${mobileFloatingClass}`}>
-      {!hasQuestionPanel && (
-        <div className="flex-1">
-          <ClaudeStatus
-            status={claudeStatus}
-            isLoading={isLoading}
-            onAbort={onAbortSession}
-            provider={provider}
-          />
-        </div>
-      )}
+      {/* ClaudeStatus card removed for cleaner UX */}
 
       <div className="mx-auto mb-3 max-w-4xl">
         <PermissionRequestsBanner

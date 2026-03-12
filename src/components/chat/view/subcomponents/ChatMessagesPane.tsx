@@ -271,7 +271,9 @@ export default function ChatMessagesPane({
         </>
       )}
 
-      {isLoading && <AssistantThinkingIndicator selectedProvider={provider} />}
+      {isLoading && !chatMessages.some(m => m.isStreaming) && (
+        <AssistantThinkingIndicator selectedProvider={provider} />
+      )}
     </div>
   );
 }

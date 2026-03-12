@@ -477,14 +477,14 @@ async function queryClaudeSDK(command, options = {}, ws) {
     // Map CLI options to SDK format
     const sdkOptions = mapCliOptionsToSDK(options);
 
-    // Load MCP configuration
-    const mcpServers = await loadMcpConfig(options.cwd);
+    // Load MCP configuration and handle images in parallel
+    const [mcpServers, imageResult] = await Promise.all([
+      loadMcpConfig(options.cwd),
+      handleImages(command, options.images, options.cwd),
+    ]);
     if (mcpServers) {
       sdkOptions.mcpServers = mcpServers;
     }
-
-    // Handle images - save to temp files and modify prompt
-    const imageResult = await handleImages(command, options.images, options.cwd);
     const finalCommand = imageResult.modifiedCommand;
     tempImagePaths = imageResult.tempImagePaths;
     tempDir = imageResult.tempDir;
