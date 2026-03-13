@@ -9,6 +9,7 @@
 import express from 'express';
 import { teamDb, activityDb, notificationsDb } from '../database/db.js';
 import { broadcastTeamMemberChange, broadcastTeamActivity, broadcastNotification, getOnlineTeamMembers } from '../utils/team-websocket.js';
+import { validateGitRepo, getRepoInfo } from '../services/GitService.js';
 
 const router = express.Router();
 
@@ -331,26 +332,46 @@ router.delete('/:teamId/invites/:inviteId', (req, res) => {
 // Team Projects
 // ==========================================
 
-// Add project to team
+// Add project to team (with Git validation)
 router.post('/:teamId/projects', (req, res) => {
     try {
         const teamId = parseInt(req.params.teamId);
-        const { projectPath } = req.body;
+        const { projectPath, name, description } = req.body;
 
-        if (!projectPath) return res.status(400).json({ error: 'Project path is required' });
+        if (!projectPath) return res.status(400).json({ error: { code: 'INVALID_INPUT', message: '仓库路径不能为空' } });
+        if (!name) return res.status(400).json({ error: { code: 'INVALID_INPUT', message: '项目名称不能为空' } });
 
         const callerRole = teamDb.getMemberRole(teamId, req.user.id);
-        if (!callerRole) return res.status(403).json({ error: 'Not a team member' });
+        if (!callerRole) return res.status(403).json({ error: { code: 'FORBIDDEN', message: '非团队成员' } });
 
-        const success = teamDb.addProject(teamId, projectPath, req.user.id);
-
-        if (success) {
-            activityDb.log(teamId, req.user.id, 'project_added', 'project', projectPath);
+        // Validate Git repository
+        const validation = validateGitRepo(projectPath);
+        if (!validation.valid) {
+            return res.status(400).json({ error: { code: 'INVALID_GIT_REPO', message: validation.error } });
         }
 
-        res.json({ success: true, alreadyExists: !success });
+        // Get repo info
+        const repoInfo = getRepoInfo(projectPath);
+
+        const success = teamDb.addProject(teamId, projectPath, req.user.id, {
+            name,
+            description: description || '',
+            defaultBranch: repoInfo.currentBranch,
+            remoteUrl: repoInfo.remoteUrl || ''
+        });
+
+        if (!success) {
+            return res.status(409).json({ error: { code: 'ALREADY_EXISTS', message: '该仓库路径已关联到此团队' } });
+        }
+
+        activityDb.log(teamId, req.user.id, 'project_added', 'project', projectPath);
+
+        // Return the created project
+        const projects = teamDb.getProjects(teamId);
+        const project = projects.find(p => p.project_path === projectPath);
+        res.status(201).json({ data: { project } });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
     }
 });
 
@@ -359,13 +380,13 @@ router.get('/:teamId/projects', (req, res) => {
     try {
         const teamId = parseInt(req.params.teamId);
         if (!teamDb.isMember(teamId, req.user.id)) {
-            return res.status(403).json({ error: 'Not a team member' });
+            return res.status(403).json({ error: { code: 'FORBIDDEN', message: '非团队成员' } });
         }
 
         const projects = teamDb.getProjects(teamId);
-        res.json(projects);
+        res.json({ data: { projects } });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
     }
 });
 
@@ -377,13 +398,13 @@ router.delete('/:teamId/projects', (req, res) => {
 
         const callerRole = teamDb.getMemberRole(teamId, req.user.id);
         if (!callerRole || !['pm', 'sm', 'architect'].includes(callerRole)) {
-            return res.status(403).json({ error: 'Insufficient permissions' });
+            return res.status(403).json({ error: { code: 'FORBIDDEN', message: '权限不足' } });
         }
 
         teamDb.removeProject(teamId, projectPath);
-        res.json({ success: true });
+        res.json({ data: { success: true } });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
     }
 });
 

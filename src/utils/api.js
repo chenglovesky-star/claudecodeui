@@ -288,10 +288,10 @@ export const api = {
       }),
 
     // Projects
-    addProject: (teamId, projectPath) =>
+    createProject: (teamId, { name, projectPath, description }) =>
       authenticatedFetch(`/api/team/${teamId}/projects`, {
         method: 'POST',
-        body: JSON.stringify({ projectPath }),
+        body: JSON.stringify({ name, projectPath, description }),
       }),
     getProjects: (teamId) => authenticatedFetch(`/api/team/${teamId}/projects`),
     removeProject: (teamId, projectPath) =>

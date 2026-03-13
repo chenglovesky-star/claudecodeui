@@ -218,6 +218,26 @@ const runMigrations = () => {
     db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_team ON notifications(team_id)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read)');
 
+    // team_projects table expansion: name, description, default_branch, remote_url
+    const tpInfo = db.prepare("PRAGMA table_info(team_projects)").all();
+    const tpCols = tpInfo.map(c => c.name);
+    if (!tpCols.includes('name')) {
+      console.log('Running migration: Adding name column to team_projects');
+      db.exec("ALTER TABLE team_projects ADD COLUMN name TEXT DEFAULT ''");
+    }
+    if (!tpCols.includes('description')) {
+      console.log('Running migration: Adding description column to team_projects');
+      db.exec("ALTER TABLE team_projects ADD COLUMN description TEXT DEFAULT ''");
+    }
+    if (!tpCols.includes('default_branch')) {
+      console.log('Running migration: Adding default_branch column to team_projects');
+      db.exec("ALTER TABLE team_projects ADD COLUMN default_branch TEXT DEFAULT 'main'");
+    }
+    if (!tpCols.includes('remote_url')) {
+      console.log('Running migration: Adding remote_url column to team_projects');
+      db.exec("ALTER TABLE team_projects ADD COLUMN remote_url TEXT DEFAULT ''");
+    }
+
     console.log('Database migrations completed successfully');
   } catch (error) {
     console.error('Error running migrations:', error.message);
@@ -823,10 +843,10 @@ const teamDb = {
     return db.prepare('DELETE FROM team_invites WHERE id = ? AND team_id = ?').run(inviteId, teamId).changes > 0;
   },
 
-  // Add project to team
-  addProject: (teamId, projectPath, addedBy) => {
-    const stmt = db.prepare('INSERT OR IGNORE INTO team_projects (team_id, project_path, added_by) VALUES (?, ?, ?)');
-    return stmt.run(teamId, projectPath, addedBy).changes > 0;
+  // Add project to team (with name, description, git info)
+  addProject: (teamId, projectPath, addedBy, { name, description, defaultBranch, remoteUrl } = {}) => {
+    const stmt = db.prepare('INSERT OR IGNORE INTO team_projects (team_id, project_path, added_by, name, description, default_branch, remote_url) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    return stmt.run(teamId, projectPath, addedBy, name || '', description || '', defaultBranch || 'main', remoteUrl || '').changes > 0;
   },
 
   // Get team projects

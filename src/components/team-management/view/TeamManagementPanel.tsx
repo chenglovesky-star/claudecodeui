@@ -4,6 +4,7 @@ import { useTeam, useTeamPermission } from '../../../contexts/TeamContext';
 import { api } from '../../../utils/api';
 import { Button, Input } from '../../../shared/view/ui';
 import TeamMembersList from './TeamMembersList';
+import TeamProjectsList from './TeamProjectsList';
 import { ROLE_LABELS } from '../types';
 
 type TeamManagementPanelProps = {
@@ -14,7 +15,7 @@ type TeamManagementPanelProps = {
 export default function TeamManagementPanel({ isOpen, onClose }: TeamManagementPanelProps) {
   const { currentTeam, refreshTeams } = useTeam();
   const { canManageTeam, canCreateInvites } = useTeamPermission();
-  const [activeTab, setActiveTab] = useState<'members' | 'invites' | 'settings'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'projects' | 'invites' | 'settings'>('members');
   const [invites, setInvites] = useState<any[]>([]);
   const [isCreatingInvite, setIsCreatingInvite] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -89,6 +90,7 @@ export default function TeamManagementPanel({ isOpen, onClose }: TeamManagementP
         <div className="flex border-b px-4">
           {([
             { key: 'members' as const, label: '成员' },
+            { key: 'projects' as const, label: '项目' },
             { key: 'invites' as const, label: '邀请' },
             { key: 'settings' as const, label: '设置' },
           ]).map(({ key, label }) => {
@@ -113,6 +115,8 @@ export default function TeamManagementPanel({ isOpen, onClose }: TeamManagementP
         {/* Content */}
         <div className="max-h-96 overflow-y-auto p-4">
           {activeTab === 'members' && <TeamMembersList />}
+
+          {activeTab === 'projects' && <TeamProjectsList />}
 
           {activeTab === 'invites' && (
             <div className="space-y-3">
