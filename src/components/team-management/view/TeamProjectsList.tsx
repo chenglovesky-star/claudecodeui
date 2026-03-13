@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { FolderGit2, Plus, Trash2, GitBranch, ExternalLink } from 'lucide-react';
 import { useTeam, useTeamPermission } from '../../../contexts/TeamContext';
 import { api } from '../../../utils/api';
+import ProjectDetailView from './ProjectDetailView';
 
 type TeamProject = {
   id: number;
@@ -23,6 +24,7 @@ export default function TeamProjectsList() {
   const [formData, setFormData] = useState({ name: '', projectPath: '', description: '' });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<TeamProject | null>(null);
 
   useEffect(() => {
     if (currentTeam) loadProjects();
@@ -73,6 +75,7 @@ export default function TeamProjectsList() {
 
   const handleRemove = async (projectPath: string) => {
     if (!currentTeam) return;
+    if (!window.confirm('确定要移除此项目吗？此操作不可撤销。')) return;
     try {
       await api.team.removeProject(currentTeam.id, projectPath);
       await loadProjects();
@@ -82,6 +85,17 @@ export default function TeamProjectsList() {
   };
 
   if (!currentTeam) return null;
+
+  // Project detail drill-down
+  if (selectedProject) {
+    return (
+      <ProjectDetailView
+        projectId={selectedProject.id}
+        projectName={selectedProject.name || selectedProject.project_path}
+        onBack={() => setSelectedProject(null)}
+      />
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -150,7 +164,8 @@ export default function TeamProjectsList() {
           {projects.map((project) => (
             <div
               key={project.id}
-              className="rounded-lg border p-2.5"
+              className="cursor-pointer rounded-lg border p-2.5 hover:border-primary/50 transition-colors"
+              onClick={() => setSelectedProject(project)}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
@@ -162,7 +177,7 @@ export default function TeamProjectsList() {
                 </div>
                 {canManageTeam && (
                   <button
-                    onClick={() => handleRemove(project.project_path)}
+                    onClick={(e) => { e.stopPropagation(); handleRemove(project.project_path); }}
                     className="flex-shrink-0 rounded p-1 hover:bg-destructive/10 hover:text-destructive"
                     title="移除项目"
                   >

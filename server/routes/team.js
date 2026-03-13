@@ -9,7 +9,7 @@
 import express from 'express';
 import { teamDb, activityDb, notificationsDb } from '../database/db.js';
 import { broadcastTeamMemberChange, broadcastTeamActivity, broadcastNotification, getOnlineTeamMembers } from '../utils/team-websocket.js';
-import { validateGitRepo, getRepoInfo } from '../services/GitService.js';
+import { validateGitRepo, getRepoInfo, getBranches, getPullRequests } from '../services/GitService.js';
 
 const router = express.Router();
 
@@ -403,6 +403,58 @@ router.delete('/:teamId/projects', (req, res) => {
 
         teamDb.removeProject(teamId, projectPath);
         res.json({ data: { success: true } });
+    } catch (error) {
+        res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
+    }
+});
+
+// Get project branches
+router.get('/:teamId/projects/:projectId/branches', (req, res) => {
+    try {
+        const teamId = parseInt(req.params.teamId);
+        const projectId = parseInt(req.params.projectId);
+
+        if (isNaN(teamId) || isNaN(projectId)) {
+            return res.status(400).json({ error: { code: 'INVALID_INPUT', message: '无效的参数' } });
+        }
+
+        if (!teamDb.isMember(teamId, req.user.id)) {
+            return res.status(403).json({ error: { code: 'FORBIDDEN', message: '非团队成员' } });
+        }
+
+        const project = teamDb.getProjectById(teamId, projectId);
+        if (!project) {
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: '项目未找到' } });
+        }
+
+        const result = getBranches(project.project_path);
+        res.json({ data: result });
+    } catch (error) {
+        res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
+    }
+});
+
+// Get project pull requests
+router.get('/:teamId/projects/:projectId/pull-requests', (req, res) => {
+    try {
+        const teamId = parseInt(req.params.teamId);
+        const projectId = parseInt(req.params.projectId);
+
+        if (isNaN(teamId) || isNaN(projectId)) {
+            return res.status(400).json({ error: { code: 'INVALID_INPUT', message: '无效的参数' } });
+        }
+
+        if (!teamDb.isMember(teamId, req.user.id)) {
+            return res.status(403).json({ error: { code: 'FORBIDDEN', message: '非团队成员' } });
+        }
+
+        const project = teamDb.getProjectById(teamId, projectId);
+        if (!project) {
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: '项目未找到' } });
+        }
+
+        const result = getPullRequests(project.project_path);
+        res.json({ data: result });
     } catch (error) {
         res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
     }

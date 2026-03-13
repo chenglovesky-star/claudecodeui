@@ -294,6 +294,8 @@ export const api = {
         body: JSON.stringify({ name, projectPath, description }),
       }),
     getProjects: (teamId) => authenticatedFetch(`/api/team/${teamId}/projects`),
+    getProjectBranches: (teamId, projectId) => authenticatedFetch(`/api/team/${teamId}/projects/${projectId}/branches`),
+    getProjectPRs: (teamId, projectId) => authenticatedFetch(`/api/team/${teamId}/projects/${projectId}/pull-requests`),
     removeProject: (teamId, projectPath) =>
       authenticatedFetch(`/api/team/${teamId}/projects`, {
         method: 'DELETE',

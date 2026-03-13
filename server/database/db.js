@@ -854,6 +854,11 @@ const teamDb = {
     return db.prepare('SELECT * FROM team_projects WHERE team_id = ? ORDER BY added_at DESC').all(teamId);
   },
 
+  // Get a single project by ID (with team_id check)
+  getProjectById: (teamId, projectId) => {
+    return db.prepare('SELECT * FROM team_projects WHERE id = ? AND team_id = ?').get(projectId, teamId) || null;
+  },
+
   // Remove project from team
   removeProject: (teamId, projectPath) => {
     return db.prepare('DELETE FROM team_projects WHERE team_id = ? AND project_path = ?').run(teamId, projectPath).changes > 0;
