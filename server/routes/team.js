@@ -39,10 +39,10 @@ router.post('/', (req, res) => {
 
         activityDb.log(team.id, req.user.id, 'team_created', 'team', String(team.id));
 
-        res.status(201).json(team);
+        res.status(201).json({ data: { team } });
     } catch (error) {
         console.error('[TEAM] Error creating team:', error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: error.message } });
     }
 });
 
@@ -209,11 +209,19 @@ router.post('/:teamId/invites', (req, res) => {
         }
 
         const { expiresInHours, maxUses } = req.body;
-        const expiresAt = expiresInHours ? new Date(Date.now() + expiresInHours * 3600000).toISOString() : null;
+        // Default to 72 hours if not provided
+        const effectiveHours = expiresInHours || 72;
+        const expiresAt = new Date(Date.now() + effectiveHours * 3600000).toISOString();
 
         const inviteCode = teamDb.createInvite(teamId, req.user.id, expiresAt, maxUses || 0);
 
-        res.status(201).json({ inviteCode, expiresAt, maxUses: maxUses || 0 });
+        // Generate full invite URL using request host
+        const protocol = req.get('x-forwarded-proto') || req.protocol;
+        const host = req.get('x-forwarded-host') || req.get('host');
+        const basePath = req.baseUrl.replace('/api/team', '');
+        const inviteUrl = `${protocol}://${host}${basePath}/join/${inviteCode}`;
+
+        res.status(201).json({ data: { inviteCode, inviteUrl, expiresAt, maxUses: maxUses || 0 } });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -227,7 +235,14 @@ router.post('/join', (req, res) => {
 
         const result = teamDb.useInvite(inviteCode, req.user.id);
         if (!result.success) {
-            return res.status(400).json({ error: result.error });
+            // If already a member, return team info instead of error
+            if (result.error === 'Already a team member') {
+                const team = teamDb.getTeamById(result.teamId || 0);
+                if (team) {
+                    return res.json({ data: { success: true, team, alreadyMember: true } });
+                }
+            }
+            return res.status(400).json({ error: { code: 'JOIN_FAILED', message: result.error } });
         }
 
         // Broadcast member joined
@@ -240,7 +255,7 @@ router.post('/join', (req, res) => {
         activityDb.log(result.teamId, req.user.id, 'member_joined', 'member', String(req.user.id));
 
         const team = teamDb.getTeamById(result.teamId);
-        res.json({ success: true, team });
+        res.json({ data: { success: true, team } });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

@@ -796,7 +796,7 @@ const teamDb = {
 
     // Check if already a member
     if (teamDb.isMember(invite.team_id, userId)) {
-      return { success: false, error: 'Already a team member' };
+      return { success: false, error: 'Already a team member', teamId: invite.team_id };
     }
 
     // Add member and increment use count

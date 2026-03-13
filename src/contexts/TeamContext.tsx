@@ -184,7 +184,8 @@ export const TeamProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const res = await api.team.create(name, description);
       if (res.ok) {
-        const team = await res.json();
+        const payload = await res.json();
+        const team = payload?.data?.team || payload;
         await refreshTeams();
         setCurrentTeamId(team.id);
         return team;
@@ -200,15 +201,17 @@ export const TeamProvider = ({ children }: { children: React.ReactNode }) => {
   const joinTeam = useCallback(async (inviteCode: string) => {
     try {
       const res = await api.team.join(inviteCode);
-      const data = await res.json();
+      const payload = await res.json();
       if (res.ok) {
         await refreshTeams();
-        if (data.team) setCurrentTeamId(data.team.id);
+        const team = payload?.data?.team || payload?.team;
+        if (team) setCurrentTeamId(team.id);
         return { success: true };
       }
-      return { success: false, error: data.error };
+      const error = payload?.error;
+      return { success: false, error: typeof error === 'object' ? error.message : error };
     } catch (error) {
-      return { success: false, error: 'Network error' };
+      return { success: false, error: '网络错误' };
     }
   }, [refreshTeams, setCurrentTeamId]);
 

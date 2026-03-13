@@ -20,14 +20,14 @@ export default function TeamSelector({ onCreateTeam, onJoinTeam }: TeamSelectorP
           className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
         >
           <Plus className="h-3 w-3" />
-          <span>Create Team</span>
+          <span>创建团队</span>
         </button>
         <button
           onClick={onJoinTeam}
           className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
         >
           <LogIn className="h-3 w-3" />
-          <span>Join Team</span>
+          <span>加入团队</span>
         </button>
       </div>
     );
@@ -42,7 +42,7 @@ export default function TeamSelector({ onCreateTeam, onJoinTeam }: TeamSelectorP
         <div className="flex items-center gap-2 min-w-0">
           <Users className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
           <span className="truncate font-medium">
-            {currentTeam?.name || 'Select Team'}
+            {currentTeam?.name || '选择团队'}
           </span>
           {currentTeam && (
             <span className="flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] bg-primary/10 text-primary">
@@ -84,14 +84,14 @@ export default function TeamSelector({ onCreateTeam, onJoinTeam }: TeamSelectorP
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <Plus className="h-3 w-3" />
-                Create Team
+                创建团队
               </button>
               <button
                 onClick={() => { onJoinTeam(); setIsOpen(false); }}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <LogIn className="h-3 w-3" />
-                Join Team
+                加入团队
               </button>
             </div>
           </div>

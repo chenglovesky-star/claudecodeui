@@ -27,7 +27,7 @@ export default function TeamMembersList() {
   };
 
   const handleRemoveMember = async (member: TeamMember) => {
-    if (!confirm(`Remove ${member.username} from the team?`)) return;
+    if (!confirm(`确定要将 ${member.username} 移出团队吗？`)) return;
     try {
       await api.team.removeMember(currentTeam.id, member.user_id);
       await refreshMembers();
@@ -49,7 +49,7 @@ export default function TeamMembersList() {
             </div>
             <span className="truncate text-sm">{member.username}</span>
             {member.user_id === user?.id && (
-              <span className="text-[10px] text-muted-foreground">(you)</span>
+              <span className="text-[10px] text-muted-foreground">(我)</span>
             )}
           </div>
 
@@ -72,7 +72,7 @@ export default function TeamMembersList() {
                 className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${ROLE_COLORS[member.role]} ${
                   canManageTeam && member.user_id !== user?.id ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
                 }`}
-                title={canManageTeam && member.user_id !== user?.id ? 'Click to change role' : undefined}
+                title={canManageTeam && member.user_id !== user?.id ? '点击更改角色' : undefined}
               >
                 {ROLE_LABELS[member.role]}
               </button>
@@ -82,7 +82,7 @@ export default function TeamMembersList() {
               <button
                 onClick={() => handleRemoveMember(member)}
                 className="rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                title="Remove member"
+                title="移除成员"
               >
                 <UserMinus className="h-3 w-3" />
               </button>

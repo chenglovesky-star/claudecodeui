@@ -6,6 +6,7 @@ import { TaskMasterProvider } from './contexts/TaskMasterContext';
 import { TasksSettingsProvider } from './contexts/TasksSettingsContext';
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import AppContent from './components/app/AppContent';
+import JoinTeamPage from './components/team-management/view/JoinTeamPage';
 import i18n from './i18n/config.js';
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
                     <Routes>
                       <Route path="/" element={<AppContent />} />
                       <Route path="/session/:sessionId" element={<AppContent />} />
+                      <Route path="/join/:inviteCode" element={<JoinTeamPage />} />
                     </Routes>
                   </Router>
                 </ProtectedRoute>

@@ -11,13 +11,13 @@ export type InviteFormData = {
 };
 
 export const ROLE_LABELS: Record<TeamRole, string> = {
-  pm: 'Product Manager',
-  architect: 'Architect',
-  developer: 'Developer',
+  pm: '产品经理',
+  architect: '架构师',
+  developer: '开发者',
   sm: 'Scrum Master',
-  qa: 'QA Engineer',
-  ux: 'UX Designer',
-  analyst: 'Analyst',
+  qa: '质量保证',
+  ux: 'UX 设计师',
+  analyst: '分析师',
 };
 
 export const ROLE_COLORS: Record<TeamRole, string> = {

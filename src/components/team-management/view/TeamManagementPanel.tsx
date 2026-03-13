@@ -39,7 +39,7 @@ export default function TeamManagementPanel({ isOpen, onClose }: TeamManagementP
     if (!currentTeam) return;
     setIsCreatingInvite(true);
     try {
-      const res = await api.team.createInvite(currentTeam.id, 72, 0); // 72 hours, unlimited uses
+      const res = await api.team.createInvite(currentTeam.id, 72, 0);
       if (res.ok) {
         await loadInvites();
       }
@@ -49,8 +49,12 @@ export default function TeamManagementPanel({ isOpen, onClose }: TeamManagementP
     setIsCreatingInvite(false);
   };
 
+  const getInviteUrl = (code: string) => {
+    return `${window.location.origin}/join/${code}`;
+  };
+
   const handleCopyInvite = (code: string) => {
-    navigator.clipboard.writeText(code);
+    navigator.clipboard.writeText(getInviteUrl(code));
     setCopiedCode(code);
     setTimeout(() => setCopiedCode(null), 2000);
   };
@@ -83,20 +87,24 @@ export default function TeamManagementPanel({ isOpen, onClose }: TeamManagementP
 
         {/* Tabs */}
         <div className="flex border-b px-4">
-          {(['members', 'invites', 'settings'] as const).map(tab => {
-            if (tab === 'invites' && !canCreateInvites) return null;
-            if (tab === 'settings' && !canManageTeam) return null;
+          {([
+            { key: 'members' as const, label: '成员' },
+            { key: 'invites' as const, label: '邀请' },
+            { key: 'settings' as const, label: '设置' },
+          ]).map(({ key, label }) => {
+            if (key === 'invites' && !canCreateInvites) return null;
+            if (key === 'settings' && !canManageTeam) return null;
             return (
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-3 py-2 text-sm capitalize transition-colors ${
-                  activeTab === tab
+                key={key}
+                onClick={() => setActiveTab(key)}
+                className={`px-3 py-2 text-sm transition-colors ${
+                  activeTab === key
                     ? 'border-b-2 border-primary font-medium text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                {tab}
+                {label}
               </button>
             );
           })}
@@ -114,11 +122,11 @@ export default function TeamManagementPanel({ isOpen, onClose }: TeamManagementP
                 disabled={isCreatingInvite}
               >
                 <Link className="h-3.5 w-3.5 mr-1.5" />
-                {isCreatingInvite ? 'Creating...' : 'New Invite Link'}
+                {isCreatingInvite ? '生成中...' : '生成邀请链接'}
               </Button>
 
               {invites.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No active invites</p>
+                <p className="text-sm text-muted-foreground">暂无有效邀请</p>
               ) : (
                 <div className="space-y-2">
                   {invites.map((invite) => (
@@ -129,19 +137,19 @@ export default function TeamManagementPanel({ isOpen, onClose }: TeamManagementP
                       <code className="truncate text-xs">{invite.invite_code}</code>
                       <div className="flex items-center gap-1">
                         <span className="text-[10px] text-muted-foreground">
-                          {invite.use_count} used
+                          已使用 {invite.use_count} 次
                         </span>
                         <button
                           onClick={() => handleCopyInvite(invite.invite_code)}
                           className="rounded p-1 hover:bg-accent"
-                          title="Copy invite code"
+                          title="复制邀请链接"
                         >
                           <Copy className={`h-3 w-3 ${copiedCode === invite.invite_code ? 'text-green-500' : ''}`} />
                         </button>
                         <button
                           onClick={() => handleDeleteInvite(invite.id)}
                           className="rounded p-1 hover:bg-destructive/10 hover:text-destructive"
-                          title="Delete invite"
+                          title="删除邀请"
                         >
                           <Trash2 className="h-3 w-3" />
                         </button>
@@ -156,17 +164,17 @@ export default function TeamManagementPanel({ isOpen, onClose }: TeamManagementP
           {activeTab === 'settings' && (
             <div className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium">Team Name</label>
+                <label className="mb-1 block text-sm font-medium">团队名称</label>
                 <p className="text-sm text-muted-foreground">{currentTeam.name}</p>
               </div>
               {currentTeam.description && (
                 <div>
-                  <label className="mb-1 block text-sm font-medium">Description</label>
+                  <label className="mb-1 block text-sm font-medium">描述</label>
                   <p className="text-sm text-muted-foreground">{currentTeam.description}</p>
                 </div>
               )}
               <div>
-                <label className="mb-1 block text-sm font-medium">Your Role</label>
+                <label className="mb-1 block text-sm font-medium">你的角色</label>
                 <p className="text-sm text-muted-foreground">
                   {ROLE_LABELS[currentTeam.user_role]}
                 </p>
