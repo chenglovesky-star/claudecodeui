@@ -397,6 +397,15 @@ app.use('/api/gemini', authenticateToken, geminiRoutes);
 // Agent API Routes (uses API key authentication)
 app.use('/api/agent', agentRoutes);
 
+// Serve uploaded files (avatars, etc.) with security headers
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
+  setHeaders: (res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'");
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+  }
+}));
+
 // Serve public files (like api-docs.html)
 app.use(express.static(path.join(__dirname, '../public')));
 

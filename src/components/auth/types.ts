@@ -3,6 +3,9 @@ import type { ReactNode } from 'react';
 export type AuthUser = {
   id?: number | string;
   username: string;
+  email?: string;
+  nickname?: string;
+  avatar_url?: string;
   [key: string]: unknown;
 };
 
@@ -11,7 +14,11 @@ export type AuthActionResult = { success: true } | { success: false; error: stri
 export type AuthSessionPayload = {
   token?: string;
   user?: AuthUser;
-  error?: string;
+  data?: {
+    token?: string;
+    user?: AuthUser;
+  };
+  error?: string | { code?: string; message?: string };
   message?: string;
 };
 
@@ -41,10 +48,12 @@ export type AuthContextValue = {
   allowRegistration: boolean;
   hasCompletedOnboarding: boolean;
   error: string | null;
-  login: (username: string, password: string) => Promise<AuthActionResult>;
-  register: (username: string, password: string) => Promise<AuthActionResult>;
+  login: (email: string, password: string) => Promise<AuthActionResult>;
+  register: (email: string, password: string, username?: string) => Promise<AuthActionResult>;
   logout: () => void;
   refreshOnboardingStatus: () => Promise<void>;
+  updateProfile: (nickname: string) => Promise<AuthActionResult>;
+  uploadAvatar: (formData: FormData) => Promise<AuthActionResult & { avatar_url?: string }>;
 };
 
 export type AuthProviderProps = {

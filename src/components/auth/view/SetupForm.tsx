@@ -5,39 +5,47 @@ import AuthErrorAlert from './AuthErrorAlert';
 import AuthInputField from './AuthInputField';
 import AuthScreenLayout from './AuthScreenLayout';
 
+type SetupFormProps = {
+  onSwitchToLogin?: () => void;
+};
+
 type SetupFormState = {
+  email: string;
   username: string;
   password: string;
   confirmPassword: string;
 };
 
 const initialState: SetupFormState = {
+  email: '',
   username: '',
   password: '',
   confirmPassword: '',
 };
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function validateSetupForm(formState: SetupFormState): string | null {
-  if (!formState.username.trim() || !formState.password || !formState.confirmPassword) {
-    return 'Please fill in all fields.';
+  if (!formState.email.trim() || !formState.password || !formState.confirmPassword) {
+    return '请填写所有必填项。';
   }
 
-  if (formState.username.trim().length < 3) {
-    return 'Username must be at least 3 characters long.';
+  if (!EMAIL_REGEX.test(formState.email.trim())) {
+    return '请输入有效的邮箱地址。';
   }
 
   if (formState.password.length < 6) {
-    return 'Password must be at least 6 characters long.';
+    return '密码至少需要6个字符。';
   }
 
   if (formState.password !== formState.confirmPassword) {
-    return 'Passwords do not match.';
+    return '两次输入的密码不一致。';
   }
 
   return null;
 }
 
-export default function SetupForm() {
+export default function SetupForm({ onSwitchToLogin }: SetupFormProps) {
   const { register } = useAuth();
 
   const [formState, setFormState] = useState<SetupFormState>(initialState);
@@ -60,7 +68,11 @@ export default function SetupForm() {
       }
 
       setIsSubmitting(true);
-      const result = await register(formState.username.trim(), formState.password);
+      const result = await register(
+        formState.email.trim(),
+        formState.password,
+        formState.username.trim() || undefined
+      );
       if (!result.success) {
         setErrorMessage(result.error);
       }
@@ -71,37 +83,47 @@ export default function SetupForm() {
 
   return (
     <AuthScreenLayout
-      title="Welcome to Claude Code UI"
-      description="Set up your account to get started"
-      footerText="This is a single-user system. Only one account can be created."
+      title="欢迎使用 Claude Code 协作平台"
+      description="创建您的账号以开始使用"
+      footerText="注册后即可加入团队协作"
       logo={<img src="/logo.svg" alt="CloudCLI" className="h-16 w-16" />}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <AuthInputField
+          id="email"
+          label="邮箱"
+          value={formState.email}
+          onChange={(value) => updateField('email', value)}
+          placeholder="请输入邮箱地址"
+          isDisabled={isSubmitting}
+          type="email"
+        />
+
+        <AuthInputField
           id="username"
-          label="Username"
+          label="用户名（可选）"
           value={formState.username}
           onChange={(value) => updateField('username', value)}
-          placeholder="Enter your username"
+          placeholder="留空则使用邮箱前缀"
           isDisabled={isSubmitting}
         />
 
         <AuthInputField
           id="password"
-          label="Password"
+          label="密码"
           value={formState.password}
           onChange={(value) => updateField('password', value)}
-          placeholder="Enter your password"
+          placeholder="请输入密码"
           isDisabled={isSubmitting}
           type="password"
         />
 
         <AuthInputField
           id="confirmPassword"
-          label="Confirm Password"
+          label="确认密码"
           value={formState.confirmPassword}
           onChange={(value) => updateField('confirmPassword', value)}
-          placeholder="Confirm your password"
+          placeholder="再次输入密码"
           isDisabled={isSubmitting}
           type="password"
         />
@@ -113,8 +135,21 @@ export default function SetupForm() {
           disabled={isSubmitting}
           className="w-full rounded-md bg-blue-600 px-4 py-2 font-medium text-white transition-colors duration-200 hover:bg-blue-700 disabled:bg-blue-400"
         >
-          {isSubmitting ? 'Setting up...' : 'Create Account'}
+          {isSubmitting ? '注册中...' : '创建账号'}
         </button>
+
+        {onSwitchToLogin && (
+          <p className="text-center text-sm text-muted-foreground">
+            已有账号？{' '}
+            <button
+              type="button"
+              onClick={onSwitchToLogin}
+              className="text-blue-600 hover:text-blue-700 hover:underline"
+            >
+              立即登录
+            </button>
+          </p>
+        )}
       </form>
     </AuthScreenLayout>
   );

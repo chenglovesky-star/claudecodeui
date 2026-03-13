@@ -6,18 +6,18 @@ import AuthErrorAlert from './AuthErrorAlert';
 import AuthInputField from './AuthInputField';
 import AuthScreenLayout from './AuthScreenLayout';
 
+type LoginFormProps = {
+  onSwitchToRegister?: () => void;
+};
+
 type LoginFormState = {
-  username: string;
+  email: string;
   password: string;
 };
 
 const initialState: LoginFormState = {
-  username: '',
+  email: '',
   password: '',
-};
-
-type LoginFormProps = {
-  onSwitchToRegister?: () => void;
 };
 
 export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
@@ -37,35 +37,34 @@ export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
       event.preventDefault();
       setErrorMessage('');
 
-      // Keep form validation local so each auth screen owns its own UI feedback.
-      if (!formState.username.trim() || !formState.password) {
-        setErrorMessage(t('login.errors.requiredFields'));
+      if (!formState.email.trim() || !formState.password) {
+        setErrorMessage(t('login.errors.requiredFields', '请填写邮箱和密码'));
         return;
       }
 
       setIsSubmitting(true);
-      const result = await login(formState.username.trim(), formState.password);
+      const result = await login(formState.email.trim(), formState.password);
       if (!result.success) {
         setErrorMessage(result.error);
       }
       setIsSubmitting(false);
     },
-    [formState.password, formState.username, login, t],
+    [formState.password, formState.email, login, t],
   );
 
   return (
     <AuthScreenLayout
       title={t('login.title')}
       description={t('login.description')}
-      footerText="Enter your credentials to access Claude Code UI"
+      footerText={t('login.footer', '输入您的凭证以访问 Claude Code 协作平台')}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <AuthInputField
-          id="username"
-          label={t('login.username')}
-          value={formState.username}
-          onChange={(value) => updateField('username', value)}
-          placeholder={t('login.placeholders.username')}
+          id="email"
+          label={t('login.email', '邮箱')}
+          value={formState.email}
+          onChange={(value) => updateField('email', value)}
+          placeholder={t('login.placeholders.email', '请输入邮箱地址')}
           isDisabled={isSubmitting}
         />
 
@@ -90,14 +89,14 @@ export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
         </button>
 
         {onSwitchToRegister && (
-          <p className="text-center text-sm text-gray-500 dark:text-gray-400">
-            {t('login.noAccount')}{' '}
+          <p className="text-center text-sm text-muted-foreground">
+            {t('login.noAccount', '还没有账号？')}{' '}
             <button
               type="button"
               onClick={onSwitchToRegister}
-              className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
+              className="text-blue-600 hover:text-blue-700 hover:underline"
             >
-              {t('login.signUp')}
+              {t('login.registerLink', '立即注册')}
             </button>
           </p>
         )}

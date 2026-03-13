@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { IS_PLATFORM } from '../../../constants/config';
 import { useAuth } from '../context/AuthContext';
@@ -15,11 +15,8 @@ type ProtectedRouteProps = {
 type AuthView = 'login' | 'register';
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { user, isLoading, needsSetup, allowRegistration, hasCompletedOnboarding, refreshOnboardingStatus } = useAuth();
-  const [authView, setAuthView] = useState<AuthView>('login');
-
-  const switchToRegister = useCallback(() => setAuthView('register'), []);
-  const switchToLogin = useCallback(() => setAuthView('login'), []);
+  const { user, isLoading, needsSetup, hasCompletedOnboarding, refreshOnboardingStatus } = useAuth();
+  const [showRegister, setShowRegister] = useState(false);
 
   if (isLoading) {
     return <AuthLoadingScreen />;
@@ -33,15 +30,13 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     return <>{children}</>;
   }
 
-  if (needsSetup) {
-    return <SetupForm />;
+  // Show registration form if needsSetup (first user) or user explicitly chose to register
+  if (needsSetup || (!user && showRegister)) {
+    return <SetupForm onSwitchToLogin={() => setShowRegister(false)} />;
   }
 
   if (!user) {
-    if (authView === 'register' && allowRegistration) {
-      return <RegisterForm onSwitchToLogin={switchToLogin} />;
-    }
-    return <LoginForm onSwitchToRegister={allowRegistration ? switchToRegister : undefined} />;
+    return <LoginForm onSwitchToRegister={() => setShowRegister(true)} />;
   }
 
   if (!hasCompletedOnboarding) {

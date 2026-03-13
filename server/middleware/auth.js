@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { userDb } from '../database/db.js';
+import { userDb, teamDb } from '../database/db.js';
 import { IS_PLATFORM } from '../constants/config.js';
 
 // Get JWT secret from environment or use default (for development)
@@ -29,6 +29,7 @@ const authenticateToken = async (req, res, next) => {
         return res.status(500).json({ error: 'Platform mode: No user found in database' });
       }
       req.user = user;
+      try { req.teamRoles = teamDb.getUserTeamRoles(user.id); } catch { req.teamRoles = {}; }
       return next();
     } catch (error) {
       console.error('Platform mode error:', error);
@@ -59,22 +60,33 @@ const authenticateToken = async (req, res, next) => {
     }
 
     req.user = user;
+
+    // Inject team roles for team-aware endpoints
+    try {
+      req.teamRoles = teamDb.getUserTeamRoles(user.id);
+    } catch {
+      req.teamRoles = {};
+    }
+
     next();
   } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: { code: 'TOKEN_EXPIRED', message: 'Token 已过期，请重新登录' } });
+    }
     console.error('Token verification error:', error);
-    return res.status(403).json({ error: 'Invalid token' });
+    return res.status(403).json({ error: { code: 'INVALID_TOKEN', message: 'Token 无效' } });
   }
 };
 
-// Generate JWT token (never expires)
+// Generate JWT token (expires in 7 days)
 const generateToken = (user) => {
   return jwt.sign(
-    { 
-      userId: user.id, 
-      username: user.username 
+    {
+      userId: user.id,
+      username: user.username
     },
-    JWT_SECRET
-    // No expiration - token lasts forever
+    JWT_SECRET,
+    { expiresIn: '7d' }
   );
 };
 
@@ -108,10 +120,34 @@ const authenticateWebSocket = (token) => {
   }
 };
 
+// Team role authorization middleware
+// Usage: router.put('/path', checkTeamRole(['pm', 'sm']), handler)
+const checkTeamRole = (requiredRoles) => {
+  return (req, res, next) => {
+    const teamId = parseInt(req.params.teamId || req.body.teamId);
+    if (!teamId) {
+      return res.status(400).json({ error: 'Team ID is required' });
+    }
+
+    const userRole = req.teamRoles?.[teamId];
+    if (!userRole) {
+      return res.status(403).json({ error: 'Not a member of this team' });
+    }
+
+    if (requiredRoles && requiredRoles.length > 0 && !requiredRoles.includes(userRole)) {
+      return res.status(403).json({ error: `Requires one of roles: ${requiredRoles.join(', ')}` });
+    }
+
+    req.currentTeamRole = userRole;
+    next();
+  };
+};
+
 export {
   validateApiKey,
   authenticateToken,
   generateToken,
   authenticateWebSocket,
+  checkTeamRole,
   JWT_SECRET
 };

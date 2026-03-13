@@ -91,6 +91,22 @@ const runMigrations = () => {
       db.exec('ALTER TABLE users ADD COLUMN has_completed_onboarding BOOLEAN DEFAULT 0');
     }
 
+    if (!columnNames.includes('email')) {
+      console.log('Running migration: Adding email column');
+      db.exec('ALTER TABLE users ADD COLUMN email TEXT UNIQUE');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+    }
+
+    if (!columnNames.includes('nickname')) {
+      console.log('Running migration: Adding nickname column');
+      db.exec('ALTER TABLE users ADD COLUMN nickname TEXT');
+    }
+
+    if (!columnNames.includes('avatar_url')) {
+      console.log('Running migration: Adding avatar_url column');
+      db.exec('ALTER TABLE users ADD COLUMN avatar_url TEXT');
+    }
+
     // Create session_names table if it doesn't exist (for existing installations)
     db.exec(`CREATE TABLE IF NOT EXISTS session_names (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,6 +130,83 @@ const runMigrations = () => {
     )`);
     db.exec('CREATE INDEX IF NOT EXISTS idx_user_projects_user_id ON user_projects(user_id)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_user_projects_project_name ON user_projects(project_name)');
+
+    // Team collaboration tables migration
+    db.exec(`CREATE TABLE IF NOT EXISTS teams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      settings TEXT DEFAULT '{}'
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_teams_created_by ON teams(created_by)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS team_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id),
+      role TEXT NOT NULL DEFAULT 'developer',
+      joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      is_active INTEGER DEFAULT 1,
+      UNIQUE(team_id, user_id)
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_team_members_team ON team_members(team_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members(user_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_team_members_active ON team_members(is_active)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS team_invites (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE,
+      invite_code TEXT UNIQUE NOT NULL,
+      created_by INTEGER REFERENCES users(id),
+      expires_at DATETIME,
+      max_uses INTEGER DEFAULT 1,
+      use_count INTEGER DEFAULT 0
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_team_invites_code ON team_invites(invite_code)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_team_invites_team ON team_invites(team_id)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS team_projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE,
+      project_path TEXT NOT NULL,
+      added_by INTEGER REFERENCES users(id),
+      added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(team_id, project_path)
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_team_projects_team ON team_projects(team_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_team_projects_path ON team_projects(project_path)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS activity_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER REFERENCES teams(id),
+      user_id INTEGER REFERENCES users(id),
+      action_type TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id TEXT,
+      metadata TEXT DEFAULT '{}',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_activity_log_team ON activity_log(team_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_log(user_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER REFERENCES users(id),
+      team_id INTEGER REFERENCES teams(id),
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT,
+      link TEXT,
+      is_read INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_team ON notifications(team_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read)');
 
     console.log('Database migrations completed successfully');
   } catch (error) {
@@ -148,11 +241,11 @@ const userDb = {
   },
 
   // Create a new user
-  createUser: (username, passwordHash) => {
+  createUser: (username, passwordHash, email = null) => {
     try {
-      const stmt = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)');
-      const result = stmt.run(username, passwordHash);
-      return { id: result.lastInsertRowid, username };
+      const stmt = db.prepare('INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)');
+      const result = stmt.run(username, passwordHash, email);
+      return { id: result.lastInsertRowid, username, email };
     } catch (err) {
       throw err;
     }
@@ -168,6 +261,16 @@ const userDb = {
     }
   },
 
+  // Get user by email
+  getUserByEmail: (email) => {
+    try {
+      const row = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email);
+      return row;
+    } catch (err) {
+      throw err;
+    }
+  },
+
   // Update last login time (non-fatal — logged but not thrown)
   updateLastLogin: (userId) => {
     try {
@@ -177,10 +280,10 @@ const userDb = {
     }
   },
 
-  // Get user by ID
+  // Get user by ID (includes nickname and avatar_url)
   getUserById: (userId) => {
     try {
-      const row = db.prepare('SELECT id, username, created_at, last_login FROM users WHERE id = ? AND is_active = 1').get(userId);
+      const row = db.prepare('SELECT id, username, email, nickname, avatar_url, created_at, last_login FROM users WHERE id = ? AND is_active = 1').get(userId);
       return row;
     } catch (err) {
       throw err;
@@ -189,8 +292,24 @@ const userDb = {
 
   getFirstUser: () => {
     try {
-      const row = db.prepare('SELECT id, username, created_at, last_login FROM users WHERE is_active = 1 ORDER BY id ASC LIMIT 1').get();
+      const row = db.prepare('SELECT id, username, email, nickname, avatar_url, created_at, last_login FROM users WHERE is_active = 1 LIMIT 1').get();
       return row;
+    } catch (err) {
+      throw err;
+    }
+  },
+
+  // Update user profile (nickname, avatar_url)
+  updateProfile: (userId, { nickname, avatarUrl }) => {
+    try {
+      if (nickname !== undefined && avatarUrl !== undefined) {
+        db.prepare('UPDATE users SET nickname = ?, avatar_url = ? WHERE id = ?').run(nickname, avatarUrl, userId);
+      } else if (nickname !== undefined) {
+        db.prepare('UPDATE users SET nickname = ? WHERE id = ?').run(nickname, userId);
+      } else if (avatarUrl !== undefined) {
+        db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').run(avatarUrl, userId);
+      }
+      return userDb.getUserById(userId);
     } catch (err) {
       throw err;
     }
@@ -533,6 +652,212 @@ const userProjectsDb = {
   },
 };
 
+// Team database operations
+const teamDb = {
+  // Create a new team
+  createTeam: (name, description, createdBy, settings = '{}') => {
+    const stmt = db.prepare('INSERT INTO teams (name, description, created_by, settings) VALUES (?, ?, ?, ?)');
+    const result = stmt.run(name, description, createdBy, settings);
+    // Auto-add creator as team owner (pm role)
+    db.prepare('INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)').run(result.lastInsertRowid, createdBy, 'pm');
+    return { id: result.lastInsertRowid, name, description };
+  },
+
+  // Get team by ID
+  getTeamById: (teamId) => {
+    return db.prepare('SELECT * FROM teams WHERE id = ?').get(teamId);
+  },
+
+  // Get all teams for a user
+  getTeamsForUser: (userId) => {
+    return db.prepare(`
+      SELECT t.*, tm.role as user_role
+      FROM teams t
+      JOIN team_members tm ON t.id = tm.team_id
+      WHERE tm.user_id = ? AND tm.is_active = 1
+      ORDER BY t.updated_at DESC
+    `).all(userId);
+  },
+
+  // Update team
+  updateTeam: (teamId, name, description, settings) => {
+    const stmt = db.prepare('UPDATE teams SET name = ?, description = ?, settings = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+    return stmt.run(name, description, settings || '{}', teamId).changes > 0;
+  },
+
+  // Delete team
+  deleteTeam: (teamId) => {
+    return db.prepare('DELETE FROM teams WHERE id = ?').run(teamId).changes > 0;
+  },
+
+  // Get team members
+  getTeamMembers: (teamId) => {
+    return db.prepare(`
+      SELECT tm.*, u.username, u.git_name, u.git_email, u.nickname, u.avatar_url
+      FROM team_members tm
+      JOIN users u ON tm.user_id = u.id
+      WHERE tm.team_id = ? AND tm.is_active = 1
+      ORDER BY tm.joined_at ASC
+    `).all(teamId);
+  },
+
+  // Add member to team
+  addMember: (teamId, userId, role = 'developer') => {
+    const stmt = db.prepare('INSERT OR IGNORE INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)');
+    return stmt.run(teamId, userId, role).changes > 0;
+  },
+
+  // Update member role
+  updateMemberRole: (teamId, userId, role) => {
+    return db.prepare('UPDATE team_members SET role = ? WHERE team_id = ? AND user_id = ?').run(role, teamId, userId).changes > 0;
+  },
+
+  // Remove member from team (soft delete)
+  removeMember: (teamId, userId) => {
+    return db.prepare('UPDATE team_members SET is_active = 0 WHERE team_id = ? AND user_id = ?').run(teamId, userId).changes > 0;
+  },
+
+  // Check if user is member of team
+  isMember: (teamId, userId) => {
+    const row = db.prepare('SELECT id FROM team_members WHERE team_id = ? AND user_id = ? AND is_active = 1').get(teamId, userId);
+    return !!row;
+  },
+
+  // Get member role in team
+  getMemberRole: (teamId, userId) => {
+    const row = db.prepare('SELECT role FROM team_members WHERE team_id = ? AND user_id = ? AND is_active = 1').get(teamId, userId);
+    return row?.role || null;
+  },
+
+  // Get all team roles for a user (returns Map<teamId, role>)
+  getUserTeamRoles: (userId) => {
+    const rows = db.prepare('SELECT team_id, role FROM team_members WHERE user_id = ? AND is_active = 1').all(userId);
+    const map = {};
+    for (const row of rows) {
+      map[row.team_id] = row.role;
+    }
+    return map;
+  },
+
+  // Create invite
+  createInvite: (teamId, createdBy, expiresAt = null, maxUses = 1) => {
+    const inviteCode = crypto.randomBytes(16).toString('hex');
+    const stmt = db.prepare('INSERT INTO team_invites (team_id, invite_code, created_by, expires_at, max_uses) VALUES (?, ?, ?, ?, ?)');
+    stmt.run(teamId, inviteCode, createdBy, expiresAt, maxUses);
+    return inviteCode;
+  },
+
+  // Use invite code to join team
+  useInvite: (inviteCode, userId) => {
+    const invite = db.prepare('SELECT * FROM team_invites WHERE invite_code = ?').get(inviteCode);
+    if (!invite) return { success: false, error: 'Invalid invite code' };
+    if (invite.expires_at && new Date(invite.expires_at) < new Date()) return { success: false, error: 'Invite expired' };
+    if (invite.max_uses > 0 && invite.use_count >= invite.max_uses) return { success: false, error: 'Invite has been used up' };
+
+    // Check if already a member
+    if (teamDb.isMember(invite.team_id, userId)) {
+      return { success: false, error: 'Already a team member' };
+    }
+
+    // Add member and increment use count
+    const addResult = teamDb.addMember(invite.team_id, userId, 'developer');
+    if (addResult) {
+      db.prepare('UPDATE team_invites SET use_count = use_count + 1 WHERE id = ?').run(invite.id);
+    }
+    return { success: true, teamId: invite.team_id };
+  },
+
+  // Get invites for a team
+  getInvites: (teamId) => {
+    return db.prepare('SELECT id, invite_code, created_by, expires_at, max_uses, use_count FROM team_invites WHERE team_id = ?').all(teamId);
+  },
+
+  // Delete invite
+  deleteInvite: (inviteId, teamId) => {
+    return db.prepare('DELETE FROM team_invites WHERE id = ? AND team_id = ?').run(inviteId, teamId).changes > 0;
+  },
+
+  // Add project to team
+  addProject: (teamId, projectPath, addedBy) => {
+    const stmt = db.prepare('INSERT OR IGNORE INTO team_projects (team_id, project_path, added_by) VALUES (?, ?, ?)');
+    return stmt.run(teamId, projectPath, addedBy).changes > 0;
+  },
+
+  // Get team projects
+  getProjects: (teamId) => {
+    return db.prepare('SELECT * FROM team_projects WHERE team_id = ? ORDER BY added_at DESC').all(teamId);
+  },
+
+  // Remove project from team
+  removeProject: (teamId, projectPath) => {
+    return db.prepare('DELETE FROM team_projects WHERE team_id = ? AND project_path = ?').run(teamId, projectPath).changes > 0;
+  },
+
+  // Get teams for a project
+  getTeamsForProject: (projectPath) => {
+    return db.prepare(`
+      SELECT t.* FROM teams t
+      JOIN team_projects tp ON t.id = tp.team_id
+      WHERE tp.project_path = ?
+    `).all(projectPath);
+  }
+};
+
+// Activity log database operations
+const activityDb = {
+  log: (teamId, userId, actionType, entityType = null, entityId = null, metadata = '{}') => {
+    const stmt = db.prepare('INSERT INTO activity_log (team_id, user_id, action_type, entity_type, entity_id, metadata) VALUES (?, ?, ?, ?, ?, ?)');
+    return stmt.run(teamId, userId, actionType, entityType, entityId, metadata);
+  },
+
+  getForTeam: (teamId, limit = 50, offset = 0) => {
+    return db.prepare(`
+      SELECT al.*, u.username
+      FROM activity_log al
+      JOIN users u ON al.user_id = u.id
+      WHERE al.team_id = ?
+      ORDER BY al.created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(teamId, limit, offset);
+  }
+};
+
+// Notifications database operations
+const notificationsDb = {
+  create: (userId, teamId, type, title, body = null, link = null) => {
+    const stmt = db.prepare('INSERT INTO notifications (user_id, team_id, type, title, body, link) VALUES (?, ?, ?, ?, ?, ?)');
+    return { id: stmt.run(userId, teamId, type, title, body, link).lastInsertRowid };
+  },
+
+  getForUser: (userId, limit = 50, offset = 0, unreadOnly = false) => {
+    const whereClause = unreadOnly ? 'AND n.is_read = 0' : '';
+    return db.prepare(`
+      SELECT n.*, t.name as team_name
+      FROM notifications n
+      LEFT JOIN teams t ON n.team_id = t.id
+      WHERE n.user_id = ? ${whereClause}
+      ORDER BY n.created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(userId, limit, offset);
+  },
+
+  getUnreadCount: (userId) => {
+    const row = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0').get(userId);
+    return row.count;
+  },
+
+  markAsRead: (notificationId, userId) => {
+    return db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?').run(notificationId, userId).changes > 0;
+  },
+
+  markAllAsRead: (userId, teamId = null) => {
+    if (teamId) {
+      return db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ? AND team_id = ?').run(userId, teamId).changes;
+    }
+    return db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').run(userId).changes;
+  }
+};
+
 // Backward compatibility - keep old names pointing to new system
 const githubTokensDb = {
   createGithubToken: (userId, tokenName, githubToken, description = null) => {
@@ -561,5 +886,8 @@ export {
   sessionNamesDb,
   applyCustomSessionNames,
   userProjectsDb,
-  githubTokensDb // Backward compatibility
+  githubTokensDb, // Backward compatibility
+  teamDb,
+  activityDb,
+  notificationsDb
 };

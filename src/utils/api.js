@@ -1,7 +1,7 @@
 import { IS_PLATFORM } from "../constants/config";
 
 // Utility function for authenticated API calls
-export const authenticatedFetch = (url, options = {}) => {
+export const authenticatedFetch = async (url, options = {}) => {
   const token = localStorage.getItem('auth-token');
 
   const defaultHeaders = {};
@@ -15,13 +15,21 @@ export const authenticatedFetch = (url, options = {}) => {
     defaultHeaders['Authorization'] = `Bearer ${token}`;
   }
 
-  return fetch(url, {
+  const response = await fetch(url, {
     ...options,
     headers: {
       ...defaultHeaders,
       ...options.headers,
     },
   });
+
+  // Auto-clear session on token expiry (401) to force re-login
+  if (response.status === 401 && token) {
+    localStorage.removeItem('auth-token');
+    window.location.reload();
+  }
+
+  return response;
 };
 
 // API endpoints
@@ -29,15 +37,15 @@ export const api = {
   // Auth endpoints (no token required)
   auth: {
     status: () => fetch('/api/auth/status'),
-    login: (username, password) => fetch('/api/auth/login', {
+    login: (email, password) => fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ email, password }),
     }),
-    register: (username, password) => fetch('/api/auth/register', {
+    register: (email, password, username) => fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ email, password, username }),
     }),
     user: () => authenticatedFetch('/api/auth/user'),
     logout: () => authenticatedFetch('/api/auth/logout', { method: 'POST' }),
@@ -215,6 +223,88 @@ export const api = {
       authenticatedFetch('/api/user/complete-onboarding', {
         method: 'POST',
       }),
+    updateProfile: (nickname) =>
+      authenticatedFetch('/api/auth/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ nickname }),
+      }),
+    uploadAvatar: (formData) =>
+      authenticatedFetch('/api/auth/avatar', {
+        method: 'POST',
+        body: formData,
+      }),
+  },
+
+  // Team endpoints
+  team: {
+    list: () => authenticatedFetch('/api/team'),
+    get: (teamId) => authenticatedFetch(`/api/team/${teamId}`),
+    create: (name, description, settings) =>
+      authenticatedFetch('/api/team', {
+        method: 'POST',
+        body: JSON.stringify({ name, description, settings }),
+      }),
+    update: (teamId, name, description, settings) =>
+      authenticatedFetch(`/api/team/${teamId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ name, description, settings }),
+      }),
+    delete: (teamId) =>
+      authenticatedFetch(`/api/team/${teamId}`, { method: 'DELETE' }),
+
+    // Members
+    getMembers: (teamId) => authenticatedFetch(`/api/team/${teamId}/members`),
+    updateMemberRole: (teamId, userId, role) =>
+      authenticatedFetch(`/api/team/${teamId}/members/${userId}/role`, {
+        method: 'PUT',
+        body: JSON.stringify({ role }),
+      }),
+    removeMember: (teamId, userId) =>
+      authenticatedFetch(`/api/team/${teamId}/members/${userId}`, { method: 'DELETE' }),
+
+    // Invites
+    createInvite: (teamId, expiresInHours, maxUses) =>
+      authenticatedFetch(`/api/team/${teamId}/invites`, {
+        method: 'POST',
+        body: JSON.stringify({ expiresInHours, maxUses }),
+      }),
+    getInvites: (teamId) => authenticatedFetch(`/api/team/${teamId}/invites`),
+    deleteInvite: (teamId, inviteId) =>
+      authenticatedFetch(`/api/team/${teamId}/invites/${inviteId}`, { method: 'DELETE' }),
+    join: (inviteCode) =>
+      authenticatedFetch('/api/team/join', {
+        method: 'POST',
+        body: JSON.stringify({ inviteCode }),
+      }),
+
+    // Projects
+    addProject: (teamId, projectPath) =>
+      authenticatedFetch(`/api/team/${teamId}/projects`, {
+        method: 'POST',
+        body: JSON.stringify({ projectPath }),
+      }),
+    getProjects: (teamId) => authenticatedFetch(`/api/team/${teamId}/projects`),
+    removeProject: (teamId, projectPath) =>
+      authenticatedFetch(`/api/team/${teamId}/projects`, {
+        method: 'DELETE',
+        body: JSON.stringify({ projectPath }),
+      }),
+
+    // Activity & Notifications
+    getActivity: (teamId, limit = 50, offset = 0) =>
+      authenticatedFetch(`/api/team/${teamId}/activity?limit=${limit}&offset=${offset}`),
+    getNotifications: (limit = 50, offset = 0, unreadOnly = false) =>
+      authenticatedFetch(`/api/team/notifications/list?limit=${limit}&offset=${offset}&unreadOnly=${unreadOnly}`),
+    markNotificationRead: (notificationId) =>
+      authenticatedFetch(`/api/team/notifications/${notificationId}/read`, { method: 'PUT' }),
+    markAllNotificationsRead: (teamId) =>
+      authenticatedFetch('/api/team/notifications/read-all', {
+        method: 'PUT',
+        body: JSON.stringify({ teamId }),
+      }),
+
+    // Presence
+    getPresence: (teamId) => authenticatedFetch(`/api/team/${teamId}/presence`),
   },
 
   // Generic GET method for any endpoint

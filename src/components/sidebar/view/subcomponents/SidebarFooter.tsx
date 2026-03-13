@@ -1,6 +1,7 @@
-import { Settings, ArrowUpCircle, LogOut } from 'lucide-react';
+import { Settings, ArrowUpCircle, LogOut, User } from 'lucide-react';
 import type { TFunction } from 'i18next';
 import type { ReleaseInfo } from '../../../../types/sharedTypes';
+import { useAuth } from '../../../auth/context/AuthContext';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/buxwujPNRE';
 
@@ -31,8 +32,54 @@ export default function SidebarFooter({
   onLogout,
   t,
 }: SidebarFooterProps) {
+  const { user } = useAuth();
+  const displayName = user?.nickname || user?.username || '';
+  const avatarUrl = user?.avatar_url;
+
   return (
     <div className="flex-shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0)' }}>
+      {/* User profile */}
+      {user && (
+        <>
+          <div className="nav-divider" />
+          {/* Desktop user profile */}
+          <div className="hidden px-2 py-1.5 md:block">
+            <button
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+              onClick={onShowSettings}
+              title={displayName}
+            >
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={displayName} className="h-5 w-5 rounded-full object-cover" />
+              ) : (
+                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
+                  <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400">
+                    {displayName.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+              )}
+              <span className="truncate text-sm">{displayName}</span>
+            </button>
+          </div>
+          {/* Mobile user profile */}
+          <div className="px-3 pt-3 md:hidden">
+            <button
+              className="flex h-12 w-full items-center gap-3.5 rounded-xl bg-muted/40 px-4 transition-all hover:bg-muted/60 active:scale-[0.98]"
+              onClick={onShowSettings}
+            >
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={displayName} className="h-8 w-8 rounded-full object-cover" />
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-900/30">
+                  <User className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                </div>
+              )}
+              <span className="text-base font-medium text-foreground">{displayName}</span>
+            </button>
+          </div>
+        </>
+      )}
+
       {/* Update banner */}
       {updateAvailable && (
         <>

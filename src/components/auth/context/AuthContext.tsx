@@ -11,7 +11,7 @@ import type {
   AuthUserPayload,
   OnboardingStatusPayload,
 } from '../types';
-import { parseJsonSafely, resolveApiErrorMessage } from '../utils';
+import { parseJsonSafely } from '../utils';
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -132,19 +132,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [checkAuthStatus, checkOnboardingStatus]);
 
   const login = useCallback<AuthContextValue['login']>(
-    async (username, password) => {
+    async (email, password) => {
       try {
         setError(null);
-        const response = await api.auth.login(username, password);
+        const response = await api.auth.login(email, password);
         const payload = await parseJsonSafely<AuthSessionPayload>(response);
 
-        if (!response.ok || !payload?.token || !payload.user) {
-          const message = resolveApiErrorMessage(payload, AUTH_ERROR_MESSAGES.loginFailed);
+        // Support both new { data: { user, token } } and legacy { user, token } formats
+        const userData = payload?.data?.user || payload?.user;
+        const tokenData = payload?.data?.token || payload?.token;
+
+        if (!response.ok || !tokenData || !userData) {
+          const rawError = payload?.error;
+          const errorMsg = (typeof rawError === 'object' && rawError !== null && 'message' in rawError)
+            ? (rawError as { message: string }).message
+            : rawError;
+          const message = typeof errorMsg === 'string' ? errorMsg : AUTH_ERROR_MESSAGES.loginFailed;
           setError(message);
           return { success: false, error: message };
         }
 
-        setSession(payload.user, payload.token);
+        setSession(userData, tokenData);
         setNeedsSetup(false);
         await checkOnboardingStatus();
         return { success: true };
@@ -158,19 +166,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
   );
 
   const register = useCallback<AuthContextValue['register']>(
-    async (username, password) => {
+    async (email, password, username) => {
       try {
         setError(null);
-        const response = await api.auth.register(username, password);
+        const response = await api.auth.register(email, password, username);
         const payload = await parseJsonSafely<AuthSessionPayload>(response);
 
-        if (!response.ok || !payload?.token || !payload.user) {
-          const message = resolveApiErrorMessage(payload, AUTH_ERROR_MESSAGES.registrationFailed);
+        // Support both new { data: { user, token } } and legacy { user, token } formats
+        const userData = payload?.data?.user || payload?.user;
+        const tokenData = payload?.data?.token || payload?.token;
+
+        if (!response.ok || !tokenData || !userData) {
+          const rawError = payload?.error;
+          const errorMsg = (typeof rawError === 'object' && rawError !== null && 'message' in rawError)
+            ? (rawError as { message: string }).message
+            : rawError;
+          const message = typeof errorMsg === 'string' ? errorMsg : AUTH_ERROR_MESSAGES.registrationFailed;
           setError(message);
           return { success: false, error: message };
         }
 
-        setSession(payload.user, payload.token);
+        setSession(userData, tokenData);
         setNeedsSetup(false);
         await checkOnboardingStatus();
         return { success: true };
@@ -181,6 +197,54 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     },
     [checkOnboardingStatus, setSession],
+  );
+
+  const updateProfile = useCallback<AuthContextValue['updateProfile']>(
+    async (nickname) => {
+      try {
+        const response = await api.user.updateProfile(nickname);
+        const payload = await parseJsonSafely<{ data?: { user?: AuthUser }; error?: { message?: string } }>(response);
+
+        if (!response.ok) {
+          const message = payload?.error?.message || '更新个人资料失败';
+          return { success: false, error: message };
+        }
+
+        const updatedUser = payload?.data?.user;
+        if (updatedUser) {
+          setUser(updatedUser);
+        }
+        return { success: true };
+      } catch (caughtError) {
+        console.error('Update profile error:', caughtError);
+        return { success: false, error: '网络错误，请稍后重试' };
+      }
+    },
+    [],
+  );
+
+  const uploadAvatar = useCallback<AuthContextValue['uploadAvatar']>(
+    async (formData) => {
+      try {
+        const response = await api.user.uploadAvatar(formData);
+        const payload = await parseJsonSafely<{ data?: { avatar_url?: string }; error?: { message?: string } }>(response);
+
+        if (!response.ok) {
+          const message = payload?.error?.message || '上传头像失败';
+          return { success: false, error: message };
+        }
+
+        const avatarUrl = payload?.data?.avatar_url;
+        if (avatarUrl) {
+          setUser((prev) => prev ? { ...prev, avatar_url: avatarUrl } : prev);
+        }
+        return { success: true, avatar_url: avatarUrl };
+      } catch (caughtError) {
+        console.error('Upload avatar error:', caughtError);
+        return { success: false, error: '网络错误，请稍后重试' };
+      }
+    },
+    [],
   );
 
   const logout = useCallback(() => {
@@ -207,6 +271,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       register,
       logout,
       refreshOnboardingStatus,
+      updateProfile,
+      uploadAvatar,
     }),
     [
       allowRegistration,
@@ -219,6 +285,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       refreshOnboardingStatus,
       register,
       token,
+      updateProfile,
+      uploadAvatar,
       user,
     ],
   );
