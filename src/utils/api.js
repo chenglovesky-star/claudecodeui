@@ -296,6 +296,8 @@ export const api = {
     getProjects: (teamId) => authenticatedFetch(`/api/team/${teamId}/projects`),
     getProjectBranches: (teamId, projectId) => authenticatedFetch(`/api/team/${teamId}/projects/${projectId}/branches`),
     getProjectPRs: (teamId, projectId) => authenticatedFetch(`/api/team/${teamId}/projects/${projectId}/pull-requests`),
+    getProjectFiles: (teamId, projectId, ref) => authenticatedFetch(`/api/team/${teamId}/projects/${projectId}/files${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`),
+    getProjectCommits: (teamId, projectId, limit = 20, offset = 0) => authenticatedFetch(`/api/team/${teamId}/projects/${projectId}/commits?limit=${limit}&offset=${offset}`),
     removeProject: (teamId, projectPath) =>
       authenticatedFetch(`/api/team/${teamId}/projects`, {
         method: 'DELETE',
