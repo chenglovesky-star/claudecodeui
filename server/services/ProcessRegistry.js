@@ -10,6 +10,7 @@ import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
 import EventBus from './EventBus.js';
+import FileTrackingService from './FileTrackingService.js';
 
 const MAX_INSTANCES_PER_USER = 1;
 const MAX_INSTANCES_PER_TEAM = 5;
@@ -147,6 +148,9 @@ export default class ProcessRegistry {
         EventBus.getInstance().emit('instance:created', {
             sessionId, userId, teamId, projectPath, status: 'active'
         });
+
+        // Start file tracking for this project
+        FileTrackingService.getInstance().startTracking(resolvedPath, teamId, userId, sessionId);
 
         return { sessionId };
     }
@@ -310,6 +314,9 @@ export default class ProcessRegistry {
         entry.buffer.length = 0;
         this._listeners.delete(sessionId);
         this.sessions.delete(sessionId);
+
+        // Stop file tracking for this session's project
+        FileTrackingService.getInstance().stopTracking(entry.projectPath, sessionId);
 
         // Broadcast termination via EventBus
         EventBus.getInstance().emit('instance:terminated', { sessionId, userId, teamId });

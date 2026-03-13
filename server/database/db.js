@@ -238,6 +238,22 @@ const runMigrations = () => {
       db.exec("ALTER TABLE team_projects ADD COLUMN remote_url TEXT DEFAULT ''");
     }
 
+    // file_activities table for file change tracking (Story 4.3)
+    db.exec(`CREATE TABLE IF NOT EXISTS file_activities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      session_id TEXT,
+      file_path TEXT NOT NULL,
+      action TEXT NOT NULL DEFAULT 'modified',
+      project_path TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_file_activities_team ON file_activities(team_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_file_activities_user ON file_activities(user_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_file_activities_created ON file_activities(created_at)');
+
     console.log('Database migrations completed successfully');
   } catch (error) {
     console.error('Error running migrations:', error.message);
@@ -948,6 +964,29 @@ const githubTokensDb = {
   }
 };
 
+// File activities (Story 4.3)
+const fileActivitiesDb = {
+  log: (teamId, userId, sessionId, filePath, action, projectPath) => {
+    db.prepare(`INSERT INTO file_activities (team_id, user_id, session_id, file_path, action, project_path)
+      VALUES (?, ?, ?, ?, ?, ?)`).run(teamId, userId, sessionId, filePath, action, projectPath);
+  },
+  getRecent: (teamId, limit = 50) => {
+    return db.prepare(`SELECT fa.*, u.username, u.nickname FROM file_activities fa
+      LEFT JOIN users u ON fa.user_id = u.id
+      WHERE fa.team_id = ?
+      ORDER BY fa.created_at DESC LIMIT ?`).all(teamId, limit);
+  },
+  getByUser: (teamId, userId, limit = 20) => {
+    return db.prepare(`SELECT * FROM file_activities
+      WHERE team_id = ? AND user_id = ?
+      ORDER BY created_at DESC LIMIT ?`).all(teamId, userId, limit);
+  },
+  cleanup: (olderThanHours = 24) => {
+    db.prepare(`DELETE FROM file_activities WHERE created_at < datetime('now', '-' || ? || ' hours')`)
+      .run(olderThanHours);
+  },
+};
+
 export {
   db,
   initializeDatabase,
@@ -960,5 +999,6 @@ export {
   githubTokensDb, // Backward compatibility
   teamDb,
   activityDb,
-  notificationsDb
+  notificationsDb,
+  fileActivitiesDb
 };

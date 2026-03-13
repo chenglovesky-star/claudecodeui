@@ -3,6 +3,7 @@ import { Monitor, RefreshCw, User } from 'lucide-react';
 import { useTeam } from '../../../contexts/TeamContext';
 import { useWebSocket } from '../../../contexts/WebSocketContext';
 import { api } from '../../../utils/api';
+import FileActivityFeed from './FileActivityFeed';
 
 type InstanceInfo = {
   sessionId: string;
@@ -152,6 +153,11 @@ export default function CollaborationPanel() {
           ))}
         </div>
       )}
+
+      {/* File activity feed */}
+      <div className="border-t pt-3">
+        <FileActivityFeed />
+      </div>
     </div>
   );
 }

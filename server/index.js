@@ -71,7 +71,7 @@ import teamRoutes from './routes/team.js';
 import instanceRoutes from './routes/instance.js';
 import ProcessRegistry from './services/ProcessRegistry.js';
 import EventBus from './services/EventBus.js';
-import { initializeDatabase, sessionNamesDb, applyCustomSessionNames, userProjectsDb, userDb } from './database/db.js';
+import { initializeDatabase, sessionNamesDb, applyCustomSessionNames, userProjectsDb, userDb, fileActivitiesDb } from './database/db.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 import { IS_PLATFORM } from './constants/config.js';
 
@@ -427,8 +427,27 @@ for (const eventName of ['instance:created', 'instance:terminated', 'instance:ti
         }
     });
 }
+// file:change → WebSocket broadcast + DB log
+eventBus.on('file:change', (payload) => {
+    const { teamId } = payload;
+    if (teamId) {
+        broadcastToTeam(teamConnectedClients, teamId, {
+            type: 'file:change',
+            ...payload,
+        });
+        try {
+            fileActivitiesDb.log(teamId, payload.userId, payload.sessionId, payload.filePath, payload.action, payload.projectPath);
+        } catch { /* ignore db errors */ }
+    }
+});
+
 // Initialize ProcessRegistry singleton
 ProcessRegistry.getInstance();
+
+// Periodic cleanup of old file_activities records (every hour, keep last 24h)
+setInterval(() => {
+    try { fileActivitiesDb.cleanup(24); } catch { /* ignore */ }
+}, 60 * 60 * 1000);
 
 // Serve uploaded files (avatars, etc.) with security headers
 app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {

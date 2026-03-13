@@ -5,8 +5,9 @@
  */
 
 import express from 'express';
-import { teamDb } from '../database/db.js';
+import { teamDb, fileActivitiesDb } from '../database/db.js';
 import ProcessRegistry from '../services/ProcessRegistry.js';
+import FileTrackingService from '../services/FileTrackingService.js';
 import { validateGitRepo } from '../services/GitService.js';
 
 const router = express.Router();
@@ -187,6 +188,40 @@ router.delete('/:teamId/instances/:sessionId', (req, res) => {
 
         registry.killSession(sessionId);
         res.json({ data: { success: true } });
+    } catch (error) {
+        res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
+    }
+});
+
+// ==========================================
+// File Activities
+// ==========================================
+
+// Get team file activities (current active + recent)
+router.get('/:teamId/file-activities', (req, res) => {
+    try {
+        const teamId = parseInt(req.params.teamId);
+        if (isNaN(teamId)) {
+            return res.status(400).json({ error: { code: 'INVALID_INPUT', message: '无效的参数' } });
+        }
+
+        if (!teamDb.isMember(teamId, req.user.id)) {
+            return res.status(403).json({ error: { code: 'FORBIDDEN', message: '非团队成员' } });
+        }
+
+        // Get live tracking data
+        const tracker = FileTrackingService.getInstance();
+        const liveActivities = tracker.getTeamFileActivities(teamId);
+
+        // Get recent DB records
+        const recentActivities = fileActivitiesDb.getRecent(teamId, 50);
+
+        res.json({
+            data: {
+                live: liveActivities,
+                recent: recentActivities,
+            }
+        });
     } catch (error) {
         res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
     }
