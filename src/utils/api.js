@@ -307,6 +307,7 @@ export const api = {
       }),
     getMyInstance: (teamId) => authenticatedFetch(`/api/teams/${teamId}/instances/mine`),
     getInstances: (teamId) => authenticatedFetch(`/api/teams/${teamId}/instances`),
+    getInstanceStats: (teamId) => authenticatedFetch(`/api/teams/${teamId}/instances/stats`),
     deleteInstance: (teamId, sessionId) =>
       authenticatedFetch(`/api/teams/${teamId}/instances/${sessionId}`, { method: 'DELETE' }),
     removeProject: (teamId, projectPath) =>

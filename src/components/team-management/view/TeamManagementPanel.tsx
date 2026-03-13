@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Copy, Link, Settings, Trash2, Users, X } from 'lucide-react';
+import { Copy, Link, Trash2, Users, X } from 'lucide-react';
 import { useTeam, useTeamPermission } from '../../../contexts/TeamContext';
 import { api } from '../../../utils/api';
-import { Button, Input } from '../../../shared/view/ui';
+import { Button } from '../../../shared/view/ui';
 import TeamMembersList from './TeamMembersList';
 import TeamProjectsList from './TeamProjectsList';
+import CollaborationPanel from './CollaborationPanel';
 import { ROLE_LABELS } from '../types';
 
 type TeamManagementPanelProps = {
@@ -15,7 +16,7 @@ type TeamManagementPanelProps = {
 export default function TeamManagementPanel({ isOpen, onClose }: TeamManagementPanelProps) {
   const { currentTeam, refreshTeams } = useTeam();
   const { canManageTeam, canCreateInvites } = useTeamPermission();
-  const [activeTab, setActiveTab] = useState<'members' | 'projects' | 'invites' | 'settings'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'projects' | 'collaboration' | 'invites' | 'settings'>('members');
   const [invites, setInvites] = useState<any[]>([]);
   const [isCreatingInvite, setIsCreatingInvite] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -24,7 +25,7 @@ export default function TeamManagementPanel({ isOpen, onClose }: TeamManagementP
     if (isOpen && currentTeam && canCreateInvites) {
       loadInvites();
     }
-  }, [isOpen, currentTeam]);
+  }, [isOpen, currentTeam, canCreateInvites]);
 
   const loadInvites = async () => {
     if (!currentTeam) return;
@@ -91,6 +92,7 @@ export default function TeamManagementPanel({ isOpen, onClose }: TeamManagementP
           {([
             { key: 'members' as const, label: '成员' },
             { key: 'projects' as const, label: '项目' },
+            { key: 'collaboration' as const, label: '协作' },
             { key: 'invites' as const, label: '邀请' },
             { key: 'settings' as const, label: '设置' },
           ]).map(({ key, label }) => {
@@ -117,6 +119,8 @@ export default function TeamManagementPanel({ isOpen, onClose }: TeamManagementP
           {activeTab === 'members' && <TeamMembersList />}
 
           {activeTab === 'projects' && <TeamProjectsList />}
+
+          {activeTab === 'collaboration' && <CollaborationPanel />}
 
           {activeTab === 'invites' && (
             <div className="space-y-3">

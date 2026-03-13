@@ -70,6 +70,7 @@ import geminiRoutes from './routes/gemini.js';
 import teamRoutes from './routes/team.js';
 import instanceRoutes from './routes/instance.js';
 import ProcessRegistry from './services/ProcessRegistry.js';
+import EventBus from './services/EventBus.js';
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames, userProjectsDb, userDb } from './database/db.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 import { IS_PLATFORM } from './constants/config.js';
@@ -411,6 +412,23 @@ app.use('/api/team', authenticateToken, teamRoutes);
 
 // Team Instance API Routes (protected) — mounted under /api/teams for instance management
 app.use('/api/teams', authenticateToken, instanceRoutes);
+
+// EventBus → WebSocket: broadcast instance status changes to team members
+const eventBus = EventBus.getInstance();
+for (const eventName of ['instance:created', 'instance:terminated', 'instance:timeout']) {
+    eventBus.on(eventName, (payload) => {
+        const { teamId } = payload;
+        if (teamId) {
+            broadcastToTeam(teamConnectedClients, teamId, {
+                type: eventName,
+                ...payload,
+                timestamp: new Date().toISOString()
+            });
+        }
+    });
+}
+// Initialize ProcessRegistry singleton
+ProcessRegistry.getInstance();
 
 // Serve uploaded files (avatars, etc.) with security headers
 app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {

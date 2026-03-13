@@ -9,12 +9,14 @@ import pty from 'node-pty';
 import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
+import EventBus from './EventBus.js';
 
 const MAX_INSTANCES_PER_USER = 1;
 const MAX_INSTANCES_PER_TEAM = 5;
 const SESSION_IDLE_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 const SESSION_MAX_DURATION = 2 * 60 * 60 * 1000; // 2 hours
 const BUFFER_MAX_SIZE = 5000;
+const IDLE_THRESHOLD = 2 * 60 * 1000; // 2 minutes — active→idle transition
 
 let instance = null;
 
@@ -117,6 +119,8 @@ export default class ProcessRegistry {
         });
 
         process.onExit((exitInfo) => {
+            // Guard: session may already have been cleaned up by killSession()
+            if (!this.sessions.has(sessionId)) return;
             console.log(`[ProcessRegistry] Session ${sessionId} exited: code=${exitInfo.exitCode}`);
             this._emit(sessionId, 'instance:status', {
                 sessionId,
@@ -138,6 +142,12 @@ export default class ProcessRegistry {
         }, SESSION_MAX_DURATION);
 
         console.log(`[ProcessRegistry] Session created: ${sessionId} for user=${userId} team=${teamId}`);
+
+        // Emit to EventBus for WebSocket broadcasting
+        EventBus.getInstance().emit('instance:created', {
+            sessionId, userId, teamId, projectPath, status: 'active'
+        });
+
         return { sessionId };
     }
 
@@ -158,6 +168,35 @@ export default class ProcessRegistry {
             if (entry.teamId === teamId) result.push(entry);
         }
         return result;
+    }
+
+    /**
+     * Get computed status based on lastActivity.
+     */
+    getComputedStatus(entry) {
+        if (entry.status === 'terminated') return 'terminated';
+        const elapsed = Date.now() - entry.lastActivity;
+        return elapsed > IDLE_THRESHOLD ? 'idle' : 'active';
+    }
+
+    /**
+     * Get team session statistics.
+     */
+    getTeamStats(teamId) {
+        const sessions = this.getTeamSessions(teamId);
+        let active = 0;
+        let idle = 0;
+        for (const s of sessions) {
+            const status = this.getComputedStatus(s);
+            if (status === 'active') active++;
+            else if (status === 'idle') idle++;
+        }
+        return {
+            active,
+            idle,
+            total: sessions.length,
+            capacity: MAX_INSTANCES_PER_TEAM,
+        };
     }
 
     /**
@@ -251,6 +290,9 @@ export default class ProcessRegistry {
         entry.idleTimer = setTimeout(() => {
             entry.status = 'idle';
             this._emit(sessionId, 'instance:status', { sessionId, status: 'idle' });
+            EventBus.getInstance().emit('instance:timeout', {
+                sessionId, userId: entry.userId, teamId: entry.teamId
+            });
             // Auto-kill after idle timeout
             console.log(`[ProcessRegistry] Session ${sessionId} idle timeout, killing`);
             this.killSession(sessionId);
@@ -260,6 +302,7 @@ export default class ProcessRegistry {
     _cleanup(sessionId) {
         const entry = this.sessions.get(sessionId);
         if (!entry) return;
+        const { userId, teamId } = entry;
         if (entry.idleTimer) clearTimeout(entry.idleTimer);
         if (entry.maxTimer) clearTimeout(entry.maxTimer);
         // Defensively kill the pty process if still alive
@@ -267,6 +310,10 @@ export default class ProcessRegistry {
         entry.buffer.length = 0;
         this._listeners.delete(sessionId);
         this.sessions.delete(sessionId);
+
+        // Broadcast termination via EventBus
+        EventBus.getInstance().emit('instance:terminated', { sessionId, userId, teamId });
+
         console.log(`[ProcessRegistry] Session cleaned up: ${sessionId}`);
     }
 }

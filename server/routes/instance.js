@@ -83,7 +83,7 @@ router.get('/:teamId/instances/mine', (req, res) => {
             data: {
                 session: {
                     sessionId: session.sessionId,
-                    status: session.status,
+                    status: registry.getComputedStatus(session),
                     projectPath: session.projectPath,
                     startedAt: session.startedAt,
                     lastActivity: session.lastActivity,
@@ -108,16 +108,44 @@ router.get('/:teamId/instances', (req, res) => {
         }
 
         const registry = ProcessRegistry.getInstance();
-        const sessions = registry.getTeamSessions(teamId).map(s => ({
-            sessionId: s.sessionId,
-            userId: s.userId,
-            status: s.status,
-            projectPath: s.projectPath,
-            startedAt: s.startedAt,
-            lastActivity: s.lastActivity,
-        }));
+        const members = teamDb.getTeamMembers(teamId);
+        const memberMap = new Map(members.map(m => [m.user_id, m]));
+
+        const sessions = registry.getTeamSessions(teamId).map(s => {
+            const member = memberMap.get(s.userId);
+            return {
+                sessionId: s.sessionId,
+                userId: s.userId,
+                username: member?.username || '',
+                nickname: member?.nickname || null,
+                status: registry.getComputedStatus(s),
+                projectPath: s.projectPath,
+                startedAt: s.startedAt,
+                lastActivity: s.lastActivity,
+            };
+        });
 
         res.json({ data: { sessions } });
+    } catch (error) {
+        res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
+    }
+});
+
+// Get team instance stats
+router.get('/:teamId/instances/stats', (req, res) => {
+    try {
+        const teamId = parseInt(req.params.teamId);
+        if (isNaN(teamId)) {
+            return res.status(400).json({ error: { code: 'INVALID_INPUT', message: '无效的参数' } });
+        }
+
+        if (!teamDb.isMember(teamId, req.user.id)) {
+            return res.status(403).json({ error: { code: 'FORBIDDEN', message: '非团队成员' } });
+        }
+
+        const registry = ProcessRegistry.getInstance();
+        const stats = registry.getTeamStats(teamId);
+        res.json({ data: stats });
     } catch (error) {
         res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
     }
@@ -141,6 +169,11 @@ router.delete('/:teamId/instances/:sessionId', (req, res) => {
         const session = registry.getSession(sessionId);
 
         if (!session) {
+            return res.status(404).json({ error: { code: 'NOT_FOUND', message: '会话不存在' } });
+        }
+
+        // Verify session belongs to the requested team
+        if (session.teamId !== teamId) {
             return res.status(404).json({ error: { code: 'NOT_FOUND', message: '会话不存在' } });
         }
 
