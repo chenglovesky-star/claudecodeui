@@ -6,6 +6,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
+import { broadcastToTeam } from './utils/team-websocket.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -328,6 +330,10 @@ const wss = new WebSocketServer({
 
 // Make WebSocket server available to routes
 app.locals.wss = wss;
+// Team-aware connected clients Map<WebSocket, {userId, username, teamIds}>
+// Used by team-websocket.js for team-scoped broadcasts and presence
+const teamConnectedClients = new Map();
+app.locals.connectedClients = teamConnectedClients;
 
 app.use(cors());
 app.use(express.json({
@@ -1463,6 +1469,14 @@ function handleChatConnection(ws, request) {
     // Add to connected clients for project updates
     connectedClients.add(ws);
 
+    // Add to team-aware connected clients Map for team broadcasts and presence
+    teamConnectedClients.set(ws, {
+        userId: ws.userId,
+        username: request?.user?.username || null,
+        teamIds: [],
+        status: 'online'
+    });
+
     // Wrap WebSocket with writer for consistent interface with SSEStreamWriter
     const writer = new WebSocketWriter(ws);
 
@@ -1595,6 +1609,38 @@ function handleChatConnection(ws, request) {
                         data: pending
                     });
                 }
+            } else if (data.type === 'team-context-update') {
+                // Update team membership for this WebSocket connection
+                const clientInfo = teamConnectedClients.get(ws);
+                if (clientInfo && Array.isArray(data.teamIds)) {
+                    const oldTeamIds = clientInfo.teamIds || [];
+                    clientInfo.teamIds = data.teamIds;
+
+                    // Broadcast presence-update to newly joined teams
+                    const newTeams = data.teamIds.filter(id => !oldTeamIds.includes(id));
+                    const leftTeams = oldTeamIds.filter(id => !data.teamIds.includes(id));
+
+                    for (const teamId of newTeams) {
+                        broadcastToTeam(teamConnectedClients, teamId, {
+                            type: 'presence-update',
+                            teamId,
+                            userId: clientInfo.userId,
+                            username: clientInfo.username,
+                            status: 'online',
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                    for (const teamId of leftTeams) {
+                        broadcastToTeam(teamConnectedClients, teamId, {
+                            type: 'presence-update',
+                            teamId,
+                            userId: clientInfo.userId,
+                            username: clientInfo.username,
+                            status: 'offline',
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                }
             } else if (data.type === 'get-active-sessions') {
                 // Get all currently active sessions
                 const activeSessions = {
@@ -1625,6 +1671,32 @@ function handleChatConnection(ws, request) {
         console.log('🔌 Chat client disconnected');
         // Remove from connected clients
         connectedClients.delete(ws);
+
+        // Broadcast presence-update for team-aware disconnect
+        const clientInfo = teamConnectedClients.get(ws);
+        if (clientInfo) {
+            const { userId, username, teamIds } = clientInfo;
+            teamConnectedClients.delete(ws);
+
+            // Check if user still has other active connections
+            let stillConnected = false;
+            teamConnectedClients.forEach((info) => {
+                if (info.userId === userId) stillConnected = true;
+            });
+
+            if (!stillConnected && teamIds) {
+                for (const teamId of teamIds) {
+                    broadcastToTeam(teamConnectedClients, teamId, {
+                        type: 'presence-update',
+                        teamId,
+                        userId,
+                        username,
+                        status: 'offline',
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            }
+        }
     });
 }
 

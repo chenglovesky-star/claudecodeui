@@ -94,14 +94,20 @@ export default function TeamMembersList() {
         </div>
       )}
 
-      {currentTeamMembers.map((member) => (
+      {[...currentTeamMembers].sort((a, b) => (b.is_online ? 1 : 0) - (a.is_online ? 1 : 0)).map((member) => (
         <div
           key={member.id}
           className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-accent/50"
         >
           <div className="flex items-center gap-2 min-w-0">
-            <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+            <div className="relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
               {(member.nickname || member.username).charAt(0).toUpperCase()}
+              <span
+                className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-background transition-colors ${
+                  member.is_online ? 'bg-green-500' : 'bg-muted-foreground/40'
+                }`}
+                title={member.is_online ? '在线' : '离线'}
+              />
             </div>
             <div className="flex flex-col min-w-0">
               <span className="truncate text-sm">{member.nickname || member.username}</span>

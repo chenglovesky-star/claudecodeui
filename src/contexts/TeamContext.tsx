@@ -29,6 +29,7 @@ export type TeamMember = {
   avatar_url: string | null;
   git_name: string | null;
   git_email: string | null;
+  is_online?: boolean;
 };
 
 export type Notification = {
@@ -98,7 +99,7 @@ const TEAM_ID_KEY = 'current-team-id';
 
 export const TeamProvider = ({ children }: { children: React.ReactNode }) => {
   const { user } = useAuth();
-  const { latestMessage, sendMessage } = useWebSocket();
+  const { latestMessage, sendMessage, isConnected } = useWebSocket();
 
   const [teams, setTeams] = useState<Team[]>([]);
   const [currentTeamId, setCurrentTeamIdState] = useState<number | null>(() => {
@@ -252,6 +253,15 @@ export const TeamProvider = ({ children }: { children: React.ReactNode }) => {
     refreshMembers();
   }, [currentTeamId]);
 
+  // Re-sync team context and presence on WebSocket reconnect
+  useEffect(() => {
+    if (isConnected && user && teams.length > 0) {
+      const teamIds = teams.map((t: Team) => t.id);
+      sendMessage({ type: 'team-context-update', teamIds });
+      refreshMembers();
+    }
+  }, [isConnected]);
+
   // Handle WebSocket team messages
   useEffect(() => {
     if (!latestMessage) return;
@@ -265,6 +275,15 @@ export const TeamProvider = ({ children }: { children: React.ReactNode }) => {
         break;
       case 'team-activity':
         // Could update activity feed in real-time
+        break;
+      case 'presence-update':
+        if (latestMessage.teamId === currentTeamId) {
+          setCurrentTeamMembers(prev => prev.map(m =>
+            m.user_id === latestMessage.userId
+              ? { ...m, is_online: latestMessage.status === 'online' }
+              : m
+          ));
+        }
         break;
       case 'notification-new':
         setNotifications(prev => [latestMessage.notification, ...prev]);

@@ -116,7 +116,7 @@ router.delete('/:teamId', (req, res) => {
 // Members
 // ==========================================
 
-// Get team members
+// Get team members (with online status)
 router.get('/:teamId/members', (req, res) => {
     try {
         const teamId = parseInt(req.params.teamId);
@@ -125,7 +125,16 @@ router.get('/:teamId/members', (req, res) => {
         }
 
         const members = teamDb.getTeamMembers(teamId);
-        res.json(members);
+        const clients = getConnectedClients(req);
+        const onlineMembers = clients ? getOnlineTeamMembers(clients, teamId) : [];
+        const onlineUserIds = new Set(onlineMembers.map(m => m.userId));
+
+        const membersWithStatus = members.map(m => ({
+            ...m,
+            is_online: onlineUserIds.has(m.user_id)
+        }));
+
+        res.json(membersWithStatus);
     } catch (error) {
         res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
     }
@@ -446,14 +455,14 @@ router.get('/:teamId/presence', (req, res) => {
     try {
         const teamId = parseInt(req.params.teamId);
         if (!teamDb.isMember(teamId, req.user.id)) {
-            return res.status(403).json({ error: 'Not a team member' });
+            return res.status(403).json({ error: { code: 'FORBIDDEN', message: '非团队成员' } });
         }
 
         const clients = getConnectedClients(req);
         const onlineMembers = getOnlineTeamMembers(clients, teamId);
         res.json(onlineMembers);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
     }
 });
 
