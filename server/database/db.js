@@ -254,6 +254,42 @@ const runMigrations = () => {
     db.exec('CREATE INDEX IF NOT EXISTS idx_file_activities_user ON file_activities(user_id)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_file_activities_created ON file_activities(created_at)');
 
+    // Sprints table (Kanban)
+    db.exec(`CREATE TABLE IF NOT EXISTS sprints (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      description TEXT,
+      start_date TEXT,
+      end_date TEXT,
+      status TEXT DEFAULT 'planning' CHECK(status IN ('planning','active','completed')),
+      created_by INTEGER REFERENCES users(id),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_sprints_team_id ON sprints(team_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_sprints_status ON sprints(status)');
+
+    // Stories table (Kanban)
+    db.exec(`CREATE TABLE IF NOT EXISTS stories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      sprint_id INTEGER REFERENCES sprints(id) ON DELETE SET NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT DEFAULT 'todo' CHECK(status IN ('todo','in_progress','done')),
+      assigned_to INTEGER REFERENCES users(id),
+      file_scope TEXT DEFAULT '[]',
+      priority TEXT DEFAULT 'medium' CHECK(priority IN ('low','medium','high','critical')),
+      created_by INTEGER REFERENCES users(id),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      position INTEGER DEFAULT 0
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_stories_team_sprint ON stories(team_id, sprint_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_stories_assigned_to ON stories(assigned_to)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_stories_status ON stories(status)');
+
     console.log('Database migrations completed successfully');
   } catch (error) {
     console.error('Error running migrations:', error.message);
@@ -987,6 +1023,170 @@ const fileActivitiesDb = {
   },
 };
 
+// Kanban (Sprint & Story)
+const kanbanDb = {
+  // Sprint CRUD
+  createSprint: (teamId, name, description, startDate, endDate, createdBy) => {
+    const stmt = db.prepare('INSERT INTO sprints (team_id, name, description, start_date, end_date, created_by) VALUES (?, ?, ?, ?, ?, ?)');
+    const result = stmt.run(teamId, name, description || null, startDate || null, endDate || null, createdBy);
+    return db.prepare('SELECT * FROM sprints WHERE id = ?').get(result.lastInsertRowid);
+  },
+
+  getActiveSprint: (teamId) => {
+    return db.prepare('SELECT * FROM sprints WHERE team_id = ? AND status = ?').get(teamId, 'active') || null;
+  },
+
+  getSprints: (teamId, limit = 20, offset = 0) => {
+    return db.prepare('SELECT * FROM sprints WHERE team_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?').all(teamId, limit, offset);
+  },
+
+  getSprintById: (teamId, sprintId) => {
+    return db.prepare('SELECT * FROM sprints WHERE id = ? AND team_id = ?').get(sprintId, teamId) || null;
+  },
+
+  updateSprint: (sprintId, teamId, updates) => {
+    const fields = [];
+    const values = [];
+    for (const [key, value] of Object.entries(updates)) {
+      if (['name', 'description', 'start_date', 'end_date'].includes(key)) {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      }
+    }
+    if (fields.length === 0) return false;
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(sprintId, teamId);
+    return db.prepare(`UPDATE sprints SET ${fields.join(', ')} WHERE id = ? AND team_id = ?`).run(...values).changes > 0;
+  },
+
+  activateSprint: (sprintId, teamId) => {
+    const transaction = db.transaction(() => {
+      db.prepare("UPDATE sprints SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE team_id = ? AND status = 'active'").run(teamId);
+      db.prepare("UPDATE sprints SET status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND team_id = ?").run(sprintId, teamId);
+    });
+    transaction();
+    return db.prepare('SELECT * FROM sprints WHERE id = ? AND team_id = ?').get(sprintId, teamId);
+  },
+
+  completeSprint: (sprintId, teamId) => {
+    const result = db.prepare("UPDATE sprints SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND team_id = ? AND status = 'active'").run(sprintId, teamId);
+    return result.changes > 0;
+  },
+
+  // Story CRUD
+  createStory: (teamId, sprintId, title, description, fileScope, priority, createdBy) => {
+    const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 as next_pos FROM stories WHERE team_id = ? AND sprint_id = ? AND status = ?').get(teamId, sprintId, 'todo');
+    const stmt = db.prepare('INSERT INTO stories (team_id, sprint_id, title, description, file_scope, priority, created_by, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    const result = stmt.run(teamId, sprintId, title, description || null, JSON.stringify(fileScope || []), priority || 'medium', createdBy, maxPos.next_pos);
+    return db.prepare('SELECT s.*, u.username as assigned_username, u.nickname as assigned_nickname, u.avatar_url as assigned_avatar FROM stories s LEFT JOIN users u ON s.assigned_to = u.id WHERE s.id = ?').get(result.lastInsertRowid);
+  },
+
+  getStoriesBySprint: (teamId, sprintId) => {
+    return db.prepare(`SELECT s.*, u.username as assigned_username, u.nickname as assigned_nickname, u.avatar_url as assigned_avatar
+      FROM stories s LEFT JOIN users u ON s.assigned_to = u.id
+      WHERE s.team_id = ? AND s.sprint_id = ?
+      ORDER BY s.position ASC`).all(teamId, sprintId);
+  },
+
+  getStoryById: (teamId, storyId) => {
+    return db.prepare(`SELECT s.*, u.username as assigned_username, u.nickname as assigned_nickname, u.avatar_url as assigned_avatar
+      FROM stories s LEFT JOIN users u ON s.assigned_to = u.id
+      WHERE s.id = ? AND s.team_id = ?`).get(storyId, teamId) || null;
+  },
+
+  updateStory: (storyId, teamId, updates) => {
+    const fields = [];
+    const values = [];
+    for (const [key, value] of Object.entries(updates)) {
+      if (['title', 'description', 'priority', 'sprint_id'].includes(key)) {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      } else if (key === 'file_scope') {
+        fields.push('file_scope = ?');
+        values.push(JSON.stringify(value));
+      }
+    }
+    if (fields.length === 0) return null;
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(storyId, teamId);
+    db.prepare(`UPDATE stories SET ${fields.join(', ')} WHERE id = ? AND team_id = ?`).run(...values);
+    return kanbanDb.getStoryById(teamId, storyId);
+  },
+
+  deleteStory: (storyId, teamId) => {
+    return db.prepare('DELETE FROM stories WHERE id = ? AND team_id = ?').run(storyId, teamId).changes > 0;
+  },
+
+  assignStory: (storyId, teamId, userId) => {
+    db.prepare('UPDATE stories SET assigned_to = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND team_id = ?').run(userId, storyId, teamId);
+    return kanbanDb.getStoryById(teamId, storyId);
+  },
+
+  updateStoryStatus: (storyId, teamId, status, position) => {
+    if (position !== undefined && position !== null) {
+      db.prepare('UPDATE stories SET status = ?, position = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND team_id = ?').run(status, position, storyId, teamId);
+    } else {
+      db.prepare('UPDATE stories SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND team_id = ?').run(status, storyId, teamId);
+    }
+    return kanbanDb.getStoryById(teamId, storyId);
+  },
+
+  reorderStories: (teamId, storyIds, status) => {
+    const transaction = db.transaction(() => {
+      const stmt = db.prepare('UPDATE stories SET position = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND team_id = ?');
+      storyIds.forEach((id, index) => {
+        stmt.run(index, status, id, teamId);
+      });
+    });
+    transaction();
+  },
+
+  getMemberWorkScope: (teamId) => {
+    return db.prepare(`
+      SELECT s.id as story_id, s.title, s.status, s.file_scope, s.priority,
+             s.assigned_to as user_id, u.username, u.nickname, u.avatar_url
+      FROM stories s
+      LEFT JOIN users u ON s.assigned_to = u.id
+      WHERE s.team_id = ? AND s.assigned_to IS NOT NULL
+      ORDER BY u.id, s.position
+    `).all(teamId);
+  },
+
+  findFileScopeOverlaps: (teamId, sprintId) => {
+    const stories = db.prepare(`
+      SELECT id, title, assigned_to, file_scope
+      FROM stories
+      WHERE team_id = ? AND sprint_id = ? AND assigned_to IS NOT NULL AND file_scope != '[]'
+    `).all(teamId, sprintId);
+
+    const overlaps = [];
+    for (let i = 0; i < stories.length; i++) {
+      for (let j = i + 1; j < stories.length; j++) {
+        if (stories[i].assigned_to === stories[j].assigned_to) continue;
+        const scopeA = JSON.parse(stories[i].file_scope || '[]');
+        const scopeB = JSON.parse(stories[j].file_scope || '[]');
+        const sharedFiles = [];
+        for (const a of scopeA) {
+          for (const b of scopeB) {
+            if (a === b || a.startsWith(b) || b.startsWith(a)) {
+              sharedFiles.push(a === b ? a : (a.length < b.length ? a : b));
+            }
+          }
+        }
+        if (sharedFiles.length > 0) {
+          overlaps.push({
+            files: [...new Set(sharedFiles)],
+            members: [stories[i].assigned_to, stories[j].assigned_to],
+            storyIds: [stories[i].id, stories[j].id],
+            storyTitles: [stories[i].title, stories[j].title]
+          });
+        }
+      }
+    }
+    return overlaps;
+  }
+};
+
 export {
   db,
   initializeDatabase,
@@ -1000,5 +1200,6 @@ export {
   teamDb,
   activityDb,
   notificationsDb,
-  fileActivitiesDb
+  fileActivitiesDb,
+  kanbanDb
 };

@@ -1,4 +1,4 @@
-import { MessageSquare, Terminal, Folder, GitBranch, ClipboardCheck, type LucideIcon } from 'lucide-react';
+import { MessageSquare, Terminal, Folder, GitBranch, ClipboardCheck, LayoutDashboard, type LucideIcon } from 'lucide-react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tooltip } from '../../../../shared/view/ui';
@@ -29,6 +29,12 @@ const TASKS_TAB: TabDefinition = {
   icon: ClipboardCheck,
 };
 
+const KANBAN_TAB: TabDefinition = {
+  id: 'kanban',
+  labelKey: 'tabs.kanban',
+  icon: LayoutDashboard,
+};
+
 export default function MainContentTabSwitcher({
   activeTab,
   setActiveTab,
@@ -36,7 +42,7 @@ export default function MainContentTabSwitcher({
 }: MainContentTabSwitcherProps) {
   const { t } = useTranslation();
 
-  const tabs = shouldShowTasksTab ? [...BASE_TABS, TASKS_TAB] : BASE_TABS;
+  const tabs = [...BASE_TABS, ...(shouldShowTasksTab ? [TASKS_TAB] : []), KANBAN_TAB];
 
   return (
     <div className="inline-flex items-center gap-[2px] rounded-lg bg-muted/60 p-[3px]">

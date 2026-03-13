@@ -332,6 +332,59 @@ export const api = {
 
     // Presence
     getPresence: (teamId) => authenticatedFetch(`/api/team/${teamId}/presence`),
+
+    // Kanban - Sprints
+    createSprint: (teamId, data) =>
+      authenticatedFetch(`/api/teams/${teamId}/sprints`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    getSprints: (teamId) => authenticatedFetch(`/api/teams/${teamId}/sprints`),
+    getActiveSprint: (teamId) => authenticatedFetch(`/api/teams/${teamId}/sprints/active`),
+    activateSprint: (teamId, sprintId) =>
+      authenticatedFetch(`/api/teams/${teamId}/sprints/${sprintId}/activate`, { method: 'POST' }),
+    updateSprint: (teamId, sprintId, data) =>
+      authenticatedFetch(`/api/teams/${teamId}/sprints/${sprintId}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    completeSprint: (teamId, sprintId) =>
+      authenticatedFetch(`/api/teams/${teamId}/sprints/${sprintId}/complete`, { method: 'POST' }),
+
+    // Kanban - Stories
+    createStory: (teamId, sprintId, data) =>
+      authenticatedFetch(`/api/teams/${teamId}/sprints/${sprintId}/stories`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    getStories: (teamId, sprintId) =>
+      authenticatedFetch(`/api/teams/${teamId}/sprints/${sprintId}/stories`),
+    getStory: (teamId, storyId) =>
+      authenticatedFetch(`/api/teams/${teamId}/stories/${storyId}`),
+    updateStory: (teamId, storyId, data) =>
+      authenticatedFetch(`/api/teams/${teamId}/stories/${storyId}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    deleteStory: (teamId, storyId) =>
+      authenticatedFetch(`/api/teams/${teamId}/stories/${storyId}`, { method: 'DELETE' }),
+    assignStory: (teamId, storyId, userId) =>
+      authenticatedFetch(`/api/teams/${teamId}/stories/${storyId}/assign`, {
+        method: 'PUT',
+        body: JSON.stringify({ userId }),
+      }),
+    updateStoryStatus: (teamId, storyId, status, position) =>
+      authenticatedFetch(`/api/teams/${teamId}/stories/${storyId}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status, position }),
+      }),
+    reorderStories: (teamId, storyIds, status) =>
+      authenticatedFetch(`/api/teams/${teamId}/stories/reorder`, {
+        method: 'PUT',
+        body: JSON.stringify({ storyIds, status }),
+      }),
+    getWorkScope: (teamId, sprintId) =>
+      authenticatedFetch(`/api/teams/${teamId}/work-scope${sprintId ? `?sprintId=${sprintId}` : ''}`),
   },
 
   // Generic GET method for any endpoint
