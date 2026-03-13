@@ -67,6 +67,9 @@ import cliAuthRoutes from './routes/cli-auth.js';
 import userRoutes from './routes/user.js';
 import codexRoutes from './routes/codex.js';
 import geminiRoutes from './routes/gemini.js';
+import teamRoutes from './routes/team.js';
+import instanceRoutes from './routes/instance.js';
+import ProcessRegistry from './services/ProcessRegistry.js';
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames, userProjectsDb, userDb } from './database/db.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 import { IS_PLATFORM } from './constants/config.js';
@@ -402,6 +405,12 @@ app.use('/api/gemini', authenticateToken, geminiRoutes);
 
 // Agent API Routes (uses API key authentication)
 app.use('/api/agent', agentRoutes);
+
+// Team API Routes (protected)
+app.use('/api/team', authenticateToken, teamRoutes);
+
+// Team Instance API Routes (protected) — mounted under /api/teams for instance management
+app.use('/api/teams', authenticateToken, instanceRoutes);
 
 // Serve uploaded files (avatars, etc.) with security headers
 app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
@@ -1641,6 +1650,39 @@ function handleChatConnection(ws, request) {
                         });
                     }
                 }
+            } else if (data.type === 'instance:input') {
+                // Team instance terminal input
+                if (!ws.userId || !data.sessionId || !data.data) break;
+                const registry = ProcessRegistry.getInstance();
+                registry.writeToSession(data.sessionId, data.data, ws.userId);
+            } else if (data.type === 'instance:resize') {
+                // Team instance terminal resize
+                if (!ws.userId || !data.sessionId) break;
+                const registry = ProcessRegistry.getInstance();
+                registry.resizeSession(data.sessionId, data.cols, data.rows, ws.userId);
+            } else if (data.type === 'instance:attach') {
+                // Attach WebSocket to receive output from a team instance
+                if (!ws.userId || !data.sessionId) break;
+                const registry = ProcessRegistry.getInstance();
+                const session = registry.getSession(data.sessionId);
+                if (session && session.userId === ws.userId) {
+                    // Send buffered output first
+                    const buffer = registry.getSessionBuffer(data.sessionId);
+                    for (const chunk of buffer) {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'instance:output', sessionId: data.sessionId, data: chunk }));
+                        }
+                    }
+                    // Register listener for future output
+                    const unsubscribe = registry.onSessionEvent(data.sessionId, (eventType, payload) => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: eventType, ...payload }));
+                        }
+                    });
+                    // Store unsubscribe for cleanup on disconnect
+                    if (!ws._instanceCleanups) ws._instanceCleanups = [];
+                    ws._instanceCleanups.push(unsubscribe);
+                }
             } else if (data.type === 'get-active-sessions') {
                 // Get all currently active sessions
                 const activeSessions = {
@@ -1669,6 +1711,11 @@ function handleChatConnection(ws, request) {
 
     ws.on('close', () => {
         console.log('🔌 Chat client disconnected');
+        // Clean up team instance listeners
+        if (ws._instanceCleanups) {
+            ws._instanceCleanups.forEach(fn => fn());
+            ws._instanceCleanups = null;
+        }
         // Remove from connected clients
         connectedClients.delete(ws);
 

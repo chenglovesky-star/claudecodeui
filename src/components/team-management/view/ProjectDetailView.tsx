@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, GitBranch, GitPullRequest, RefreshCw,
   FolderOpen, Folder, FileText, FileCode, History,
-  ChevronRight, ChevronDown
+  ChevronRight, ChevronDown, TerminalSquare
 } from 'lucide-react';
 import { useTeam } from '../../../contexts/TeamContext';
 import { api } from '../../../utils/api';
+import TeamTerminalPanel from './TeamTerminalPanel';
 
 type Branch = {
   name: string;
@@ -40,11 +41,12 @@ type Commit = {
   date: string;
 };
 
-type TabKey = 'branches' | 'prs' | 'files' | 'commits';
+type TabKey = 'branches' | 'prs' | 'files' | 'commits' | 'terminal';
 
 type ProjectDetailViewProps = {
   projectId: number;
   projectName: string;
+  projectPath: string;
   onBack: () => void;
 };
 
@@ -112,7 +114,7 @@ function relativeTime(dateStr: string): string {
   return `${Math.floor(months / 12)} 年前`;
 }
 
-export default function ProjectDetailView({ projectId, projectName, onBack }: ProjectDetailViewProps) {
+export default function ProjectDetailView({ projectId, projectName, projectPath, onBack }: ProjectDetailViewProps) {
   const { currentTeam } = useTeam();
   const [activeTab, setActiveTab] = useState<TabKey>('branches');
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -207,6 +209,7 @@ export default function ProjectDetailView({ projectId, projectName, onBack }: Pr
     { key: 'prs', label: 'Pull Requests', icon: GitPullRequest },
     { key: 'files', label: '文件', icon: FolderOpen },
     { key: 'commits', label: '变更记录', icon: History },
+    { key: 'terminal', label: '终端', icon: TerminalSquare },
   ];
 
   return (
@@ -332,7 +335,7 @@ export default function ProjectDetailView({ projectId, projectName, onBack }: Pr
             </div>
           )}
         </div>
-      ) : (
+      ) : activeTab === 'commits' ? (
         <div className="space-y-1">
           {commits.length === 0 ? (
             <p className="text-xs text-muted-foreground">暂无提交记录</p>
@@ -363,7 +366,9 @@ export default function ProjectDetailView({ projectId, projectName, onBack }: Pr
             </>
           )}
         </div>
-      )}
+      ) : activeTab === 'terminal' ? (
+        <TeamTerminalPanel projectPath={projectPath} />
+      ) : null}
     </div>
   );
 }

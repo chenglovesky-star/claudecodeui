@@ -92,6 +92,7 @@ export default function TeamProjectsList() {
       <ProjectDetailView
         projectId={selectedProject.id}
         projectName={selectedProject.name || selectedProject.project_path}
+        projectPath={selectedProject.project_path}
         onBack={() => setSelectedProject(null)}
       />
     );

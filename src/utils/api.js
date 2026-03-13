@@ -298,6 +298,17 @@ export const api = {
     getProjectPRs: (teamId, projectId) => authenticatedFetch(`/api/team/${teamId}/projects/${projectId}/pull-requests`),
     getProjectFiles: (teamId, projectId, ref) => authenticatedFetch(`/api/team/${teamId}/projects/${projectId}/files${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`),
     getProjectCommits: (teamId, projectId, limit = 20, offset = 0) => authenticatedFetch(`/api/team/${teamId}/projects/${projectId}/commits?limit=${limit}&offset=${offset}`),
+
+    // Instances
+    createInstance: (teamId, { projectPath, cols, rows }) =>
+      authenticatedFetch(`/api/teams/${teamId}/instances`, {
+        method: 'POST',
+        body: JSON.stringify({ projectPath, cols, rows }),
+      }),
+    getMyInstance: (teamId) => authenticatedFetch(`/api/teams/${teamId}/instances/mine`),
+    getInstances: (teamId) => authenticatedFetch(`/api/teams/${teamId}/instances`),
+    deleteInstance: (teamId, sessionId) =>
+      authenticatedFetch(`/api/teams/${teamId}/instances/${sessionId}`, { method: 'DELETE' }),
     removeProject: (teamId, projectPath) =>
       authenticatedFetch(`/api/team/${teamId}/projects`, {
         method: 'DELETE',
