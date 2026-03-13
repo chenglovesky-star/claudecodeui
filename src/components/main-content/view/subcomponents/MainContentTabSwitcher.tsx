@@ -1,4 +1,4 @@
-import { MessageSquare, Terminal, Folder, GitBranch, ClipboardCheck, LayoutDashboard, type LucideIcon } from 'lucide-react';
+import { MessageSquare, Terminal, Folder, GitBranch, ClipboardCheck, LayoutDashboard, AlertTriangle, Workflow, type LucideIcon } from 'lucide-react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tooltip } from '../../../../shared/view/ui';
@@ -35,6 +35,18 @@ const KANBAN_TAB: TabDefinition = {
   icon: LayoutDashboard,
 };
 
+const CONFLICTS_TAB: TabDefinition = {
+  id: 'conflicts',
+  labelKey: 'tabs.conflicts',
+  icon: AlertTriangle,
+};
+
+const WORKFLOW_TAB: TabDefinition = {
+  id: 'workflow',
+  labelKey: 'tabs.workflow',
+  icon: Workflow,
+};
+
 export default function MainContentTabSwitcher({
   activeTab,
   setActiveTab,
@@ -42,7 +54,7 @@ export default function MainContentTabSwitcher({
 }: MainContentTabSwitcherProps) {
   const { t } = useTranslation();
 
-  const tabs = [...BASE_TABS, ...(shouldShowTasksTab ? [TASKS_TAB] : []), KANBAN_TAB];
+  const tabs = [...BASE_TABS, ...(shouldShowTasksTab ? [TASKS_TAB] : []), KANBAN_TAB, CONFLICTS_TAB, WORKFLOW_TAB];
 
   return (
     <div className="inline-flex items-center gap-[2px] rounded-lg bg-muted/60 p-[3px]">

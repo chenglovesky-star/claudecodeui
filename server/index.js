@@ -70,6 +70,8 @@ import geminiRoutes from './routes/gemini.js';
 import teamRoutes from './routes/team.js';
 import instanceRoutes from './routes/instance.js';
 import kanbanRoutes from './routes/kanban.js';
+import conflictRoutes from './routes/conflict.js';
+import workflowRoutes from './routes/workflow.js';
 import ProcessRegistry from './services/ProcessRegistry.js';
 import EventBus from './services/EventBus.js';
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames, userProjectsDb, userDb, fileActivitiesDb } from './database/db.js';
@@ -416,6 +418,8 @@ app.use('/api/teams', authenticateToken, instanceRoutes);
 
 // Kanban API Routes (protected) — Sprint & Story management
 app.use('/api/teams', authenticateToken, kanbanRoutes);
+app.use('/api/teams', authenticateToken, conflictRoutes);
+app.use('/api/teams', authenticateToken, workflowRoutes);
 
 // EventBus → WebSocket: broadcast instance status changes to team members
 const eventBus = EventBus.getInstance();

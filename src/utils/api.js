@@ -385,6 +385,71 @@ export const api = {
       }),
     getWorkScope: (teamId, sprintId) =>
       authenticatedFetch(`/api/teams/${teamId}/work-scope${sprintId ? `?sprintId=${sprintId}` : ''}`),
+
+    // Conflicts (Epic 6)
+    scanConflicts: (teamId, sprintId) =>
+      authenticatedFetch(`/api/teams/${teamId}/conflicts/scan`, {
+        method: 'POST',
+        body: JSON.stringify({ sprintId }),
+      }),
+    getConflicts: (teamId, filters = {}) => {
+      const params = new URLSearchParams();
+      if (filters.status) params.set('status', filters.status);
+      if (filters.sprintId) params.set('sprintId', filters.sprintId);
+      if (filters.level) params.set('level', filters.level);
+      const qs = params.toString();
+      return authenticatedFetch(`/api/teams/${teamId}/conflicts${qs ? `?${qs}` : ''}`);
+    },
+    getConflict: (teamId, conflictId) =>
+      authenticatedFetch(`/api/teams/${teamId}/conflicts/${conflictId}`),
+    assignConflict: (teamId, conflictId, userId) =>
+      authenticatedFetch(`/api/teams/${teamId}/conflicts/${conflictId}/assign`, {
+        method: 'PUT',
+        body: JSON.stringify({ userId }),
+      }),
+    resolveConflict: (teamId, conflictId, resolutionNote) =>
+      authenticatedFetch(`/api/teams/${teamId}/conflicts/${conflictId}/resolve`, {
+        method: 'PUT',
+        body: JSON.stringify({ resolutionNote }),
+      }),
+    confirmConflict: (teamId, conflictId) =>
+      authenticatedFetch(`/api/teams/${teamId}/conflicts/${conflictId}/confirm`, { method: 'PUT' }),
+    reportRealtimeConflict: (teamId, data) =>
+      authenticatedFetch(`/api/teams/${teamId}/conflicts/realtime`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    // Workflows (Epic 7)
+    startWorkflow: (teamId, type) =>
+      authenticatedFetch(`/api/teams/${teamId}/workflows`, {
+        method: 'POST',
+        body: JSON.stringify({ type }),
+      }),
+    getWorkflows: (teamId, filters = {}) => {
+      const params = new URLSearchParams();
+      if (filters.status) params.set('status', filters.status);
+      if (filters.userId) params.set('userId', filters.userId);
+      const qs = params.toString();
+      return authenticatedFetch(`/api/teams/${teamId}/workflows${qs ? `?${qs}` : ''}`);
+    },
+    getActiveWorkflow: (teamId) =>
+      authenticatedFetch(`/api/teams/${teamId}/workflows/active`),
+    getWorkflow: (teamId, workflowId) =>
+      authenticatedFetch(`/api/teams/${teamId}/workflows/${workflowId}`),
+    cancelWorkflow: (teamId, workflowId) =>
+      authenticatedFetch(`/api/teams/${teamId}/workflows/${workflowId}/cancel`, { method: 'POST' }),
+    sendWorkflowMessage: (teamId, workflowId, content, type) =>
+      authenticatedFetch(`/api/teams/${teamId}/workflows/${workflowId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ content, type }),
+      }),
+    getWorkflowMessages: (teamId, workflowId) =>
+      authenticatedFetch(`/api/teams/${teamId}/workflows/${workflowId}/messages`),
+    getDocuments: (teamId) =>
+      authenticatedFetch(`/api/teams/${teamId}/documents`),
+    getDocumentContent: (teamId, workflowId) =>
+      authenticatedFetch(`/api/teams/${teamId}/documents/${workflowId}`),
   },
 
   // Generic GET method for any endpoint

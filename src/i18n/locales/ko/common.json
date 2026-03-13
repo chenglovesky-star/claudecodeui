@@ -23,7 +23,9 @@
     "files": "파일",
     "git": "소스 관리",
     "tasks": "작업",
-    "kanban": "칸반"
+    "kanban": "칸반",
+    "conflicts": "충돌",
+    "workflow": "워크플로우"
   },
   "status": {
     "loading": "로딩 중...",

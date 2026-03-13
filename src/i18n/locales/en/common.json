@@ -23,7 +23,9 @@
     "files": "Files",
     "git": "Source Control",
     "tasks": "Tasks",
-    "kanban": "Kanban"
+    "kanban": "Kanban",
+    "conflicts": "Conflicts",
+    "workflow": "Workflow"
   },
   "status": {
     "loading": "Loading...",

@@ -290,6 +290,59 @@ const runMigrations = () => {
     db.exec('CREATE INDEX IF NOT EXISTS idx_stories_assigned_to ON stories(assigned_to)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_stories_status ON stories(status)');
 
+    // Conflicts table (Epic 6)
+    db.exec(`CREATE TABLE IF NOT EXISTS conflicts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      sprint_id INTEGER REFERENCES sprints(id),
+      level TEXT DEFAULT 'yellow' CHECK(level IN ('yellow','orange','red')),
+      status TEXT DEFAULT 'open' CHECK(status IN ('open','in_progress','resolved','confirmed')),
+      type TEXT DEFAULT 'file_overlap' CHECK(type IN ('file_overlap','same_file','same_region')),
+      story_ids TEXT DEFAULT '[]',
+      member_ids TEXT DEFAULT '[]',
+      files TEXT DEFAULT '[]',
+      description TEXT,
+      resolution_note TEXT,
+      assigned_to INTEGER REFERENCES users(id),
+      resolved_by INTEGER REFERENCES users(id),
+      detected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      resolved_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_conflicts_team ON conflicts(team_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_conflicts_status ON conflicts(status)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_conflicts_sprint ON conflicts(sprint_id)');
+
+    // Workflow instances table (Epic 7)
+    db.exec(`CREATE TABLE IF NOT EXISTS workflow_instances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      workflow_type TEXT NOT NULL CHECK(workflow_type IN ('product_brief','prd','architecture','epic_breakdown')),
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','active','waiting_input','completed','cancelled')),
+      context_json TEXT DEFAULT '{}',
+      current_step TEXT,
+      total_steps INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_workflow_instances_team ON workflow_instances(team_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_workflow_instances_user ON workflow_instances(user_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_workflow_instances_status ON workflow_instances(status)');
+
+    // Workflow messages table (Epic 7)
+    db.exec(`CREATE TABLE IF NOT EXISTS workflow_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workflow_id INTEGER NOT NULL REFERENCES workflow_instances(id) ON DELETE CASCADE,
+      role TEXT CHECK(role IN ('user','assistant','system')),
+      content TEXT NOT NULL,
+      step_name TEXT,
+      metadata TEXT DEFAULT '{}',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_workflow_messages_workflow ON workflow_messages(workflow_id)');
+
     console.log('Database migrations completed successfully');
   } catch (error) {
     console.error('Error running migrations:', error.message);
@@ -1187,6 +1240,182 @@ const kanbanDb = {
   }
 };
 
+// Conflicts (Epic 6)
+const conflictDb = {
+  create: (teamId, sprintId, level, type, storyIds, memberIds, files, description) => {
+    const stmt = db.prepare(`INSERT INTO conflicts (team_id, sprint_id, level, type, story_ids, member_ids, files, description)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    const result = stmt.run(teamId, sprintId || null, level, type,
+      JSON.stringify(storyIds), JSON.stringify(memberIds), JSON.stringify(files), description);
+    return db.prepare('SELECT * FROM conflicts WHERE id = ?').get(result.lastInsertRowid);
+  },
+
+  getByTeam: (teamId, filters = {}) => {
+    let where = 'WHERE c.team_id = ?';
+    const params = [teamId];
+    if (filters.status) { where += ' AND c.status = ?'; params.push(filters.status); }
+    if (filters.sprintId) { where += ' AND c.sprint_id = ?'; params.push(filters.sprintId); }
+    if (filters.level) { where += ' AND c.level = ?'; params.push(filters.level); }
+    return db.prepare(`
+      SELECT c.*, u1.username as assigned_username, u1.nickname as assigned_nickname,
+             u2.username as resolved_username, u2.nickname as resolved_nickname
+      FROM conflicts c
+      LEFT JOIN users u1 ON c.assigned_to = u1.id
+      LEFT JOIN users u2 ON c.resolved_by = u2.id
+      ${where}
+      ORDER BY c.created_at DESC
+    `).all(...params);
+  },
+
+  getById: (conflictId, teamId) => {
+    return db.prepare(`
+      SELECT c.*, u1.username as assigned_username, u1.nickname as assigned_nickname,
+             u2.username as resolved_username, u2.nickname as resolved_nickname
+      FROM conflicts c
+      LEFT JOIN users u1 ON c.assigned_to = u1.id
+      LEFT JOIN users u2 ON c.resolved_by = u2.id
+      WHERE c.id = ? AND c.team_id = ?
+    `).get(conflictId, teamId) || null;
+  },
+
+  assign: (conflictId, teamId, userId) => {
+    db.prepare(`UPDATE conflicts SET assigned_to = ?, status = 'in_progress', updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND team_id = ?`).run(userId, conflictId, teamId);
+    return conflictDb.getById(conflictId, teamId);
+  },
+
+  resolve: (conflictId, teamId, userId, resolutionNote) => {
+    db.prepare(`UPDATE conflicts SET resolved_by = ?, resolution_note = ?, status = 'resolved',
+      resolved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND team_id = ?`).run(userId, resolutionNote || null, conflictId, teamId);
+    return conflictDb.getById(conflictId, teamId);
+  },
+
+  confirm: (conflictId, teamId) => {
+    db.prepare(`UPDATE conflicts SET status = 'confirmed', updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND team_id = ?`).run(conflictId, teamId);
+    return conflictDb.getById(conflictId, teamId);
+  },
+
+  updateLevel: (conflictId, teamId, level) => {
+    db.prepare('UPDATE conflicts SET level = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND team_id = ?')
+      .run(level, conflictId, teamId);
+    return conflictDb.getById(conflictId, teamId);
+  },
+
+  findExisting: (teamId, storyIds, files) => {
+    const conflicts = db.prepare(`SELECT * FROM conflicts WHERE team_id = ? AND status IN ('open','in_progress')`).all(teamId);
+    return conflicts.find(c => {
+      const cStoryIds = JSON.parse(c.story_ids || '[]');
+      const cFiles = JSON.parse(c.files || '[]');
+      const sameStories = storyIds.every(id => cStoryIds.includes(id)) && cStoryIds.every(id => storyIds.includes(id));
+      const sameFiles = files.some(f => cFiles.includes(f));
+      return sameStories && sameFiles;
+    }) || null;
+  },
+
+  getStats: (teamId) => {
+    return db.prepare(`
+      SELECT
+        COUNT(CASE WHEN status = 'open' THEN 1 END) as open_count,
+        COUNT(CASE WHEN status = 'in_progress' THEN 1 END) as in_progress_count,
+        COUNT(CASE WHEN status = 'resolved' THEN 1 END) as resolved_count,
+        COUNT(CASE WHEN level = 'yellow' AND status IN ('open','in_progress') THEN 1 END) as yellow_count,
+        COUNT(CASE WHEN level = 'orange' AND status IN ('open','in_progress') THEN 1 END) as orange_count,
+        COUNT(CASE WHEN level = 'red' AND status IN ('open','in_progress') THEN 1 END) as red_count
+      FROM conflicts WHERE team_id = ?
+    `).get(teamId);
+  }
+};
+
+// Workflow (Epic 7)
+const workflowDb = {
+  createInstance: (teamId, userId, workflowType, steps) => {
+    const stepNames = Array.isArray(steps) ? steps : [];
+    const stmt = db.prepare(`INSERT INTO workflow_instances (team_id, user_id, workflow_type, status, current_step, total_steps, context_json)
+      VALUES (?, ?, ?, 'active', ?, ?, ?)`);
+    const result = stmt.run(teamId, userId, workflowType, stepNames[0] || null, stepNames.length,
+      JSON.stringify({ steps: stepNames, completedSteps: [] }));
+    return db.prepare('SELECT * FROM workflow_instances WHERE id = ?').get(result.lastInsertRowid);
+  },
+
+  getInstance: (workflowId, teamId) => {
+    return db.prepare(`
+      SELECT w.*, u.username, u.nickname, u.avatar_url
+      FROM workflow_instances w
+      LEFT JOIN users u ON w.user_id = u.id
+      WHERE w.id = ? AND w.team_id = ?
+    `).get(workflowId, teamId) || null;
+  },
+
+  getByTeam: (teamId, filters = {}) => {
+    let where = 'WHERE w.team_id = ?';
+    const params = [teamId];
+    if (filters.status) { where += ' AND w.status = ?'; params.push(filters.status); }
+    if (filters.userId) { where += ' AND w.user_id = ?'; params.push(filters.userId); }
+    return db.prepare(`
+      SELECT w.*, u.username, u.nickname, u.avatar_url
+      FROM workflow_instances w
+      LEFT JOIN users u ON w.user_id = u.id
+      ${where}
+      ORDER BY w.updated_at DESC
+    `).all(...params);
+  },
+
+  getUserActive: (userId, teamId) => {
+    return db.prepare(`
+      SELECT w.*, u.username, u.nickname
+      FROM workflow_instances w
+      LEFT JOIN users u ON w.user_id = u.id
+      WHERE w.user_id = ? AND w.team_id = ? AND w.status IN ('active','waiting_input')
+    `).get(userId, teamId) || null;
+  },
+
+  updateStatus: (workflowId, status, contextJson) => {
+    if (contextJson !== undefined) {
+      db.prepare('UPDATE workflow_instances SET status = ?, context_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(status, typeof contextJson === 'string' ? contextJson : JSON.stringify(contextJson), workflowId);
+    } else {
+      db.prepare('UPDATE workflow_instances SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(status, workflowId);
+    }
+  },
+
+  updateStep: (workflowId, currentStep, contextJson) => {
+    db.prepare('UPDATE workflow_instances SET current_step = ?, context_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(currentStep, typeof contextJson === 'string' ? contextJson : JSON.stringify(contextJson), workflowId);
+  },
+
+  cancel: (workflowId, teamId) => {
+    return db.prepare("UPDATE workflow_instances SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND team_id = ? AND status IN ('active','waiting_input','pending')")
+      .run(workflowId, teamId).changes > 0;
+  },
+
+  addMessage: (workflowId, role, content, stepName, metadata) => {
+    const stmt = db.prepare('INSERT INTO workflow_messages (workflow_id, role, content, step_name, metadata) VALUES (?, ?, ?, ?, ?)');
+    const result = stmt.run(workflowId, role, content, stepName || null, JSON.stringify(metadata || {}));
+    return db.prepare('SELECT * FROM workflow_messages WHERE id = ?').get(result.lastInsertRowid);
+  },
+
+  getMessages: (workflowId, limit = 100, offset = 0) => {
+    return db.prepare('SELECT * FROM workflow_messages WHERE workflow_id = ? ORDER BY created_at ASC LIMIT ? OFFSET ?')
+      .all(workflowId, limit, offset);
+  },
+
+  getCompletedDocuments: (teamId) => {
+    return db.prepare(`
+      SELECT w.id as workflow_id, w.workflow_type, w.created_at, w.updated_at,
+             u.username, u.nickname, u.avatar_url,
+             (SELECT content FROM workflow_messages WHERE workflow_id = w.id AND role = 'system' AND step_name = 'final_document' ORDER BY created_at DESC LIMIT 1) as document_content,
+             (SELECT metadata FROM workflow_messages WHERE workflow_id = w.id AND role = 'system' AND step_name = 'final_document' ORDER BY created_at DESC LIMIT 1) as document_metadata
+      FROM workflow_instances w
+      LEFT JOIN users u ON w.user_id = u.id
+      WHERE w.team_id = ? AND w.status = 'completed'
+      ORDER BY w.updated_at DESC
+    `).all(teamId);
+  }
+};
+
 export {
   db,
   initializeDatabase,
@@ -1201,5 +1430,7 @@ export {
   activityDb,
   notificationsDb,
   fileActivitiesDb,
-  kanbanDb
+  kanbanDb,
+  conflictDb,
+  workflowDb
 };

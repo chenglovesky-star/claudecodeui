@@ -12,6 +12,8 @@ import EditorSidebar from '../../code-editor/view/EditorSidebar';
 import type { Project } from '../../../types/app';
 import { TaskMasterPanel } from '../../task-master';
 import KanbanPanel from '../../kanban/KanbanPanel';
+import ConflictPanel from '../../conflict/ConflictPanel';
+import WorkflowPanel from '../../workflow/WorkflowPanel';
 import MainContentHeader from './subcomponents/MainContentHeader';
 import MainContentStateView from './subcomponents/MainContentStateView';
 import ErrorBoundary from './ErrorBoundary';
@@ -161,6 +163,18 @@ function MainContent({
           {activeTab === 'kanban' && (
             <div className="h-full overflow-hidden">
               <KanbanPanel />
+            </div>
+          )}
+
+          {activeTab === 'conflicts' && (
+            <div className="h-full overflow-hidden">
+              <ConflictPanel />
+            </div>
+          )}
+
+          {activeTab === 'workflow' && (
+            <div className="h-full overflow-hidden">
+              <WorkflowPanel />
             </div>
           )}
 

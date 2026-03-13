@@ -23,7 +23,9 @@
     "files": "文件",
     "git": "源代码管理",
     "tasks": "任务",
-    "kanban": "看板"
+    "kanban": "看板",
+    "conflicts": "冲突",
+    "workflow": "工作流"
   },
   "status": {
     "loading": "加载中...",
