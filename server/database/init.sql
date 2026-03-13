@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     nickname TEXT,
     avatar_url TEXT,
+    roles TEXT DEFAULT '[]',
+    active_role TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_login DATETIME,
     is_active BOOLEAN DEFAULT 1,

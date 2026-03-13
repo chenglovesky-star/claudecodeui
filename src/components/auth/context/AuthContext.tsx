@@ -247,6 +247,54 @@ export function AuthProvider({ children }: AuthProviderProps) {
     [],
   );
 
+  const updateRoles = useCallback<AuthContextValue['updateRoles']>(
+    async (roles) => {
+      try {
+        const response = await api.user.updateRoles(roles);
+        const payload = await parseJsonSafely<{ data?: { user?: AuthUser }; error?: { message?: string } }>(response);
+
+        if (!response.ok) {
+          const message = payload?.error?.message || '更新角色失败';
+          return { success: false, error: message };
+        }
+
+        const updatedUser = payload?.data?.user;
+        if (updatedUser) {
+          setUser(updatedUser);
+        }
+        return { success: true };
+      } catch (caughtError) {
+        console.error('Update roles error:', caughtError);
+        return { success: false, error: '网络错误，请稍后重试' };
+      }
+    },
+    [],
+  );
+
+  const setActiveRole = useCallback<AuthContextValue['setActiveRole']>(
+    async (role) => {
+      try {
+        const response = await api.user.setActiveRole(role);
+        const payload = await parseJsonSafely<{ data?: { user?: AuthUser }; error?: { message?: string } }>(response);
+
+        if (!response.ok) {
+          const message = payload?.error?.message || '切换角色失败';
+          return { success: false, error: message };
+        }
+
+        const updatedUser = payload?.data?.user;
+        if (updatedUser) {
+          setUser(updatedUser);
+        }
+        return { success: true };
+      } catch (caughtError) {
+        console.error('Set active role error:', caughtError);
+        return { success: false, error: '网络错误，请稍后重试' };
+      }
+    },
+    [],
+  );
+
   const logout = useCallback(() => {
     const tokenToInvalidate = token;
     clearSession();
@@ -273,6 +321,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       refreshOnboardingStatus,
       updateProfile,
       uploadAvatar,
+      updateRoles,
+      setActiveRole,
     }),
     [
       allowRegistration,
@@ -284,8 +334,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       needsSetup,
       refreshOnboardingStatus,
       register,
+      setActiveRole,
       token,
       updateProfile,
+      updateRoles,
       uploadAvatar,
       user,
     ],

@@ -119,7 +119,7 @@ router.post('/register', async (req, res) => {
 
       res.json({
         data: {
-          user: { id: user.id, username: user.username, email: user.email },
+          user: { id: user.id, username: user.username, email: user.email, roles: [], active_role: '' },
           token
         }
       });
@@ -179,7 +179,7 @@ router.post('/login', async (req, res) => {
 
     res.json({
       data: {
-        user: { id: user.id, username: user.username, email: user.email, nickname: user.nickname, avatar_url: user.avatar_url },
+        user: { id: user.id, username: user.username, email: user.email, nickname: user.nickname, avatar_url: user.avatar_url, roles: JSON.parse(user.roles || '[]'), active_role: user.active_role || '' },
         token
       }
     });
@@ -192,8 +192,11 @@ router.post('/login', async (req, res) => {
 
 // Get current user (protected route)
 router.get('/user', authenticateToken, (req, res) => {
-  const user = req.user;
-  const userData = { id: user.id, username: user.username, email: user.email, nickname: user.nickname, avatar_url: user.avatar_url };
+  const user = userDb.getUserById(req.user.id);
+  if (!user) {
+    return res.status(404).json({ error: { code: 'USER_NOT_FOUND', message: '用户不存在' } });
+  }
+  const userData = { id: user.id, username: user.username, email: user.email, nickname: user.nickname, avatar_url: user.avatar_url, roles: JSON.parse(user.roles || '[]'), active_role: user.active_role || '' };
   // Include both top-level `user` (legacy) and `data.user` (new format) for backward compatibility
   res.json({ user: userData, data: { user: userData } });
 });
@@ -216,7 +219,7 @@ router.put('/profile', authenticateToken, (req, res) => {
 
     res.json({
       data: {
-        user: { id: updatedUser.id, username: updatedUser.username, email: updatedUser.email, nickname: updatedUser.nickname, avatar_url: updatedUser.avatar_url }
+        user: { id: updatedUser.id, username: updatedUser.username, email: updatedUser.email, nickname: updatedUser.nickname, avatar_url: updatedUser.avatar_url, roles: JSON.parse(updatedUser.roles || '[]'), active_role: updatedUser.active_role || '' }
       }
     });
   } catch (error) {
@@ -261,6 +264,73 @@ router.post('/avatar', authenticateToken, (req, res) => {
       res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: '服务器内部错误' } });
     }
   });
+});
+
+// BMAD role definitions
+const BMAD_ROLES = ['pm', 'developer', 'qa', 'architect', 'ux-designer'];
+
+// Update user roles
+router.put('/roles', authenticateToken, (req, res) => {
+  try {
+    const { roles } = req.body;
+
+    if (!Array.isArray(roles) || roles.length === 0) {
+      return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: '至少需要选择一个角色' } });
+    }
+
+    // Validate all roles are valid BMAD roles
+    const invalidRoles = roles.filter(r => !BMAD_ROLES.includes(r));
+    if (invalidRoles.length > 0) {
+      return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: `无效的角色: ${invalidRoles.join(', ')}` } });
+    }
+
+    // Remove duplicates
+    const uniqueRoles = [...new Set(roles)];
+
+    const updatedUser = userDb.updateRoles(req.user.id, uniqueRoles);
+
+    res.json({
+      data: {
+        user: { id: updatedUser.id, username: updatedUser.username, email: updatedUser.email, nickname: updatedUser.nickname, avatar_url: updatedUser.avatar_url, roles: JSON.parse(updatedUser.roles || '[]'), active_role: updatedUser.active_role || '' }
+      }
+    });
+  } catch (error) {
+    console.error('Update roles error:', error);
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: '服务器内部错误' } });
+  }
+});
+
+// Switch active role
+router.put('/active-role', authenticateToken, (req, res) => {
+  try {
+    const { role } = req.body;
+
+    if (!role || typeof role !== 'string') {
+      return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: '请提供要切换的角色' } });
+    }
+
+    if (!BMAD_ROLES.includes(role)) {
+      return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: '无效的角色' } });
+    }
+
+    // Verify role is in user's selected roles
+    const currentUser = userDb.getUserById(req.user.id);
+    const userRoles = JSON.parse(currentUser.roles || '[]');
+    if (!userRoles.includes(role)) {
+      return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: '只能切换到已选择的角色' } });
+    }
+
+    const updatedUser = userDb.setActiveRole(req.user.id, role);
+
+    res.json({
+      data: {
+        user: { id: updatedUser.id, username: updatedUser.username, email: updatedUser.email, nickname: updatedUser.nickname, avatar_url: updatedUser.avatar_url, roles: JSON.parse(updatedUser.roles || '[]'), active_role: updatedUser.active_role || '' }
+      }
+    });
+  } catch (error) {
+    console.error('Set active role error:', error);
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: '服务器内部错误' } });
+  }
 });
 
 // Logout (client-side token removal, but this endpoint can be used for logging)

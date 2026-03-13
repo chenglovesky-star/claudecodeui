@@ -233,6 +233,16 @@ export const api = {
         method: 'POST',
         body: formData,
       }),
+    updateRoles: (roles) =>
+      authenticatedFetch('/api/auth/roles', {
+        method: 'PUT',
+        body: JSON.stringify({ roles }),
+      }),
+    setActiveRole: (role) =>
+      authenticatedFetch('/api/auth/active-role', {
+        method: 'PUT',
+        body: JSON.stringify({ role }),
+      }),
   },
 
   // Team endpoints

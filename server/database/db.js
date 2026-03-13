@@ -107,6 +107,16 @@ const runMigrations = () => {
       db.exec('ALTER TABLE users ADD COLUMN avatar_url TEXT');
     }
 
+    if (!columnNames.includes('roles')) {
+      console.log('Running migration: Adding roles column');
+      db.exec("ALTER TABLE users ADD COLUMN roles TEXT DEFAULT '[]'");
+    }
+
+    if (!columnNames.includes('active_role')) {
+      console.log('Running migration: Adding active_role column');
+      db.exec("ALTER TABLE users ADD COLUMN active_role TEXT DEFAULT ''");
+    }
+
     // Create session_names table if it doesn't exist (for existing installations)
     db.exec(`CREATE TABLE IF NOT EXISTS session_names (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -283,7 +293,7 @@ const userDb = {
   // Get user by ID (includes nickname and avatar_url)
   getUserById: (userId) => {
     try {
-      const row = db.prepare('SELECT id, username, email, nickname, avatar_url, created_at, last_login FROM users WHERE id = ? AND is_active = 1').get(userId);
+      const row = db.prepare('SELECT id, username, email, nickname, avatar_url, roles, active_role, created_at, last_login FROM users WHERE id = ? AND is_active = 1').get(userId);
       return row;
     } catch (err) {
       throw err;
@@ -292,7 +302,7 @@ const userDb = {
 
   getFirstUser: () => {
     try {
-      const row = db.prepare('SELECT id, username, email, nickname, avatar_url, created_at, last_login FROM users WHERE is_active = 1 LIMIT 1').get();
+      const row = db.prepare('SELECT id, username, email, nickname, avatar_url, roles, active_role, created_at, last_login FROM users WHERE is_active = 1 LIMIT 1').get();
       return row;
     } catch (err) {
       throw err;
@@ -309,6 +319,36 @@ const userDb = {
       } else if (avatarUrl !== undefined) {
         db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').run(avatarUrl, userId);
       }
+      return userDb.getUserById(userId);
+    } catch (err) {
+      throw err;
+    }
+  },
+
+  // Update user roles (JSON array)
+  updateRoles: (userId, roles) => {
+    try {
+      const rolesJson = JSON.stringify(roles);
+      // Check current active_role to decide if it needs updating
+      const currentActive = db.prepare('SELECT active_role FROM users WHERE id = ?').get(userId)?.active_role || '';
+      let newActive = currentActive;
+      if (currentActive && !roles.includes(currentActive)) {
+        newActive = roles.length > 0 ? roles[0] : '';
+      } else if (!currentActive && roles.length > 0) {
+        newActive = roles[0];
+      }
+      // Single UPDATE for both fields
+      db.prepare('UPDATE users SET roles = ?, active_role = ? WHERE id = ?').run(rolesJson, newActive, userId);
+      return userDb.getUserById(userId);
+    } catch (err) {
+      throw err;
+    }
+  },
+
+  // Set active role
+  setActiveRole: (userId, role) => {
+    try {
+      db.prepare('UPDATE users SET active_role = ? WHERE id = ?').run(role, userId);
       return userDb.getUserById(userId);
     } catch (err) {
       throw err;

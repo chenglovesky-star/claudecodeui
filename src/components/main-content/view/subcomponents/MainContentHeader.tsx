@@ -2,6 +2,7 @@ import type { MainContentHeaderProps } from '../../types/types';
 import MobileMenuButton from './MobileMenuButton';
 import MainContentTabSwitcher from './MainContentTabSwitcher';
 import MainContentTitle from './MainContentTitle';
+import RoleSwitcher from '../../../nav/RoleSwitcher';
 
 export default function MainContentHeader({
   activeTab,
@@ -25,12 +26,15 @@ export default function MainContentHeader({
           />
         </div>
 
-        <div className="hidden flex-shrink-0 sm:block">
-          <MainContentTabSwitcher
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            shouldShowTasksTab={shouldShowTasksTab}
-          />
+        <div className="flex flex-shrink-0 items-center gap-2">
+          <RoleSwitcher />
+          <div className="hidden sm:block">
+            <MainContentTabSwitcher
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              shouldShowTasksTab={shouldShowTasksTab}
+            />
+          </div>
         </div>
       </div>
     </div>

@@ -6,6 +6,8 @@ export type AuthUser = {
   email?: string;
   nickname?: string;
   avatar_url?: string;
+  roles?: string[];
+  active_role?: string;
   [key: string]: unknown;
 };
 
@@ -54,6 +56,8 @@ export type AuthContextValue = {
   refreshOnboardingStatus: () => Promise<void>;
   updateProfile: (nickname: string) => Promise<AuthActionResult>;
   uploadAvatar: (formData: FormData) => Promise<AuthActionResult & { avatar_url?: string }>;
+  updateRoles: (roles: string[]) => Promise<AuthActionResult>;
+  setActiveRole: (role: string) => Promise<AuthActionResult>;
 };
 
 export type AuthProviderProps = {
