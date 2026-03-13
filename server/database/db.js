@@ -763,6 +763,12 @@ const teamDb = {
     return !!row;
   },
 
+  // Count active members with a specific role in team
+  countMembersByRole: (teamId, role) => {
+    const row = db.prepare('SELECT COUNT(*) as count FROM team_members WHERE team_id = ? AND role = ? AND is_active = 1').get(teamId, role);
+    return row.count;
+  },
+
   // Get member role in team
   getMemberRole: (teamId, userId) => {
     const row = db.prepare('SELECT role FROM team_members WHERE team_id = ? AND user_id = ? AND is_active = 1').get(teamId, userId);

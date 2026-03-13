@@ -25,6 +25,8 @@ export type TeamMember = {
   joined_at: string;
   is_active: number;
   username: string;
+  nickname: string | null;
+  avatar_url: string | null;
   git_name: string | null;
   git_email: string | null;
 };

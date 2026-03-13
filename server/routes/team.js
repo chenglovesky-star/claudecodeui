@@ -121,13 +121,13 @@ router.get('/:teamId/members', (req, res) => {
     try {
         const teamId = parseInt(req.params.teamId);
         if (!teamDb.isMember(teamId, req.user.id)) {
-            return res.status(403).json({ error: 'Not a team member' });
+            return res.status(403).json({ error: { code: 'FORBIDDEN', message: '非团队成员' } });
         }
 
         const members = teamDb.getTeamMembers(teamId);
         res.json(members);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
     }
 });
 
@@ -141,15 +141,29 @@ router.put('/:teamId/members/:userId/role', (req, res) => {
         // Only PM/SM can change roles
         const callerRole = teamDb.getMemberRole(teamId, req.user.id);
         if (!callerRole || !['pm', 'sm'].includes(callerRole)) {
-            return res.status(403).json({ error: 'Only PM or SM can change roles' });
+            return res.status(403).json({ error: { code: 'FORBIDDEN', message: '仅 PM 或 SM 可以修改角色' } });
+        }
+
+        // Cannot change own role
+        if (targetUserId === req.user.id) {
+            return res.status(400).json({ error: { code: 'SELF_ROLE_CHANGE', message: '不能修改自己的角色' } });
         }
 
         if (!VALID_ROLES.includes(role)) {
-            return res.status(400).json({ error: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}` });
+            return res.status(400).json({ error: { code: 'INVALID_ROLE', message: `无效角色，必须是以下之一：${VALID_ROLES.join(', ')}` } });
+        }
+
+        // Protect last PM — cannot change the last PM to another role
+        const targetCurrentRole = teamDb.getMemberRole(teamId, targetUserId);
+        if (targetCurrentRole === 'pm' && role !== 'pm') {
+            const pmCount = teamDb.countMembersByRole(teamId, 'pm');
+            if (pmCount <= 1) {
+                return res.status(400).json({ error: { code: 'LAST_PM', message: '团队必须保留至少一个 PM 角色' } });
+            }
         }
 
         const success = teamDb.updateMemberRole(teamId, targetUserId, role);
-        if (!success) return res.status(404).json({ error: 'Member not found' });
+        if (!success) return res.status(404).json({ error: { code: 'NOT_FOUND', message: '成员未找到' } });
 
         const clients = getConnectedClients(req);
         broadcastTeamMemberChange(clients, teamId, 'role-changed', {
@@ -160,9 +174,9 @@ router.put('/:teamId/members/:userId/role', (req, res) => {
 
         activityDb.log(teamId, req.user.id, 'role_changed', 'member', String(targetUserId), JSON.stringify({ newRole: role }));
 
-        res.json({ success: true });
+        res.json({ data: { success: true, member: { userId: targetUserId, role } } });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
     }
 });
 
@@ -175,11 +189,20 @@ router.delete('/:teamId/members/:userId', (req, res) => {
         // PM/SM can remove anyone; members can remove themselves
         const callerRole = teamDb.getMemberRole(teamId, req.user.id);
         if (targetUserId !== req.user.id && (!callerRole || !['pm', 'sm'].includes(callerRole))) {
-            return res.status(403).json({ error: 'Only PM or SM can remove other members' });
+            return res.status(403).json({ error: { code: 'FORBIDDEN', message: '仅 PM 或 SM 可以移除其他成员' } });
+        }
+
+        // Protect last PM — cannot remove the last PM
+        const targetRole = teamDb.getMemberRole(teamId, targetUserId);
+        if (targetRole === 'pm') {
+            const pmCount = teamDb.countMembersByRole(teamId, 'pm');
+            if (pmCount <= 1) {
+                return res.status(400).json({ error: { code: 'LAST_PM', message: '不能移除团队最后一个 PM' } });
+            }
         }
 
         const success = teamDb.removeMember(teamId, targetUserId);
-        if (!success) return res.status(404).json({ error: 'Member not found' });
+        if (!success) return res.status(404).json({ error: { code: 'NOT_FOUND', message: '成员未找到' } });
 
         const clients = getConnectedClients(req);
         broadcastTeamMemberChange(clients, teamId, 'left', {
@@ -189,9 +212,9 @@ router.delete('/:teamId/members/:userId', (req, res) => {
 
         activityDb.log(teamId, req.user.id, 'member_removed', 'member', String(targetUserId));
 
-        res.json({ success: true });
+        res.json({ data: { success: true } });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: { code: 'SERVER_ERROR', message: error.message } });
     }
 });
 
