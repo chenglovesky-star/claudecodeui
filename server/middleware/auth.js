@@ -2,8 +2,11 @@ import jwt from 'jsonwebtoken';
 import { userDb, teamDb } from '../database/db.js';
 import { IS_PLATFORM } from '../constants/config.js';
 
-// Get JWT secret from environment or use default (for development)
+// Get JWT secret from environment or use default (for development only)
 const JWT_SECRET = process.env.JWT_SECRET || 'claude-ui-dev-secret-change-in-production';
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  console.error('[SECURITY] WARNING: JWT_SECRET not set in production! Set JWT_SECRET environment variable.');
+}
 
 // Optional API key middleware
 const validateApiKey = (req, res, next) => {

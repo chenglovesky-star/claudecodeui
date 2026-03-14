@@ -821,11 +821,14 @@ const userProjectsDb = {
 const teamDb = {
   // Create a new team
   createTeam: (name, description, createdBy, settings = '{}') => {
-    const stmt = db.prepare('INSERT INTO teams (name, description, created_by, settings) VALUES (?, ?, ?, ?)');
-    const result = stmt.run(name, description, createdBy, settings);
-    // Auto-add creator as team owner (pm role)
-    db.prepare('INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)').run(result.lastInsertRowid, createdBy, 'pm');
-    return { id: result.lastInsertRowid, name, description };
+    const transaction = db.transaction(() => {
+      const stmt = db.prepare('INSERT INTO teams (name, description, created_by, settings) VALUES (?, ?, ?, ?)');
+      const result = stmt.run(name, description, createdBy, settings);
+      // Auto-add creator as team owner (pm role)
+      db.prepare('INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)').run(result.lastInsertRowid, createdBy, 'pm');
+      return { id: result.lastInsertRowid, name, description };
+    });
+    return transaction();
   },
 
   // Get team by ID
@@ -930,11 +933,15 @@ const teamDb = {
       return { success: false, error: 'Already a team member', teamId: invite.team_id };
     }
 
-    // Add member and increment use count
-    const addResult = teamDb.addMember(invite.team_id, userId, 'developer');
-    if (addResult) {
-      db.prepare('UPDATE team_invites SET use_count = use_count + 1 WHERE id = ?').run(invite.id);
-    }
+    // Add member and increment use count atomically
+    const transaction = db.transaction(() => {
+      const addResult = teamDb.addMember(invite.team_id, userId, 'developer');
+      if (addResult) {
+        db.prepare('UPDATE team_invites SET use_count = use_count + 1 WHERE id = ?').run(invite.id);
+      }
+      return addResult;
+    });
+    transaction();
     return { success: true, teamId: invite.team_id };
   },
 
@@ -1098,11 +1105,12 @@ const kanbanDb = {
   },
 
   updateSprint: (sprintId, teamId, updates) => {
+    const ALLOWED_FIELDS = { name: 'name', description: 'description', start_date: 'start_date', end_date: 'end_date' };
     const fields = [];
     const values = [];
     for (const [key, value] of Object.entries(updates)) {
-      if (['name', 'description', 'start_date', 'end_date'].includes(key)) {
-        fields.push(`${key} = ?`);
+      if (ALLOWED_FIELDS[key]) {
+        fields.push(`${ALLOWED_FIELDS[key]} = ?`);
         values.push(value);
       }
     }
@@ -1148,11 +1156,12 @@ const kanbanDb = {
   },
 
   updateStory: (storyId, teamId, updates) => {
+    const ALLOWED_FIELDS = { title: 'title', description: 'description', priority: 'priority', sprint_id: 'sprint_id' };
     const fields = [];
     const values = [];
     for (const [key, value] of Object.entries(updates)) {
-      if (['title', 'description', 'priority', 'sprint_id'].includes(key)) {
-        fields.push(`${key} = ?`);
+      if (ALLOWED_FIELDS[key]) {
+        fields.push(`${ALLOWED_FIELDS[key]} = ?`);
         values.push(value);
       } else if (key === 'file_scope') {
         fields.push('file_scope = ?');
