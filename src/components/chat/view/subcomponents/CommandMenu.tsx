@@ -34,6 +34,7 @@ const menuBaseStyle: CSSProperties = {
 const namespaceLabels: Record<string, string> = {
   frequent: 'Frequently Used',
   builtin: 'Built-in Commands',
+  skill: 'Skills',
   project: 'Project Commands',
   user: 'User Commands',
   other: 'Other Commands',
@@ -42,6 +43,7 @@ const namespaceLabels: Record<string, string> = {
 const namespaceIcons: Record<string, string> = {
   frequent: '[*]',
   builtin: '[B]',
+  skill: '[S]',
   project: '[P]',
   user: '[U]',
   other: '[O]',
@@ -139,8 +141,8 @@ export default function CommandMenu({
   }
 
   const preferredOrder = hasFrequentCommands
-    ? ['frequent', 'builtin', 'project', 'user', 'other']
-    : ['builtin', 'project', 'user', 'other'];
+    ? ['frequent', 'builtin', 'skill', 'project', 'user', 'other']
+    : ['builtin', 'skill', 'project', 'user', 'other'];
   const extraNamespaces = Object.keys(groupedCommands).filter((namespace) => !preferredOrder.includes(namespace));
   const orderedNamespaces = [...preferredOrder, ...extraNamespaces].filter((namespace) => groupedCommands[namespace]);
 

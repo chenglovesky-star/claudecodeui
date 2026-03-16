@@ -17,6 +17,7 @@ export type AuthSessionPayload = {
 
 export type AuthStatusPayload = {
   needsSetup?: boolean;
+  allowRegistration?: boolean;
 };
 
 export type AuthUserPayload = {
@@ -37,6 +38,7 @@ export type AuthContextValue = {
   token: string | null;
   isLoading: boolean;
   needsSetup: boolean;
+  allowRegistration: boolean;
   hasCompletedOnboarding: boolean;
   error: string | null;
   login: (username: string, password: string) => Promise<AuthActionResult>;

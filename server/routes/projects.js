@@ -4,6 +4,7 @@ import path from 'path';
 import { spawn } from 'child_process';
 import os from 'os';
 import { addProjectManually } from '../projects.js';
+import { userProjectsDb } from '../database/db.js';
 
 const router = express.Router();
 
@@ -215,6 +216,7 @@ router.post('/create-workspace', async (req, res) => {
 
       // Add the existing workspace to the project list
       const project = await addProjectManually(absolutePath);
+      userProjectsDb.addProject(req.user.id, project.name);
 
       return res.json({
         success: true,
@@ -280,6 +282,7 @@ router.post('/create-workspace', async (req, res) => {
 
         // Add the cloned repo path to the project list
         const project = await addProjectManually(clonePath);
+        userProjectsDb.addProject(req.user.id, project.name);
 
         return res.json({
           success: true,
@@ -290,6 +293,7 @@ router.post('/create-workspace', async (req, res) => {
 
       // Add the new workspace to the project list (no clone)
       const project = await addProjectManually(absolutePath);
+      userProjectsDb.addProject(req.user.id, project.name);
 
       return res.json({
         success: true,
@@ -299,6 +303,13 @@ router.post('/create-workspace', async (req, res) => {
     }
 
   } catch (error) {
+    // Project already exists in config but current user may not be associated — fallback association
+    if (error.message && error.message.includes('Project already configured')) {
+      const absolutePath = (await validateWorkspacePath(req.body.path)).resolvedPath || req.body.path;
+      const projectName = absolutePath.replace(/[\\/:\s~_]/g, '-');
+      userProjectsDb.addProject(req.user.id, projectName);
+      return res.json({ success: true, message: 'Workspace added to your projects' });
+    }
     console.error('Error creating workspace:', error);
     res.status(500).json({
       error: error.message || 'Failed to create workspace',

@@ -147,6 +147,7 @@ export function useChatRealtimeHandlers({
       'cursor-error',
       'codex-error',
       'gemini-error',
+      'claude-cli-error',
       'error',
     ]);
 
@@ -183,7 +184,8 @@ export function useChatRealtimeHandlers({
       (latestMessage.type === 'claude-error' ||
         latestMessage.type === 'cursor-error' ||
         latestMessage.type === 'codex-error' ||
-        latestMessage.type === 'gemini-error');
+        latestMessage.type === 'gemini-error' ||
+        latestMessage.type === 'claude-cli-error');
 
     const handleBackgroundLifecycle = (sessionId?: string) => {
       if (!sessionId) {
@@ -310,8 +312,14 @@ export function useChatRealtimeHandlers({
         if (messageData && typeof messageData === 'object' && messageData.type) {
           if (messageData.type === 'content_block_delta' && messageData.delta?.text) {
             const decodedText = decodeHtmlEntities(messageData.delta.text);
+            const isFirstChunk = !streamBufferRef.current && !streamTimerRef.current;
             streamBufferRef.current += decodedText;
-            if (!streamTimerRef.current) {
+            if (isFirstChunk) {
+              const chunk = streamBufferRef.current;
+              streamBufferRef.current = '';
+              appendStreamingChunk(setChatMessages, chunk, false);
+              setClaudeStatus(null);
+            } else if (!streamTimerRef.current) {
               streamTimerRef.current = window.setTimeout(() => {
                 const chunk = streamBufferRef.current;
                 streamBufferRef.current = '';
@@ -518,8 +526,14 @@ export function useChatRealtimeHandlers({
       case 'claude-output': {
         const cleaned = String(latestMessage.data || '');
         if (cleaned.trim()) {
+          const isFirstChunk = !streamBufferRef.current && !streamTimerRef.current;
           streamBufferRef.current += streamBufferRef.current ? `\n${cleaned}` : cleaned;
-          if (!streamTimerRef.current) {
+          if (isFirstChunk) {
+            const chunk = streamBufferRef.current;
+            streamBufferRef.current = '';
+            appendStreamingChunk(setChatMessages, chunk, true);
+            setClaudeStatus(null);
+          } else if (!streamTimerRef.current) {
             streamTimerRef.current = window.setTimeout(() => {
               const chunk = streamBufferRef.current;
               streamBufferRef.current = '';
@@ -552,7 +566,7 @@ export function useChatRealtimeHandlers({
         break;
 
       case 'claude-permission-request':
-        if (provider !== 'claude' || !latestMessage.requestId) {
+        if ((provider !== 'claude' && provider !== 'claude-cli') || !latestMessage.requestId) {
           break;
         }
         {
@@ -732,8 +746,14 @@ export function useChatRealtimeHandlers({
             .trim();
 
           if (cleaned) {
+            const isFirstChunk = !streamBufferRef.current && !streamTimerRef.current;
             streamBufferRef.current += streamBufferRef.current ? `\n${cleaned}` : cleaned;
-            if (!streamTimerRef.current) {
+            if (isFirstChunk) {
+              const chunk = streamBufferRef.current;
+              streamBufferRef.current = '';
+              appendStreamingChunk(setChatMessages, chunk, true);
+              setClaudeStatus(null);
+            } else if (!streamTimerRef.current) {
               streamTimerRef.current = window.setTimeout(() => {
                 const chunk = streamBufferRef.current;
                 streamBufferRef.current = '';
@@ -758,6 +778,24 @@ export function useChatRealtimeHandlers({
           selectedSession?.id,
           pendingSessionId,
         );
+
+        if (latestMessage.exitCode !== 0 && latestMessage.exitCode !== undefined) {
+          // Show a fallback error if no prior claude-cli-error was displayed
+          setChatMessages((previous) => {
+            const hasRecentError = previous.length > 0 && previous[previous.length - 1]?.type === 'error';
+            if (hasRecentError) {
+              return previous; // stderr error already shown
+            }
+            return [
+              ...previous,
+              {
+                type: 'error' as const,
+                content: `Claude CLI exited with code ${latestMessage.exitCode}`,
+                timestamp: new Date(),
+              },
+            ];
+          });
+        }
 
         if (pendingSessionId && !currentSessionId && latestMessage.exitCode === 0) {
           setCurrentSessionId(pendingSessionId);
@@ -966,16 +1004,24 @@ export function useChatRealtimeHandlers({
               appendStreamingChunk(setChatMessages, chunk, true);
             }
             finalizeStreamingMessage(setChatMessages);
-          } else if (!streamTimerRef.current && streamBufferRef.current) {
-            streamTimerRef.current = window.setTimeout(() => {
+          } else if (streamBufferRef.current) {
+            const isFirstChunk = !streamTimerRef.current && streamBufferRef.current === content;
+            if (isFirstChunk) {
               const chunk = streamBufferRef.current;
               streamBufferRef.current = '';
-              streamTimerRef.current = null;
+              appendStreamingChunk(setChatMessages, chunk, true);
+              setClaudeStatus(null);
+            } else if (!streamTimerRef.current) {
+              streamTimerRef.current = window.setTimeout(() => {
+                const chunk = streamBufferRef.current;
+                streamBufferRef.current = '';
+                streamTimerRef.current = null;
 
-              if (chunk) {
-                appendStreamingChunk(setChatMessages, chunk, true);
-              }
-            }, 100);
+                if (chunk) {
+                  appendStreamingChunk(setChatMessages, chunk, true);
+                }
+              }, 100);
+            }
           }
         }
         break;
@@ -988,6 +1034,20 @@ export function useChatRealtimeHandlers({
           {
             type: 'error',
             content: latestMessage.error || 'An error occurred with Gemini',
+            timestamp: new Date(),
+          },
+        ]);
+        break;
+
+      case 'claude-cli-error':
+        // Display the error but do NOT finalize lifecycle here.
+        // Stderr may arrive before the process closes; the 'claude-complete' event
+        // is the authoritative signal that the CLI process has exited.
+        setChatMessages((previous) => [
+          ...previous,
+          {
+            type: 'error',
+            content: latestMessage.error || 'An error occurred with Claude CLI',
             timestamp: new Date(),
           },
         ]);
@@ -1139,6 +1199,16 @@ export function useChatRealtimeHandlers({
         // Generic backend failure (e.g., provider process failed before a provider-specific
         // completion event was emitted). Treat it as terminal for current view lifecycle.
         finalizeLifecycleForCurrentView(latestMessage.sessionId, currentSessionId, selectedSession?.id);
+        if (latestMessage.error) {
+          setChatMessages((previous) => [
+            ...previous,
+            {
+              type: 'error' as const,
+              content: `Error: ${latestMessage.error}`,
+              timestamp: new Date(),
+            },
+          ]);
+        }
         break;
 
       default:

@@ -391,6 +391,12 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
         content = decodeHtmlEntities(String(message.message.content));
       }
 
+      // Detect custom command content and replace with just the command name
+      const customCommandMatch = content.match(/^<custom-command-content command="([^"]+)">/);
+      if (customCommandMatch) {
+        content = customCommandMatch[1];
+      }
+
       const shouldSkip =
         !content ||
         content.startsWith('<command-name>') ||

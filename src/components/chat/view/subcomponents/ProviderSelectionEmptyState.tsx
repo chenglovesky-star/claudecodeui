@@ -1,10 +1,11 @@
-import React from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import React, { useState } from 'react';
+import { Check, ChevronDown, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import SessionProviderLogo from '../../../llm-logo-provider/SessionProviderLogo';
-import { CLAUDE_MODELS, CURSOR_MODELS, CODEX_MODELS, GEMINI_MODELS } from '../../../../../shared/modelConstants';
+import { CLAUDE_MODELS, CURSOR_MODELS, CODEX_MODELS, GEMINI_MODELS, CLAUDE_CLI_MODELS } from '../../../../../shared/modelConstants';
 import type { ProjectSession, SessionProvider } from '../../../../types/app';
 import { NextTaskBanner } from '../../../task-master';
+import { authenticatedFetch } from '../../../../utils/api';
 
 interface ProviderSelectionEmptyStateProps {
   selectedSession: ProjectSession | null;
@@ -20,10 +21,13 @@ interface ProviderSelectionEmptyStateProps {
   setCodexModel: (model: string) => void;
   geminiModel: string;
   setGeminiModel: (model: string) => void;
+  claudeCliModel: string;
+  setClaudeCliModel: (model: string) => void;
   tasksEnabled: boolean;
   isTaskMasterInstalled: boolean | null;
   onShowAllTasks?: (() => void) | null;
   setInput: React.Dispatch<React.SetStateAction<string>>;
+  selectedProjectPath?: string;
 }
 
 type ProviderDef = {
@@ -43,6 +47,14 @@ const PROVIDERS: ProviderDef[] = [
     accent: 'border-primary',
     ring: 'ring-primary/15',
     check: 'bg-primary text-primary-foreground',
+  },
+  {
+    id: 'claude-cli',
+    name: 'Claude CLI',
+    infoKey: 'providerSelection.providerInfo.claudeCli',
+    accent: 'border-amber-500 dark:border-amber-400',
+    ring: 'ring-amber-500/15',
+    check: 'bg-amber-500 text-white',
   },
   {
     id: 'cursor',
@@ -72,13 +84,15 @@ const PROVIDERS: ProviderDef[] = [
 
 function getModelConfig(p: SessionProvider) {
   if (p === 'claude') return CLAUDE_MODELS;
+  if (p === 'claude-cli') return CLAUDE_CLI_MODELS;
   if (p === 'codex') return CODEX_MODELS;
   if (p === 'gemini') return GEMINI_MODELS;
   return CURSOR_MODELS;
 }
 
-function getModelValue(p: SessionProvider, c: string, cu: string, co: string, g: string) {
+function getModelValue(p: SessionProvider, c: string, cu: string, co: string, g: string, cc: string) {
   if (p === 'claude') return c;
+  if (p === 'claude-cli') return cc;
   if (p === 'codex') return co;
   if (p === 'gemini') return g;
   return cu;
@@ -98,13 +112,19 @@ export default function ProviderSelectionEmptyState({
   setCodexModel,
   geminiModel,
   setGeminiModel,
+  claudeCliModel,
+  setClaudeCliModel,
   tasksEnabled,
   isTaskMasterInstalled,
   onShowAllTasks,
   setInput,
+  selectedProjectPath,
 }: ProviderSelectionEmptyStateProps) {
   const { t } = useTranslation('chat');
   const nextTaskPrompt = t('tasks.nextTaskPrompt', { defaultValue: 'Start the next task' });
+
+  const [contextTestState, setContextTestState] = useState<'idle' | 'loading' | 'success' | 'failure'>('idle');
+  const [contextTestResult, setContextTestResult] = useState<any>(null);
 
   const selectProvider = (next: SessionProvider) => {
     setProvider(next);
@@ -114,19 +134,41 @@ export default function ProviderSelectionEmptyState({
 
   const handleModelChange = (value: string) => {
     if (provider === 'claude') { setClaudeModel(value); localStorage.setItem('claude-model', value); }
+    else if (provider === 'claude-cli') { setClaudeCliModel(value); localStorage.setItem('claude-cli-model', value); }
     else if (provider === 'codex') { setCodexModel(value); localStorage.setItem('codex-model', value); }
     else if (provider === 'gemini') { setGeminiModel(value); localStorage.setItem('gemini-model', value); }
     else { setCursorModel(value); localStorage.setItem('cursor-model', value); }
   };
 
+  const handleTestContext = async () => {
+    setContextTestState('loading');
+    setContextTestResult(null);
+    try {
+      const response = await authenticatedFetch('/api/claude-cli/test-context', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectPath: selectedProjectPath || '',
+          model: claudeCliModel,
+        }),
+      });
+      const result = await response.json();
+      setContextTestResult(result);
+      setContextTestState(result.success && result.contextMaintained ? 'success' : 'failure');
+    } catch (error) {
+      setContextTestResult({ error: (error as Error).message });
+      setContextTestState('failure');
+    }
+  };
+
   const modelConfig = getModelConfig(provider);
-  const currentModel = getModelValue(provider, claudeModel, cursorModel, codexModel, geminiModel);
+  const currentModel = getModelValue(provider, claudeModel, cursorModel, codexModel, geminiModel, claudeCliModel);
 
   /* ── New session — provider picker ── */
   if (!selectedSession && !currentSessionId) {
     return (
       <div className="flex h-full items-center justify-center px-4">
-        <div className="w-full max-w-md">
+        <div className="w-full max-w-lg">
           {/* Heading */}
           <div className="mb-8 text-center">
             <h2 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">
@@ -137,8 +179,8 @@ export default function ProviderSelectionEmptyState({
             </p>
           </div>
 
-          {/* Provider cards — horizontal row, equal width */}
-          <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-2.5">
+          {/* Provider cards */}
+          <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-5 sm:gap-2.5">
             {PROVIDERS.map((p) => {
               const active = provider === p.id;
               return (
@@ -191,12 +233,46 @@ export default function ProviderSelectionEmptyState({
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
               </div>
+
+              {/* Context test button for Claude CLI */}
+              {provider === 'claude-cli' && (
+                <button
+                  onClick={handleTestContext}
+                  disabled={contextTestState === 'loading'}
+                  className="ml-2 inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                >
+                  {contextTestState === 'loading' ? (
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Testing...
+                    </>
+                  ) : (
+                    'Test Context'
+                  )}
+                </button>
+              )}
             </div>
+
+            {/* Context test result */}
+            {provider === 'claude-cli' && contextTestState !== 'idle' && contextTestState !== 'loading' && (
+              <div className={`mb-3 rounded-lg px-3 py-2 text-center text-xs ${
+                contextTestState === 'success'
+                  ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+                  : 'bg-red-500/10 text-red-600 dark:text-red-400'
+              }`}>
+                {contextTestState === 'success' ? (
+                  <span>Context maintained successfully</span>
+                ) : (
+                  <span>Context lost{contextTestResult?.error ? `: ${contextTestResult.error}` : ''}</span>
+                )}
+              </div>
+            )}
 
             <p className="text-center text-sm text-muted-foreground/70">
               {
                 {
                   claude: t('providerSelection.readyPrompt.claude', { model: claudeModel }),
+                  'claude-cli': t('providerSelection.readyPrompt.claudeCli', { defaultValue: `Claude CLI ready with ${claudeCliModel}`, model: claudeCliModel }),
                   cursor: t('providerSelection.readyPrompt.cursor', { model: cursorModel }),
                   codex: t('providerSelection.readyPrompt.codex', { model: codexModel }),
                   gemini: t('providerSelection.readyPrompt.gemini', { model: geminiModel }),

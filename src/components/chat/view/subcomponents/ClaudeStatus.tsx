@@ -14,19 +14,11 @@ type ClaudeStatusProps = {
   provider?: string;
 };
 
-const ACTION_KEYS = [
-  'claudeStatus.actions.thinking',
-  'claudeStatus.actions.processing',
-  'claudeStatus.actions.analyzing',
-  'claudeStatus.actions.working',
-  'claudeStatus.actions.computing',
-  'claudeStatus.actions.reasoning',
-];
-const DEFAULT_ACTION_WORDS = ['Thinking', 'Processing', 'Analyzing', 'Working', 'Computing', 'Reasoning'];
 const ANIMATION_STEPS = 40;
 
 const PROVIDER_LABEL_KEYS: Record<string, string> = {
   claude: 'messageTypes.claude',
+  'claude-cli': 'messageTypes.claudeCli',
   codex: 'messageTypes.codex',
   cursor: 'messageTypes.cursor',
   gemini: 'messageTypes.gemini',
@@ -85,14 +77,17 @@ export default function ClaudeStatus({
     return () => window.clearInterval(timer);
   }, [isLoading]);
 
-  // Note: showThinking only controls the reasoning accordion in messages, not this processing indicator
-  if (!isLoading && !status) {
+  // Hide when not loading, or when status has been cleared (streaming content has started)
+  if (!isLoading || !status) {
     return null;
   }
 
-  const actionWords = ACTION_KEYS.map((key, index) => t(key, { defaultValue: DEFAULT_ACTION_WORDS[index] }));
-  const actionIndex = Math.floor(elapsedTime / 3) % actionWords.length;
-  const statusText = status?.text || actionWords[actionIndex];
+  const getPhaseText = (elapsed: number) => {
+    if (elapsed < 3) return t('claudeStatus.phase.connecting', { defaultValue: 'Connecting' });
+    if (elapsed < 10) return t('claudeStatus.phase.waiting', { defaultValue: 'Waiting for response' });
+    return t('claudeStatus.phase.processing', { defaultValue: 'Processing' });
+  };
+  const statusText = status?.text || getPhaseText(elapsedTime);
   const cleanStatusText = statusText.replace(/[.]+$/, '');
   const canInterrupt = isLoading && status?.can_interrupt !== false;
   const providerLabelKey = PROVIDER_LABEL_KEYS[provider];
@@ -164,6 +159,11 @@ export default function ClaudeStatus({
                   >
                     {elapsedLabel}
                   </span>
+                  {elapsedTime > 120 && (
+                    <span className="text-amber-500 text-xs">
+                      {t('claudeStatus.timeout', { defaultValue: 'Response timeout. Try stopping and resending.' })}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

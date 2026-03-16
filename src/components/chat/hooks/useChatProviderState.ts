@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { authenticatedFetch } from '../../../utils/api';
-import { CLAUDE_MODELS, CODEX_MODELS, CURSOR_MODELS, GEMINI_MODELS } from '../../../../shared/modelConstants';
+import { CLAUDE_MODELS, CODEX_MODELS, CURSOR_MODELS, GEMINI_MODELS, CLAUDE_CLI_MODELS } from '../../../../shared/modelConstants';
 import type { PendingPermissionRequest, PermissionMode } from '../types/types';
 import type { ProjectSession, SessionProvider } from '../../../types/app';
 
@@ -25,6 +25,9 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
   });
   const [geminiModel, setGeminiModel] = useState<string>(() => {
     return localStorage.getItem('gemini-model') || GEMINI_MODELS.DEFAULT;
+  });
+  const [claudeCliModel, setClaudeCliModel] = useState<string>(() => {
+    return localStorage.getItem('claude-cli-model') || CLAUDE_CLI_MODELS.DEFAULT;
   });
 
   const lastProviderRef = useRef(provider);
@@ -87,7 +90,9 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
     const modes: PermissionMode[] =
       provider === 'codex'
         ? ['default', 'acceptEdits', 'bypassPermissions']
-        : ['default', 'acceptEdits', 'bypassPermissions', 'plan'];
+        : provider === 'claude-cli'
+          ? ['default', 'acceptEdits', 'bypassPermissions', 'plan']
+          : ['default', 'acceptEdits', 'bypassPermissions', 'plan'];
 
     const currentIndex = modes.indexOf(permissionMode);
     const nextIndex = (currentIndex + 1) % modes.length;
@@ -110,6 +115,8 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
     setCodexModel,
     geminiModel,
     setGeminiModel,
+    claudeCliModel,
+    setClaudeCliModel,
     permissionMode,
     setPermissionMode,
     pendingPermissionRequests,

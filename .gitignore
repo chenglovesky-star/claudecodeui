@@ -129,4 +129,9 @@ dev-debug.log
 
 # Task files
 tasks.json
-tasks/ 
+tasks/
+
+# Sibling projects
+opencode-manager/
+team/
+claudecodeui/

@@ -54,7 +54,8 @@ const projectsHaveChanges = (
     return (
       serialize(nextProject.cursorSessions) !== serialize(prevProject.cursorSessions) ||
       serialize(nextProject.codexSessions) !== serialize(prevProject.codexSessions) ||
-      serialize(nextProject.geminiSessions) !== serialize(prevProject.geminiSessions)
+      serialize(nextProject.geminiSessions) !== serialize(prevProject.geminiSessions) ||
+      serialize(nextProject.claudeCliSessions) !== serialize(prevProject.claudeCliSessions)
     );
   });
 };
@@ -65,6 +66,7 @@ const getProjectSessions = (project: Project): ProjectSession[] => {
     ...(project.codexSessions ?? []),
     ...(project.cursorSessions ?? []),
     ...(project.geminiSessions ?? []),
+    ...(project.claudeCliSessions ?? []),
   ];
 };
 
@@ -348,6 +350,21 @@ export function useProjectsState({
         }
         if (shouldUpdateSession) {
           setSelectedSession({ ...geminiSession, __provider: 'gemini' });
+        }
+        return;
+      }
+
+      const claudeCliSession = project.claudeCliSessions?.find((session) => session.id === sessionId);
+      if (claudeCliSession) {
+        const shouldUpdateProject = selectedProject?.name !== project.name;
+        const shouldUpdateSession =
+          selectedSession?.id !== sessionId || selectedSession.__provider !== 'claude-cli';
+
+        if (shouldUpdateProject) {
+          setSelectedProject(project);
+        }
+        if (shouldUpdateSession) {
+          setSelectedSession({ ...claudeCliSession, __provider: 'claude-cli' });
         }
         return;
       }

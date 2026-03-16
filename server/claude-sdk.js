@@ -18,6 +18,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { CLAUDE_MODELS } from '../shared/modelConstants.js';
+import { enforceSandbox } from './utils/pathSandbox.js';
 
 const activeSessions = new Map();
 const pendingToolApprovals = new Map();
@@ -203,6 +204,12 @@ function mapCliOptionsToSDK(options = {}) {
   if (sessionId) {
     sdkOptions.resume = sessionId;
   }
+
+  // Clear CLAUDECODE from child process env to prevent nested-instance detection.
+  // The server may itself be running inside Claude Code, inheriting CLAUDECODE=1.
+  const cleanEnv = { ...process.env };
+  delete cleanEnv.CLAUDECODE;
+  sdkOptions.env = cleanEnv;
 
   return sdkOptions;
 }
@@ -468,22 +475,34 @@ async function queryClaudeSDK(command, options = {}, ws) {
   let tempDir = null;
 
   try {
+    // Notify frontend: message acknowledged
+    ws.send({ type: 'claude-phase', phase: 'acknowledged', sessionId: sessionId || null });
+
     // Map CLI options to SDK format
     const sdkOptions = mapCliOptionsToSDK(options);
 
-    // Load MCP configuration
-    const mcpServers = await loadMcpConfig(options.cwd);
+    // Notify frontend: loading configuration
+    ws.send({ type: 'claude-phase', phase: 'configuring', sessionId: sessionId || null });
+
+    // Load MCP configuration and handle images in parallel
+    const [mcpServers, imageResult] = await Promise.all([
+      loadMcpConfig(options.cwd),
+      handleImages(command, options.images, options.cwd),
+    ]);
     if (mcpServers) {
       sdkOptions.mcpServers = mcpServers;
     }
-
-    // Handle images - save to temp files and modify prompt
-    const imageResult = await handleImages(command, options.images, options.cwd);
     const finalCommand = imageResult.modifiedCommand;
     tempImagePaths = imageResult.tempImagePaths;
     tempDir = imageResult.tempDir;
 
     sdkOptions.canUseTool = async (toolName, input, context) => {
+      // ★ Path sandbox check — highest priority, independent of permission mode
+      const sandboxResult = await enforceSandbox(toolName, input, sdkOptions.cwd);
+      if (!sandboxResult.allowed) {
+        return { behavior: 'deny', message: `Sandbox: ${sandboxResult.reason}` };
+      }
+
       const requiresInteraction = TOOLS_REQUIRING_INTERACTION.has(toolName);
 
       if (!requiresInteraction) {
@@ -576,6 +595,9 @@ async function queryClaudeSDK(command, options = {}, ws) {
     if (capturedSessionId) {
       addSession(capturedSessionId, queryInstance, tempImagePaths, tempDir, ws);
     }
+
+    // Notify frontend: querying Claude API
+    ws.send({ type: 'claude-phase', phase: 'querying', sessionId: capturedSessionId || sessionId || null });
 
     // Process streaming messages
     console.log('Starting async generator loop for session:', capturedSessionId || 'NEW');

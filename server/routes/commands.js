@@ -76,6 +76,54 @@ async function scanCommandsDirectory(dir, baseDir, namespace) {
 }
 
 /**
+ * Scan ~/.claude/skills/ for skill directories containing SKILL.md
+ */
+async function scanSkillsDirectory() {
+  const skills = [];
+  const skillsDir = path.join(os.homedir(), '.claude', 'skills');
+
+  try {
+    await fs.access(skillsDir);
+    const entries = await fs.readdir(skillsDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const skillMdPath = path.join(skillsDir, entry.name, 'SKILL.md');
+      try {
+        const content = await fs.readFile(skillMdPath, 'utf8');
+        const { data: frontmatter, content: skillContent } = matter(content);
+
+        let description = frontmatter.description || '';
+        if (!description) {
+          const firstLine = skillContent.trim().split('\n')[0];
+          description = firstLine.replace(/^#+\s*/, '').trim();
+        }
+
+        skills.push({
+          name: '/' + entry.name,
+          path: skillMdPath,
+          relativePath: entry.name + '/SKILL.md',
+          description,
+          namespace: 'skill',
+          metadata: { ...frontmatter, type: 'skill' }
+        });
+      } catch (err) {
+        if (err.code !== 'ENOENT') {
+          console.error(`Error reading skill ${entry.name}:`, err.message);
+        }
+      }
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT' && err.code !== 'EACCES') {
+      console.error(`Error scanning skills directory:`, err.message);
+    }
+  }
+
+  return skills;
+}
+
+/**
  * Built-in commands that are always available
  */
 const builtInCommands = [
@@ -149,17 +197,28 @@ Custom commands can be created in:
 - Project: \`.claude/commands/\` (project-specific)
 - User: \`~/.claude/commands/\` (available in all projects)
 
+## Skills
+
+Skills are automatically discovered from \`~/.claude/skills/\`.
+Each skill is a directory containing a \`SKILL.md\` file.
+
+### Creating a Skill
+
+1. Create a directory: \`~/.claude/skills/my-skill/\`
+2. Add a \`SKILL.md\` file with optional frontmatter:
+
+\`\`\`markdown
+---
+description: My skill description
+---
+Skill prompt content here...
+\`\`\`
+
+3. The skill will appear as \`/my-skill\` in the command menu.
+
 ### Command Syntax
 
 - **Arguments**: Use \`$ARGUMENTS\` for all args or \`$1\`, \`$2\`, etc. for positional
-- **File Includes**: Use \`@filename\` to include file contents
-- **Bash Commands**: Use \`!command\` to execute bash commands
-
-### Examples
-
-\`\`\`markdown
-/mycommand arg1 arg2
-\`\`\`
 `;
 
     return {
@@ -429,6 +488,10 @@ router.post('/list', async (req, res) => {
     );
     allCommands.push(...userCommands);
 
+    // Scan user skills (~/.claude/skills/)
+    const skillCommands = await scanSkillsDirectory();
+    allCommands.push(...skillCommands);
+
     // Separate built-in and custom commands
     const customCommands = allCommands.filter(cmd => cmd.namespace !== 'builtin');
 
@@ -466,7 +529,8 @@ router.post('/load', async (req, res) => {
     // Security: Prevent path traversal
     const resolvedPath = path.resolve(commandPath);
     if (!resolvedPath.startsWith(path.resolve(os.homedir())) &&
-        !resolvedPath.includes('.claude/commands')) {
+        !resolvedPath.includes('.claude/commands') &&
+        !resolvedPath.includes('.claude/skills')) {
       return res.status(403).json({
         error: 'Access denied',
         message: 'Command must be in .claude/commands directory'
@@ -545,6 +609,7 @@ router.post('/execute', async (req, res) => {
     {
       const resolvedPath = path.resolve(commandPath);
       const userBase = path.resolve(path.join(os.homedir(), '.claude', 'commands'));
+      const skillsBase = path.resolve(path.join(os.homedir(), '.claude', 'skills'));
       const projectBase = context?.projectPath
         ? path.resolve(path.join(context.projectPath, '.claude', 'commands'))
         : null;
@@ -552,7 +617,7 @@ router.post('/execute', async (req, res) => {
         const rel = path.relative(base, resolvedPath);
         return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
       };
-      if (!(isUnder(userBase) || (projectBase && isUnder(projectBase)))) {
+      if (!(isUnder(userBase) || isUnder(skillsBase) || (projectBase && isUnder(projectBase)))) {
         return res.status(403).json({
           error: 'Access denied',
           message: 'Command must be in .claude/commands directory'
@@ -579,8 +644,8 @@ router.post('/execute', async (req, res) => {
       command: commandName,
       content: processedContent,
       metadata,
-      hasFileIncludes: processedContent.includes('@'),
-      hasBashCommands: processedContent.includes('!')
+      hasFileIncludes: /(?:^|\s)@\w+/m.test(processedContent),
+      hasBashCommands: /(?:^|\s)!\w+/m.test(processedContent)
     });
   } catch (error) {
     if (error.code === 'ENOENT') {

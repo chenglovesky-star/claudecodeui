@@ -204,12 +204,12 @@ export function useSlashCommands({
       const textAfterSlash = input.slice(slashPosition);
       const spaceIndex = textAfterSlash.indexOf(' ');
       const textAfterQuery = spaceIndex !== -1 ? textAfterSlash.slice(spaceIndex) : '';
-      const newInput = `${textBeforeSlash}${command.name} ${textAfterQuery}`;
+      const newInput = `${textBeforeSlash}${command.name}${textAfterQuery ? textAfterQuery : ''}`;
 
       setInput(newInput);
       resetCommandMenuState();
 
-      const executionResult = onExecuteCommand(command);
+      const executionResult = onExecuteCommand(command, newInput.trim());
       if (isPromiseLike(executionResult)) {
         executionResult.catch(() => {
           // Keep behavior silent; execution errors are handled by caller.
@@ -231,20 +231,18 @@ export function useSlashCommands({
       }
 
       trackCommandUsage(command);
-      const executionResult = onExecuteCommand(command);
+      resetCommandMenuState();
+      setInput(command.name);
+
+      const executionResult = onExecuteCommand(command, command.name);
 
       if (isPromiseLike(executionResult)) {
-        executionResult.then(() => {
-          resetCommandMenuState();
-        });
         executionResult.catch(() => {
           // Keep behavior silent; execution errors are handled by caller.
         });
-      } else {
-        resetCommandMenuState();
       }
     },
-    [selectedProject, trackCommandUsage, onExecuteCommand, resetCommandMenuState],
+    [selectedProject, trackCommandUsage, onExecuteCommand, resetCommandMenuState, setInput],
   );
 
   const handleToggleCommandMenu = useCallback(() => {

@@ -40,6 +40,7 @@ interface UseChatComposerStateArgs {
   claudeModel: string;
   codexModel: string;
   geminiModel: string;
+  claudeCliModel: string;
   isLoading: boolean;
   canAbortSession: boolean;
   tokenBudget: Record<string, unknown> | null;
@@ -69,14 +70,20 @@ interface MentionableFile {
 interface CommandExecutionResult {
   type: 'builtin' | 'custom';
   action?: string;
+  command?: string;
   data?: any;
   content?: string;
+  metadata?: Record<string, unknown>;
   hasBashCommands?: boolean;
   hasFileIncludes?: boolean;
 }
 
+const COMMAND_AUTO_SUBMIT = '__command_auto_submit__';
+
 const createFakeSubmitEvent = () => {
-  return { preventDefault: () => undefined } as unknown as FormEvent<HTMLFormElement>;
+  const event = { preventDefault: () => undefined } as unknown as FormEvent<HTMLFormElement> & { _source?: string };
+  (event as any)._source = COMMAND_AUTO_SUBMIT;
+  return event;
 };
 
 const isTemporarySessionId = (sessionId: string | null | undefined) =>
@@ -93,6 +100,7 @@ export function useChatComposerState({
   claudeModel,
   codexModel,
   geminiModel,
+  claudeCliModel,
   isLoading,
   canAbortSession,
   tokenBudget,
@@ -127,6 +135,7 @@ export function useChatComposerState({
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputHighlightRef = useRef<HTMLDivElement>(null);
+  const pendingSkillContentRef = useRef<string | null>(null);
   const handleSubmitRef = useRef<
     ((event: FormEvent<HTMLFormElement> | MouseEvent | TouchEvent | KeyboardEvent<HTMLTextAreaElement>) => Promise<void>) | null
   >(null);
@@ -241,28 +250,14 @@ export function useChatComposerState({
   );
 
   const handleCustomCommand = useCallback(async (result: CommandExecutionResult) => {
-    const { content, hasBashCommands } = result;
-
-    if (hasBashCommands) {
-      const confirmed = window.confirm(
-        'This command contains bash commands that will be executed. Do you want to proceed?',
-      );
-      if (!confirmed) {
-        setChatMessages((previous) => [
-          ...previous,
-          {
-            type: 'assistant',
-            content: '❌ Command execution cancelled',
-            timestamp: Date.now(),
-          },
-        ]);
-        return;
-      }
-    }
-
+    const { content, command } = result;
     const commandContent = content || '';
-    setInput(commandContent);
-    inputValueRef.current = commandContent;
+
+    // All custom commands: show only command name in chat, send content as hidden context
+    pendingSkillContentRef.current = commandContent;
+    const displayInput = command || '/command';
+    setInput(displayInput);
+    inputValueRef.current = displayInput;
 
     // Defer submit to next tick so the command text is reflected in UI before dispatching.
     setTimeout(() => {
@@ -270,7 +265,7 @@ export function useChatComposerState({
         handleSubmitRef.current(createFakeSubmitEvent());
       }
     }, 0);
-  }, [setChatMessages]);
+  }, []);
 
   const executeCommand = useCallback(
     async (command: SlashCommand, rawInput?: string) => {
@@ -289,7 +284,7 @@ export function useChatComposerState({
           projectName: selectedProject.name,
           sessionId: currentSessionId,
           provider,
-          model: provider === 'cursor' ? cursorModel : provider === 'codex' ? codexModel : provider === 'gemini' ? geminiModel : claudeModel,
+          model: provider === 'cursor' ? cursorModel : provider === 'codex' ? codexModel : provider === 'gemini' ? geminiModel : provider === 'claude-cli' ? claudeCliModel : claudeModel,
           tokenUsage: tokenBudget,
         };
 
@@ -339,6 +334,7 @@ export function useChatComposerState({
       }
     },
     [
+      claudeCliModel,
       claudeModel,
       codexModel,
       currentSessionId,
@@ -479,8 +475,10 @@ export function useChatComposerState({
       }
 
       // Intercept slash commands: if input starts with /commandName, execute as command with args
+      // Skip interception for auto-submitted content from custom command execution
+      const isAutoSubmit = (event as any)?._source === COMMAND_AUTO_SUBMIT;
       const trimmedInput = currentInput.trim();
-      if (trimmedInput.startsWith('/')) {
+      if (!isAutoSubmit && trimmedInput.startsWith('/')) {
         const firstSpace = trimmedInput.indexOf(' ');
         const commandName = firstSpace > 0 ? trimmedInput.slice(0, firstSpace) : trimmedInput;
         const matchedCommand = slashCommands.find((cmd: SlashCommand) => cmd.name === commandName);
@@ -500,10 +498,17 @@ export function useChatComposerState({
         }
       }
 
+      // For skill commands: use stored skill content as the message to Claude
+      // while keeping currentInput (command name) as the visible user message
       let messageContent = currentInput;
+      const skillContent = pendingSkillContentRef.current;
+      if (skillContent) {
+        messageContent = `<custom-command-content command="${currentInput}">\n${skillContent}\n</custom-command-content>`;
+        pendingSkillContentRef.current = null;
+      }
       const selectedThinkingMode = thinkingModes.find((mode: { id: string; prefix?: string }) => mode.id === thinkingMode);
       if (selectedThinkingMode && selectedThinkingMode.prefix) {
-        messageContent = `${selectedThinkingMode.prefix}: ${currentInput}`;
+        messageContent = `${selectedThinkingMode.prefix}: ${messageContent}`;
       }
 
       let uploadedImages: unknown[] = [];
@@ -585,7 +590,9 @@ export function useChatComposerState({
                 ? 'codex-settings'
                 : provider === 'gemini'
                   ? 'gemini-settings'
-                  : 'claude-settings';
+                  : provider === 'claude-cli'
+                    ? 'claude-cli-settings'
+                    : 'claude-settings';
           const savedSettings = safeLocalStorage.getItem(settingsKey);
           if (savedSettings) {
             return JSON.parse(savedSettings);
@@ -648,6 +655,22 @@ export function useChatComposerState({
             toolsSettings,
           },
         });
+      } else if (provider === 'claude-cli') {
+        sendMessage({
+          type: 'claude-cli-command',
+          command: messageContent,
+          sessionId: effectiveSessionId,
+          options: {
+            cwd: resolvedProjectPath,
+            projectPath: resolvedProjectPath,
+            sessionId: effectiveSessionId,
+            resume: Boolean(effectiveSessionId),
+            model: claudeCliModel,
+            permissionMode,
+            toolsSettings,
+            images: uploadedImages,
+          },
+        });
       } else {
         sendMessage({
           type: 'claude-command',
@@ -682,6 +705,7 @@ export function useChatComposerState({
     },
     [
       attachedImages,
+      claudeCliModel,
       claudeModel,
       codexModel,
       currentSessionId,

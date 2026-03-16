@@ -1,7 +1,6 @@
 import express from 'express';
 import sessionManager from '../sessionManager.js';
 import { sessionNamesDb } from '../database/db.js';
-import { getGeminiCliSessionMessages } from '../projects.js';
 
 const router = express.Router();
 
@@ -13,12 +12,7 @@ router.get('/sessions/:sessionId/messages', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Invalid session ID format' });
         }
 
-        let messages = sessionManager.getSessionMessages(sessionId);
-
-        // Fallback to Gemini CLI sessions on disk
-        if (messages.length === 0) {
-            messages = await getGeminiCliSessionMessages(sessionId);
-        }
+        const messages = sessionManager.getSessionMessages(sessionId);
 
         res.json({
             success: true,

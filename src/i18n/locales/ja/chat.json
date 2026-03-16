@@ -13,8 +13,10 @@
     "error": "エラー",
     "tool": "ツール",
     "claude": "Claude",
+    "claudeCli": "Claude CLI",
     "cursor": "Cursor",
-    "codex": "Codex"
+    "codex": "Codex",
+    "gemini": "Gemini"
   },
   "tools": {
     "settings": "ツール設定",
