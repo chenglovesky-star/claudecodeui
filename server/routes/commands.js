@@ -120,6 +120,71 @@ async function scanSkillsDirectory() {
     }
   }
 
+  // Also scan ~/.claude/plugins/cache/ for plugin-installed skills
+  const pluginsCacheDir = path.join(os.homedir(), '.claude', 'plugins', 'cache');
+  try {
+    await fs.access(pluginsCacheDir);
+    const orgs = await fs.readdir(pluginsCacheDir, { withFileTypes: true });
+
+    for (const org of orgs) {
+      if (!org.isDirectory()) continue;
+      const orgDir = path.join(pluginsCacheDir, org.name);
+      const plugins = await fs.readdir(orgDir, { withFileTypes: true });
+
+      for (const plugin of plugins) {
+        if (!plugin.isDirectory()) continue;
+        const pluginDir = path.join(orgDir, plugin.name);
+        const versions = await fs.readdir(pluginDir, { withFileTypes: true });
+
+        for (const version of versions) {
+          if (!version.isDirectory()) continue;
+          const skillsPath = path.join(pluginDir, version.name, 'skills');
+          try {
+            await fs.access(skillsPath);
+            const skillEntries = await fs.readdir(skillsPath, { withFileTypes: true });
+
+            for (const skillEntry of skillEntries) {
+              if (!skillEntry.isDirectory()) continue;
+              const skillMdPath = path.join(skillsPath, skillEntry.name, 'SKILL.md');
+              try {
+                const content = await fs.readFile(skillMdPath, 'utf8');
+                const { data: frontmatter, content: skillContent } = matter(content);
+
+                let description = frontmatter.description || '';
+                if (!description) {
+                  const firstLine = skillContent.trim().split('\n')[0];
+                  description = firstLine.replace(/^#+\s*/, '').trim();
+                }
+
+                // Use plugin:skill naming convention
+                const skillName = `/${plugin.name}:${skillEntry.name}`;
+
+                skills.push({
+                  name: skillName,
+                  path: skillMdPath,
+                  relativePath: `plugins/${org.name}/${plugin.name}/${version.name}/skills/${skillEntry.name}/SKILL.md`,
+                  description: `(${plugin.name}) ${description}`,
+                  namespace: 'skill',
+                  metadata: { ...frontmatter, type: 'skill', plugin: plugin.name }
+                });
+              } catch (err) {
+                if (err.code !== 'ENOENT') {
+                  console.error(`Error reading plugin skill ${plugin.name}:${skillEntry.name}:`, err.message);
+                }
+              }
+            }
+          } catch (err) {
+            // No skills directory in this plugin version, skip
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT' && err.code !== 'EACCES') {
+      console.error(`Error scanning plugins cache directory:`, err.message);
+    }
+  }
+
   return skills;
 }
 
@@ -530,7 +595,8 @@ router.post('/load', async (req, res) => {
     const resolvedPath = path.resolve(commandPath);
     if (!resolvedPath.startsWith(path.resolve(os.homedir())) &&
         !resolvedPath.includes('.claude/commands') &&
-        !resolvedPath.includes('.claude/skills')) {
+        !resolvedPath.includes('.claude/skills') &&
+        !resolvedPath.includes('.claude/plugins')) {
       return res.status(403).json({
         error: 'Access denied',
         message: 'Command must be in .claude/commands directory'
@@ -610,6 +676,7 @@ router.post('/execute', async (req, res) => {
       const resolvedPath = path.resolve(commandPath);
       const userBase = path.resolve(path.join(os.homedir(), '.claude', 'commands'));
       const skillsBase = path.resolve(path.join(os.homedir(), '.claude', 'skills'));
+      const pluginsBase = path.resolve(path.join(os.homedir(), '.claude', 'plugins'));
       const projectBase = context?.projectPath
         ? path.resolve(path.join(context.projectPath, '.claude', 'commands'))
         : null;
@@ -617,7 +684,7 @@ router.post('/execute', async (req, res) => {
         const rel = path.relative(base, resolvedPath);
         return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
       };
-      if (!(isUnder(userBase) || isUnder(skillsBase) || (projectBase && isUnder(projectBase)))) {
+      if (!(isUnder(userBase) || isUnder(skillsBase) || isUnder(pluginsBase) || (projectBase && isUnder(projectBase)))) {
         return res.status(403).json({
           error: 'Access denied',
           message: 'Command must be in .claude/commands directory'
