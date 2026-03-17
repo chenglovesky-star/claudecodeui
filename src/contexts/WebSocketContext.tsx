@@ -21,16 +21,17 @@ export const useWebSocket = () => {
 
 const buildWebSocketUrl = (token: string | null) => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  if (IS_PLATFORM) return `${protocol}//${window.location.host}/ws`; // Platform mode: Use same domain as the page (goes through proxy)
+  if (IS_PLATFORM) return `${protocol}//${window.location.host}/ws`;
   if (!token) return null;
-  return `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`; // OSS mode: Use same host:port that served the page
+  return `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`;
 };
 
-// Heartbeat interval (25s - below common 30s proxy timeout)
-const HEARTBEAT_INTERVAL_MS = 25000;
-// Reconnect settings
-const RECONNECT_BASE_MS = 1000;
-const RECONNECT_MAX_MS = 30000;
+// ─── Constants ───
+const HEARTBEAT_INTERVAL_MS = 25000; // Send ping every 25s (below common 30s proxy timeout)
+const PONG_TIMEOUT_MS = 10000;       // Wait 10s for pong before considering connection dead
+const RECONNECT_BASE_MS = 1000;      // Initial reconnect delay
+const RECONNECT_MAX_MS = 30000;      // Max reconnect delay
+const MESSAGE_QUEUE_MAX = 50;        // Max queued messages to prevent memory issues
 
 const useWebSocketProviderState = (): WebSocketContextType => {
   const wsRef = useRef<WebSocket | null>(null);
@@ -39,26 +40,45 @@ const useWebSocketProviderState = (): WebSocketContextType => {
   const [isConnected, setIsConnected] = useState(false);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pongTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const messageQueueRef = useRef<any[]>([]);
+  const isConnectingRef = useRef(false); // Prevent duplicate connect() calls
   const { token } = useAuth();
+
+  // ─── Heartbeat ───
+  const clearPongTimeout = useCallback(() => {
+    if (pongTimeoutRef.current) {
+      clearTimeout(pongTimeoutRef.current);
+      pongTimeoutRef.current = null;
+    }
+  }, []);
 
   const stopHeartbeat = useCallback(() => {
     if (heartbeatTimerRef.current) {
       clearInterval(heartbeatTimerRef.current);
       heartbeatTimerRef.current = null;
     }
-  }, []);
+    clearPongTimeout();
+  }, [clearPongTimeout]);
 
   const startHeartbeat = useCallback((ws: WebSocket) => {
     stopHeartbeat();
     heartbeatTimerRef.current = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'ping' }));
+
+        // Start pong timeout — if no pong in 10s, force reconnect
+        clearPongTimeout();
+        pongTimeoutRef.current = setTimeout(() => {
+          console.warn('[WS] Pong timeout — connection appears dead, forcing reconnect');
+          ws.close(); // triggers onclose → reconnect
+        }, PONG_TIMEOUT_MS);
       }
     }, HEARTBEAT_INTERVAL_MS);
-  }, [stopHeartbeat]);
+  }, [stopHeartbeat, clearPongTimeout]);
 
+  // ─── Message Queue ───
   const flushMessageQueue = useCallback((ws: WebSocket) => {
     while (messageQueueRef.current.length > 0) {
       const msg = messageQueueRef.current.shift();
@@ -68,24 +88,40 @@ const useWebSocketProviderState = (): WebSocketContextType => {
     }
   }, []);
 
+  // ─── Connect ───
   const connect = useCallback(() => {
     if (unmountedRef.current) return;
+    if (isConnectingRef.current) return; // Prevent duplicate connections
+
+    isConnectingRef.current = true;
+
+    // Clean up any pending reconnect timer
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
 
     // Clean up existing connection
     if (wsRef.current) {
       wsRef.current.onclose = null;
       wsRef.current.onerror = null;
-      wsRef.current.close();
+      wsRef.current.onmessage = null;
+      wsRef.current.onopen = null;
+      try { wsRef.current.close(); } catch { /* ignore */ }
       wsRef.current = null;
     }
 
     try {
       const wsUrl = buildWebSocketUrl(token);
-      if (!wsUrl) return console.warn('No authentication token found for WebSocket connection');
+      if (!wsUrl) {
+        isConnectingRef.current = false;
+        return console.warn('No authentication token found for WebSocket connection');
+      }
 
       const websocket = new WebSocket(wsUrl);
 
       websocket.onopen = () => {
+        isConnectingRef.current = false;
         setIsConnected(true);
         wsRef.current = websocket;
         reconnectAttemptRef.current = 0;
@@ -96,8 +132,12 @@ const useWebSocketProviderState = (): WebSocketContextType => {
       websocket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          // Ignore pong responses
-          if (data.type === 'pong') return;
+
+          // Handle pong — clear timeout, connection is alive
+          if (data.type === 'pong') {
+            clearPongTimeout();
+            return;
+          }
 
           // Debug flow logging
           const elapsed = (window as any).__msgSentAt
@@ -123,7 +163,6 @@ const useWebSocketProviderState = (): WebSocketContextType => {
               const parts = inner.content || [];
               const partTypes = parts.map((p: any) => `${p.type}${p.type === 'text' ? `(${(p.text || '').length}ch)` : p.type === 'tool_use' ? `(${p.name})` : ''}`);
               console.log(`[FLOW] 📦 ${elapsed} assistant message parts: [${partTypes.join(', ')}]`);
-              // Show first 200 chars of full content for debugging
               console.log(`[FLOW] 📦 raw content:`, JSON.stringify(parts).slice(0, 300));
             } else {
               console.log(`[FLOW] 📨 ${elapsed} claude-response:`, inner?.type || 'unknown', JSON.stringify(inner).slice(0, 200));
@@ -141,7 +180,8 @@ const useWebSocketProviderState = (): WebSocketContextType => {
         }
       };
 
-      websocket.onclose = () => {
+      websocket.onclose = (event) => {
+        isConnectingRef.current = false;
         setIsConnected(false);
         wsRef.current = null;
         stopHeartbeat();
@@ -155,20 +195,24 @@ const useWebSocketProviderState = (): WebSocketContextType => {
         );
         reconnectAttemptRef.current += 1;
 
+        console.log(`[WS] Connection closed (code: ${event.code}), reconnecting in ${delay}ms (attempt ${reconnectAttemptRef.current})`);
+
         reconnectTimeoutRef.current = setTimeout(() => {
           if (!unmountedRef.current) connect();
         }, delay);
       };
 
-      websocket.onerror = (error) => {
-        console.error('WebSocket error:', error);
+      websocket.onerror = () => {
+        // onclose will fire after onerror, so reconnect logic is handled there
       };
 
     } catch (error) {
+      isConnectingRef.current = false;
       console.error('Error creating WebSocket connection:', error);
     }
-  }, [token, startHeartbeat, stopHeartbeat, flushMessageQueue]);
+  }, [token, startHeartbeat, stopHeartbeat, flushMessageQueue, clearPongTimeout]);
 
+  // ─── Lifecycle ───
   useEffect(() => {
     unmountedRef.current = false;
     connect();
@@ -186,8 +230,11 @@ const useWebSocketProviderState = (): WebSocketContextType => {
 
     // Reconnect when network comes back online
     const handleOnline = () => {
-      reconnectAttemptRef.current = 0;
-      connect();
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        reconnectAttemptRef.current = 0;
+        connect();
+      }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -207,16 +254,21 @@ const useWebSocketProviderState = (): WebSocketContextType => {
     };
   }, [token]);
 
+  // ─── Send with queue ───
   const sendMessage = useCallback((message: any) => {
     const socket = wsRef.current;
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify(message));
     } else {
-      // Queue message for sending after reconnect
-      messageQueueRef.current.push(message);
-      console.warn('WebSocket not connected, message queued for retry');
-      // Trigger immediate reconnect
-      if (!reconnectTimeoutRef.current) {
+      // Queue message with size limit
+      if (messageQueueRef.current.length < MESSAGE_QUEUE_MAX) {
+        messageQueueRef.current.push(message);
+        console.warn(`[WS] Not connected, message queued (${messageQueueRef.current.length}/${MESSAGE_QUEUE_MAX})`);
+      } else {
+        console.error('[WS] Message queue full, dropping message');
+      }
+      // Trigger immediate reconnect if not already in progress
+      if (!isConnectingRef.current && !reconnectTimeoutRef.current) {
         reconnectAttemptRef.current = 0;
         connect();
       }

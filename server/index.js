@@ -1393,10 +1393,34 @@ const uploadFilesHandler = async (req, res) => {
 
 app.post('/api/projects/:projectName/files/upload', authenticateToken, authorizeProject, uploadFilesHandler);
 
+// ─── WebSocket keep-alive: server-side ping every 30s ───
+const WS_PING_INTERVAL_MS = 30000;
+const WS_PONG_TIMEOUT_MS = 10000;
+
+const wsHeartbeatInterval = setInterval(() => {
+    wss.clients.forEach((ws) => {
+        if (ws._isAlive === false) {
+            // No pong received since last ping → terminate dead connection
+            console.log('[WARN] Terminating unresponsive WebSocket client');
+            return ws.terminate();
+        }
+        ws._isAlive = false;
+        ws.ping(); // protocol-level ping
+    });
+}, WS_PING_INTERVAL_MS);
+
+wss.on('close', () => {
+    clearInterval(wsHeartbeatInterval);
+});
+
 // WebSocket connection handler that routes based on URL path
 wss.on('connection', (ws, request) => {
     const url = request.url;
     console.log('[INFO] Client connected to:', url);
+
+    // Mark connection as alive
+    ws._isAlive = true;
+    ws.on('pong', () => { ws._isAlive = true; }); // protocol-level pong
 
     // Parse URL to get pathname without query parameters
     const urlObj = new URL(url, 'http://localhost');
