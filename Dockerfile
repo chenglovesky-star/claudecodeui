@@ -19,6 +19,9 @@ RUN apt-get update && apt-get install -y \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
+# 配置 npm 国内镜像源
+RUN npm config set registry https://registry.npmmirror.com
+
 # 复制依赖描述文件和 postinstall 脚本（npm ci 会触发 postinstall）
 COPY package.json package-lock.json ./
 COPY scripts ./scripts
@@ -54,6 +57,9 @@ RUN apt-get update && apt-get install -y \
     git \
     curl \
     && rm -rf /var/lib/apt/lists/*
+
+# 配置 npm 国内镜像源
+RUN npm config set registry https://registry.npmmirror.com
 
 # 安装 Claude CLI
 RUN npm install -g @anthropic-ai/claude-code
