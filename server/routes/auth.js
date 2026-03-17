@@ -1,7 +1,11 @@
 import express from 'express';
 import bcrypt from 'bcrypt';
-import { userDb, db } from '../database/db.js';
+import path from 'path';
+import fs from 'fs';
+import { userDb, db, userProjectsDb } from '../database/db.js';
 import { generateToken, authenticateToken } from '../middleware/auth.js';
+import { WORKSPACES_ROOT } from './projects.js';
+import { addProjectManually } from '../projects.js';
 
 const router = express.Router();
 
@@ -54,6 +58,18 @@ router.post('/register', async (req, res) => {
 
     // Create user
     const user = userDb.createUser(username, passwordHash);
+
+    // Create user workspace directory and register as project
+    try {
+      const userWorkspace = path.join(WORKSPACES_ROOT, username);
+      await fs.promises.mkdir(userWorkspace, { recursive: true });
+      const project = await addProjectManually(userWorkspace);
+      userProjectsDb.addProject(user.id, project.name);
+      console.log(`[AUTH] Created workspace for user ${username}: ${userWorkspace}`);
+    } catch (wsError) {
+      // Non-fatal: user is created even if workspace setup fails
+      console.error(`[AUTH] Failed to create workspace for user ${username}:`, wsError.message);
+    }
 
     // Generate token
     const token = generateToken(user);

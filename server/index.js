@@ -657,13 +657,14 @@ app.post('/api/projects/create', authenticateToken, async (req, res) => {
     }
 });
 
-const expandWorkspacePath = (inputPath) => {
-    if (!inputPath) return inputPath;
+const expandWorkspacePath = (inputPath, userWorkspaceRoot) => {
+    const root = userWorkspaceRoot || WORKSPACES_ROOT;
+    if (!inputPath) return root;
     if (inputPath === '~') {
-        return WORKSPACES_ROOT;
+        return root;
     }
     if (inputPath.startsWith('~/') || inputPath.startsWith('~\\')) {
-        return path.join(WORKSPACES_ROOT, inputPath.slice(2));
+        return path.join(root, inputPath.slice(2));
     }
     return inputPath;
 };
@@ -673,17 +674,25 @@ app.get('/api/browse-filesystem', authenticateToken, async (req, res) => {
     try {
         const { path: dirPath } = req.query;
 
+        const userRoot = req.user && req.user.workspaceRoot ? req.user.workspaceRoot : WORKSPACES_ROOT;
         console.log('[API] Browse filesystem request for path:', dirPath);
-        console.log('[API] WORKSPACES_ROOT is:', WORKSPACES_ROOT);
-        // Default to home directory if no path provided
-        const defaultRoot = WORKSPACES_ROOT;
-        let targetPath = dirPath ? expandWorkspacePath(dirPath) : defaultRoot;
+        console.log('[API] User workspace root is:', userRoot);
+        // Default to user's workspace directory if no path provided
+        const defaultRoot = userRoot;
+        let targetPath = dirPath ? expandWorkspacePath(dirPath, userRoot) : defaultRoot;
 
         // Resolve and normalize the path
         targetPath = path.resolve(targetPath);
 
+        // Ensure user workspace directory exists
+        try {
+            await fs.promises.mkdir(userRoot, { recursive: true });
+        } catch (mkdirErr) {
+            // Ignore if already exists or cannot create
+        }
+
         // Security check - ensure path is within allowed workspace root
-        const validation = await validateWorkspacePath(targetPath);
+        const validation = await validateWorkspacePath(targetPath, userRoot);
         if (!validation.valid) {
             return res.status(403).json({ error: validation.error });
         }
@@ -755,9 +764,16 @@ app.post('/api/create-folder', authenticateToken, async (req, res) => {
         if (!folderPath) {
             return res.status(400).json({ error: 'Path is required' });
         }
-        const expandedPath = expandWorkspacePath(folderPath);
+        const userRoot = req.user && req.user.workspaceRoot ? req.user.workspaceRoot : WORKSPACES_ROOT;
+        // Ensure user workspace directory exists
+        try {
+            await fs.promises.mkdir(userRoot, { recursive: true });
+        } catch (mkdirErr) {
+            // Ignore if already exists or cannot create
+        }
+        const expandedPath = expandWorkspacePath(folderPath, userRoot);
         const resolvedInput = path.resolve(expandedPath);
-        const validation = await validateWorkspacePath(resolvedInput);
+        const validation = await validateWorkspacePath(resolvedInput, userRoot);
         if (!validation.valid) {
             return res.status(403).json({ error: validation.error });
         }
@@ -1468,12 +1484,13 @@ class WebSocketWriter {
 
 // Handle chat WebSocket connections
 function handleChatConnection(ws, request) {
-    // 绑定 userId 到 ws 对象，用于按用户过滤广播
+    // 绑定 userId 和 username 到 ws 对象，用于按用户过滤广播和工作区隔离
     // 注意: authenticateWebSocket 返回 JWT payload { userId, username }，不是数据库对象 { id, username }
     if (request && request.user) {
         ws.userId = request.user.userId || request.user.id;
+        ws.username = request.user.username;
     }
-    console.log('[INFO] Chat WebSocket connected, userId:', ws.userId);
+    console.log('[INFO] Chat WebSocket connected, userId:', ws.userId, 'username:', ws.username);
 
     // Add to connected clients for project updates
     connectedClients.add(ws);
@@ -1498,6 +1515,19 @@ function handleChatConnection(ws, request) {
                 console.log('📁 Project:', data.options?.projectPath || 'Unknown');
                 console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
 
+                // Validate projectPath/cwd within user workspace
+                if (ws.username) {
+                    const userRoot = path.join(WORKSPACES_ROOT, ws.username);
+                    const projectPath = data.options?.projectPath || data.options?.cwd;
+                    if (projectPath) {
+                        const resolvedProject = path.resolve(projectPath);
+                        if (!resolvedProject.startsWith(userRoot + path.sep) && resolvedProject !== userRoot) {
+                            writer.send({ type: 'error', error: `Access denied: project path must be within your workspace (${userRoot})` });
+                            return;
+                        }
+                    }
+                }
+
                 // Use Claude Agents SDK
                 await queryClaudeSDK(data.command, data.options, writer);
             } else if (data.type === 'cursor-command') {
@@ -1505,24 +1535,77 @@ function handleChatConnection(ws, request) {
                 console.log('📁 Project:', data.options?.cwd || 'Unknown');
                 console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
                 console.log('🤖 Model:', data.options?.model || 'default');
+
+                // Validate cwd within user workspace
+                if (ws.username && data.options?.cwd) {
+                    const userRoot = path.join(WORKSPACES_ROOT, ws.username);
+                    const resolvedCwd = path.resolve(data.options.cwd);
+                    if (!resolvedCwd.startsWith(userRoot + path.sep) && resolvedCwd !== userRoot) {
+                        writer.send({ type: 'error', error: `Access denied: project path must be within your workspace (${userRoot})` });
+                        return;
+                    }
+                }
+
                 await spawnCursor(data.command, data.options, writer);
             } else if (data.type === 'codex-command') {
                 console.log('[DEBUG] Codex message:', data.command || '[Continue/Resume]');
                 console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
                 console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
                 console.log('🤖 Model:', data.options?.model || 'default');
+
+                // Validate projectPath/cwd within user workspace
+                if (ws.username) {
+                    const userRoot = path.join(WORKSPACES_ROOT, ws.username);
+                    const projectPath = data.options?.projectPath || data.options?.cwd;
+                    if (projectPath) {
+                        const resolvedProject = path.resolve(projectPath);
+                        if (!resolvedProject.startsWith(userRoot + path.sep) && resolvedProject !== userRoot) {
+                            writer.send({ type: 'error', error: `Access denied: project path must be within your workspace (${userRoot})` });
+                            return;
+                        }
+                    }
+                }
+
                 await queryCodex(data.command, data.options, writer);
             } else if (data.type === 'gemini-command') {
                 console.log('[DEBUG] Gemini message:', data.command || '[Continue/Resume]');
                 console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
                 console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
                 console.log('🤖 Model:', data.options?.model || 'default');
+
+                // Validate projectPath/cwd within user workspace
+                if (ws.username) {
+                    const userRoot = path.join(WORKSPACES_ROOT, ws.username);
+                    const projectPath = data.options?.projectPath || data.options?.cwd;
+                    if (projectPath) {
+                        const resolvedProject = path.resolve(projectPath);
+                        if (!resolvedProject.startsWith(userRoot + path.sep) && resolvedProject !== userRoot) {
+                            writer.send({ type: 'error', error: `Access denied: project path must be within your workspace (${userRoot})` });
+                            return;
+                        }
+                    }
+                }
+
                 await spawnGemini(data.command, data.options, writer);
             } else if (data.type === 'claude-cli-command') {
                 console.log('[DEBUG] Claude CLI message:', data.command || '[Continue/Resume]');
                 console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
                 console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
                 console.log('🤖 Model:', data.options?.model || 'default');
+
+                // Validate projectPath/cwd within user workspace
+                if (ws.username) {
+                    const userRoot = path.join(WORKSPACES_ROOT, ws.username);
+                    const projectPath = data.options?.projectPath || data.options?.cwd;
+                    if (projectPath) {
+                        const resolvedProject = path.resolve(projectPath);
+                        if (!resolvedProject.startsWith(userRoot + path.sep) && resolvedProject !== userRoot) {
+                            writer.send({ type: 'error', error: `Access denied: project path must be within your workspace (${userRoot})` });
+                            return;
+                        }
+                    }
+                }
+
                 await spawnClaudeCLI(data.command, data.options, writer);
             } else if (data.type === 'cursor-resume') {
                 // Backward compatibility: treat as cursor-command with resume and no prompt

@@ -1,6 +1,13 @@
 import jwt from 'jsonwebtoken';
+import path from 'path';
 import { userDb } from '../database/db.js';
 import { IS_PLATFORM } from '../constants/config.js';
+import { WORKSPACES_ROOT } from '../routes/projects.js';
+
+// Compute the per-user workspace root directory
+const getUserWorkspaceRoot = (username) => {
+  return path.join(WORKSPACES_ROOT, username);
+};
 
 // Get JWT secret from environment or use default (for development)
 const JWT_SECRET = process.env.JWT_SECRET || 'claude-ui-dev-secret-change-in-production';
@@ -29,6 +36,7 @@ const authenticateToken = async (req, res, next) => {
         return res.status(500).json({ error: 'Platform mode: No user found in database' });
       }
       req.user = user;
+      req.user.workspaceRoot = user.username ? getUserWorkspaceRoot(user.username) : WORKSPACES_ROOT;
       return next();
     } catch (error) {
       console.error('Platform mode error:', error);
@@ -59,6 +67,7 @@ const authenticateToken = async (req, res, next) => {
     }
 
     req.user = user;
+    req.user.workspaceRoot = user.username ? getUserWorkspaceRoot(user.username) : WORKSPACES_ROOT;
     next();
   } catch (error) {
     console.error('Token verification error:', error);
@@ -113,5 +122,6 @@ export {
   authenticateToken,
   generateToken,
   authenticateWebSocket,
+  getUserWorkspaceRoot,
   JWT_SECRET
 };

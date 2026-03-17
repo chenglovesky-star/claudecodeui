@@ -49,7 +49,7 @@ export const FORBIDDEN_PATHS = [
  * @param {string} requestedPath - The path to validate
  * @returns {Promise<{valid: boolean, resolvedPath?: string, error?: string}>}
  */
-export async function validateWorkspacePath(requestedPath) {
+export async function validateWorkspacePath(requestedPath, customRoot) {
   try {
     // Resolve to absolute path
     let absolutePath = path.resolve(requestedPath);
@@ -112,14 +112,14 @@ export async function validateWorkspacePath(requestedPath) {
     }
 
     // Resolve the workspace root to its real path
-    const resolvedWorkspaceRoot = await fs.realpath(WORKSPACES_ROOT);
+    const resolvedWorkspaceRoot = await fs.realpath(customRoot || WORKSPACES_ROOT);
 
     // Ensure the resolved path is contained within the allowed workspace root
     if (!realPath.startsWith(resolvedWorkspaceRoot + path.sep) &&
         realPath !== resolvedWorkspaceRoot) {
       return {
         valid: false,
-        error: `Workspace path must be within the allowed workspace root: ${WORKSPACES_ROOT}`
+        error: `Workspace path must be within the allowed workspace root: ${customRoot || WORKSPACES_ROOT}`
       };
     }
 
@@ -187,7 +187,16 @@ router.post('/create-workspace', async (req, res) => {
     }
 
     // Validate path safety before any operations
-    const validation = await validateWorkspacePath(workspacePath);
+    const userRoot = req.user && req.user.workspaceRoot ? req.user.workspaceRoot : undefined;
+    // Ensure user workspace directory exists before validation
+    if (userRoot) {
+      try {
+        await fs.mkdir(userRoot, { recursive: true });
+      } catch (mkdirErr) {
+        // Ignore if already exists
+      }
+    }
+    const validation = await validateWorkspacePath(workspacePath, userRoot);
     if (!validation.valid) {
       return res.status(400).json({
         error: 'Invalid workspace path',
@@ -364,7 +373,15 @@ router.get('/clone-progress', async (req, res) => {
       return;
     }
 
-    const validation = await validateWorkspacePath(workspacePath);
+    const userRoot = req.user && req.user.workspaceRoot ? req.user.workspaceRoot : undefined;
+    if (userRoot) {
+      try {
+        await fs.mkdir(userRoot, { recursive: true });
+      } catch (mkdirErr) {
+        // Ignore
+      }
+    }
+    const validation = await validateWorkspacePath(workspacePath, userRoot);
     if (!validation.valid) {
       sendEvent('error', { message: validation.error });
       res.end();
