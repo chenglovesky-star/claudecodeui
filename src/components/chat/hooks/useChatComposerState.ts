@@ -672,6 +672,8 @@ export function useChatComposerState({
           },
         });
       } else {
+        console.log(`[FLOW] ⬆️ ${new Date().toISOString()} 发送消息 claude-command`);
+        (window as any).__msgSentAt = performance.now();
         sendMessage({
           type: 'claude-command',
           command: messageContent,

@@ -1461,6 +1461,14 @@ function handleChatConnection(ws, request) {
         try {
             const data = JSON.parse(message);
 
+            // Heartbeat: respond to ping with pong
+            if (data.type === 'ping') {
+                if (ws.readyState === 1) {
+                    ws.send(JSON.stringify({ type: 'pong' }));
+                }
+                return;
+            }
+
             if (data.type === 'claude-command') {
                 console.log('[DEBUG] User message:', data.command || '[Continue/Resume]');
                 console.log('📁 Project:', data.options?.projectPath || 'Unknown');

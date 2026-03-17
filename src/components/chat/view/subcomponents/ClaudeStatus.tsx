@@ -39,6 +39,20 @@ function formatElapsedTime(totalSeconds: number, t: (key: string, options?: Reco
   });
 }
 
+// Skeleton shimmer bar component
+function SkeletonBar({ width, delay }: { width: string; delay: string }) {
+  return (
+    <div
+      className="h-3 rounded-md bg-gradient-to-r from-muted/40 via-muted/70 to-muted/40 dark:from-muted/20 dark:via-muted/50 dark:to-muted/20"
+      style={{
+        width,
+        animation: `shimmer 1.8s ease-in-out infinite`,
+        animationDelay: delay,
+      }}
+    />
+  );
+}
+
 export default function ClaudeStatus({
   status,
   onAbort,
@@ -103,8 +117,33 @@ export default function ClaudeStatus({
         })
       : t('claudeStatus.elapsed.startingNow', { defaultValue: 'Starting now' });
 
+  // Friendly timeout hints based on elapsed time
+  const getTimeoutHint = () => {
+    if (elapsedTime >= 120) {
+      return t('claudeStatus.timeout', { defaultValue: 'Response timeout. Try stopping and resending.' });
+    }
+    if (elapsedTime >= 60) {
+      return '请求耗时较长，可能是模型正在处理复杂任务';
+    }
+    if (elapsedTime >= 30) {
+      return '模型正在深度思考，请耐心等待';
+    }
+    return null;
+  };
+
+  const timeoutHint = getTimeoutHint();
+
   return (
     <div className="animate-in slide-in-from-bottom mb-3 w-full duration-300 sm:mb-6">
+      {/* Inline style for skeleton shimmer animation */}
+      <style>{`
+        @keyframes shimmer {
+          0% { opacity: 0.4; }
+          50% { opacity: 1; }
+          100% { opacity: 0.4; }
+        }
+      `}</style>
+
       <div className="relative mx-auto max-w-4xl overflow-hidden rounded-2xl border border-border/70 bg-card/90 shadow-md backdrop-blur-md">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-sky-500/10 dark:from-primary/20 dark:to-sky-400/20" />
 
@@ -126,7 +165,7 @@ export default function ClaudeStatus({
                 </span>
               </div>
 
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="mb-0.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
                   <span>{providerLabel}</span>
                   <span
@@ -159,12 +198,24 @@ export default function ClaudeStatus({
                   >
                     {elapsedLabel}
                   </span>
-                  {elapsedTime > 120 && (
-                    <span className="text-amber-500 text-xs">
-                      {t('claudeStatus.timeout', { defaultValue: 'Response timeout. Try stopping and resending.' })}
+                  {timeoutHint && (
+                    <span className={cn(
+                      'text-xs',
+                      elapsedTime >= 120 ? 'text-amber-500' : 'text-muted-foreground/80',
+                    )}>
+                      {timeoutHint}
                     </span>
                   )}
                 </div>
+
+                {/* Skeleton placeholder - shows after 2 seconds to hint content is coming */}
+                {elapsedTime >= 2 && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <SkeletonBar width="85%" delay="0s" />
+                    <SkeletonBar width="70%" delay="0.2s" />
+                    <SkeletonBar width="55%" delay="0.4s" />
+                  </div>
+                )}
               </div>
             </div>
 

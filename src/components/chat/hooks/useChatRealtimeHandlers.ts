@@ -78,6 +78,54 @@ const appendStreamingChunk = (
   });
 };
 
+// Typewriter effect for non-streaming (bulk) text responses
+const TYPEWRITER_CHUNK_SIZE = 8; // characters per tick
+const TYPEWRITER_INTERVAL_MS = 16; // ~60fps
+let activeTypewriterTimer: ReturnType<typeof setInterval> | null = null;
+
+const typewriterAppend = (
+  setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>,
+  fullText: string,
+) => {
+  // Cancel any previous typewriter animation
+  if (activeTypewriterTimer) {
+    clearInterval(activeTypewriterTimer);
+    activeTypewriterTimer = null;
+  }
+
+  // Short text doesn't need animation
+  if (fullText.length <= 50) {
+    setChatMessages((previous) => [
+      ...previous,
+      { type: 'assistant', content: fullText, timestamp: new Date() },
+    ]);
+    return;
+  }
+
+  // Start with empty streaming message
+  setChatMessages((previous) => [
+    ...previous,
+    { type: 'assistant', content: '', timestamp: new Date(), isStreaming: true },
+  ]);
+
+  let offset = 0;
+  activeTypewriterTimer = setInterval(() => {
+    const end = Math.min(offset + TYPEWRITER_CHUNK_SIZE, fullText.length);
+    const chunk = fullText.slice(offset, end);
+    offset = end;
+
+    appendStreamingChunk(setChatMessages, chunk, false);
+
+    if (offset >= fullText.length) {
+      if (activeTypewriterTimer) {
+        clearInterval(activeTypewriterTimer);
+        activeTypewriterTimer = null;
+      }
+      finalizeStreamingMessage(setChatMessages);
+    }
+  }, TYPEWRITER_INTERVAL_MS);
+};
+
 const finalizeStreamingMessage = (setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>) => {
   setChatMessages((previous) => {
     const updated = [...previous];
@@ -136,7 +184,7 @@ export function useChatRealtimeHandlers({
         : null;
     const messageType = String(latestMessage.type);
 
-    const globalMessageTypes = ['projects_updated', 'taskmaster-project-updated', 'session-created'];
+    const globalMessageTypes = ['projects_updated', 'taskmaster-project-updated', 'session-created', 'claude-phase'];
     const isGlobalMessage = globalMessageTypes.includes(messageType);
     const lifecycleMessageTypes = new Set([
       'claude-complete',
@@ -284,6 +332,19 @@ export function useChatRealtimeHandlers({
     }
 
     switch (latestMessage.type) {
+      case 'claude-phase': {
+        const phaseTexts: Record<string, string> = {
+          acknowledged: '正在准备',
+          configuring: '正在加载配置',
+          querying: '正在思考中',
+        };
+        const phaseText = phaseTexts[latestMessage.phase as string] || '处理中';
+        setClaudeStatus({ text: phaseText, tokens: 0, can_interrupt: true });
+        setIsLoading(true);
+        setCanAbortSession(true);
+        break;
+      }
+
       case 'session-created':
         if (latestMessage.sessionId && !currentSessionId) {
           sessionStorage.setItem('pendingSessionId', latestMessage.sessionId);
@@ -310,6 +371,46 @@ export function useChatRealtimeHandlers({
 
       case 'claude-response': {
         if (messageData && typeof messageData === 'object' && messageData.type) {
+          // Handle thinking delta (streaming thinking content)
+          if (messageData.type === 'content_block_delta' && messageData.delta?.type === 'thinking_delta') {
+            const thinkingText = messageData.delta.thinking || '';
+            if (thinkingText) {
+              setChatMessages((previous) => {
+                const updated = [...previous];
+                const lastIndex = updated.length - 1;
+                const last = updated[lastIndex];
+                if (last && last.type === 'assistant' && last.isThinking && last.isStreaming) {
+                  updated[lastIndex] = { ...last, content: (last.content || '') + thinkingText };
+                } else {
+                  updated.push({
+                    type: 'assistant',
+                    content: thinkingText,
+                    timestamp: new Date(),
+                    isThinking: true,
+                    isStreaming: true,
+                  });
+                }
+                return updated;
+              });
+            }
+            return;
+          }
+
+          // Handle content_block_start for thinking blocks
+          if (messageData.type === 'content_block_start' && messageData.content_block?.type === 'thinking') {
+            setChatMessages((previous) => [
+              ...previous,
+              {
+                type: 'assistant',
+                content: '',
+                timestamp: new Date(),
+                isThinking: true,
+                isStreaming: true,
+              },
+            ]);
+            return;
+          }
+
           if (messageData.type === 'content_block_delta' && messageData.delta?.text) {
             const decodedText = decodeHtmlEntities(messageData.delta.text);
             const isFirstChunk = !streamBufferRef.current && !streamTimerRef.current;
@@ -331,6 +432,17 @@ export function useChatRealtimeHandlers({
           }
 
           if (messageData.type === 'content_block_stop') {
+            // Finalize streaming thinking message if active
+            setChatMessages((previous) => {
+              const updated = [...previous];
+              const lastIndex = updated.length - 1;
+              const last = updated[lastIndex];
+              if (last && last.type === 'assistant' && last.isThinking && last.isStreaming) {
+                updated[lastIndex] = { ...last, isStreaming: false };
+              }
+              return updated;
+            });
+
             if (streamTimerRef.current) {
               clearTimeout(streamTimerRef.current);
               streamTimerRef.current = null;
@@ -339,6 +451,34 @@ export function useChatRealtimeHandlers({
             streamBufferRef.current = '';
             appendStreamingChunk(setChatMessages, chunk, false);
             finalizeStreamingMessage(setChatMessages);
+            return;
+          }
+
+          // Handle SDK result message — extract response text from result field
+          if (messageData.type === 'result' && messageData.result) {
+            const resultText = typeof messageData.result === 'string' ? messageData.result.trim() : '';
+            if (resultText) {
+              setClaudeStatus(null);
+              // Use setChatMessages atomically to avoid duplicates
+              setChatMessages((previous) => {
+                // Check if this text is already displayed
+                const alreadyShown = previous.some(
+                  (m) => m.type === 'assistant' && !m.isToolUse && !m.isThinking && m.content === resultText
+                );
+                if (alreadyShown) return previous;
+
+                // Check if the last assistant message has content (from streaming)
+                const last = previous[previous.length - 1];
+                if (last?.type === 'assistant' && !last.isToolUse && !last.isThinking && last.content?.trim()) {
+                  return previous; // streaming already showed content
+                }
+
+                return [
+                  ...previous,
+                  { type: 'assistant' as const, content: resultText, timestamp: new Date() },
+                ];
+              });
+            }
             return;
           }
         }
@@ -437,29 +577,37 @@ export function useChatRealtimeHandlers({
               return;
             }
 
-            if (part.type === 'text' && part.text?.trim()) {
-              let content = decodeHtmlEntities(part.text);
-              content = formatUsageLimitText(content);
+            if (part.type === 'thinking' && part.thinking?.trim()) {
+              const thinkingContent = decodeHtmlEntities(part.thinking);
               setChatMessages((previous) => [
                 ...previous,
                 {
                   type: 'assistant',
-                  content,
+                  content: thinkingContent,
                   timestamp: new Date(),
+                  isThinking: true,
                 },
+              ]);
+              return;
+            }
+
+            if (part.type === 'text' && part.text?.trim()) {
+              let content = decodeHtmlEntities(part.text);
+              content = formatUsageLimitText(content);
+              setClaudeStatus(null);
+              setChatMessages((previous) => [
+                ...previous,
+                { type: 'assistant', content, timestamp: new Date() },
               ]);
             }
           });
         } else if (structuredMessageData && typeof structuredMessageData.content === 'string' && structuredMessageData.content.trim()) {
           let content = decodeHtmlEntities(structuredMessageData.content);
           content = formatUsageLimitText(content);
+          setClaudeStatus(null);
           setChatMessages((previous) => [
             ...previous,
-            {
-              type: 'assistant',
-              content,
-              timestamp: new Date(),
-            },
+            { type: 'assistant', content, timestamp: new Date() },
           ]);
         }
 
