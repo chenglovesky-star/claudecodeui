@@ -14,8 +14,8 @@ services:
       - claude-data:/data/db
       # 工作空间目录（团队共享的项目文件）
       - claude-workspace:/workspace
-      # 挂载宿主机 Claude 凭证和配置（可读写，Claude CLI 运行时需要写入）
-      - ~/.claude:/root/.claude
+      # Claude CLI 配置和凭证持久化（容器内登录后凭证不丢失）
+      - claude-cli:/root/.claude
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
       interval: 30s
@@ -27,4 +27,6 @@ volumes:
   claude-data:
     driver: local
   claude-workspace:
+    driver: local
+  claude-cli:
     driver: local
