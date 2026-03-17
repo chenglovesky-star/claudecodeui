@@ -82,8 +82,12 @@ COPY shared ./shared
 COPY public ./public
 COPY index.html ./
 
-# 创建数据和工作空间目录
-RUN mkdir -p /data/db /workspace
+# 创建非 root 用户
+RUN useradd -m -s /bin/bash claude
+
+# 创建数据和工作空间目录，并授权给 claude 用户
+RUN mkdir -p /data/db /workspace /home/claude/.claude \
+    && chown -R claude:claude /app /data /workspace /home/claude/.claude
 
 # 环境变量默认值
 ENV NODE_ENV=production \
@@ -93,6 +97,9 @@ ENV NODE_ENV=production \
     WORKSPACES_ROOT=/workspace
 
 EXPOSE 3001
+
+# 切换到非 root 用户
+USER claude
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

@@ -15,7 +15,7 @@ services:
       # 工作空间目录（团队共享的项目文件）
       - claude-workspace:/workspace
       # Claude CLI 配置和凭证持久化（容器内登录后凭证不丢失）
-      - claude-cli:/root/.claude
+      - claude-cli:/home/claude/.claude
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
       interval: 30s
