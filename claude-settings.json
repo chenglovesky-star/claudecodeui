@@ -1,7 +1,7 @@
 {
   "env": {
     "ANTHROPIC_BASE_URL": "https://api.minimaxi.com/anthropic",
-    "ANTHROPIC_AUTH_TOKEN": "sk-cp-Mu2tAGd_P5c8JhIAsUOXa1X5ADePAp1emZXv9HQphv2XyxrMBYtYU1YbAaSm4GEJGyQilrKeqGPzWWW5pUmehULvvz1x4UfIthDKZlOIneerRFWXpEbaCUI",
+    "ANTHROPIC_AUTH_TOKEN": "sk-cp-q7wCEiAUPEsuvApVk2tMblU2OvBqKeuzDp7DWjnlqqxi1KNu2W14h6QmHTbl549BKnAtZC9S2hJaBxWpxBu8Wrte6Vo8mhUFTPZeszX39n0DPR1uk3YcxP8",
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "ANTHROPIC_MODEL": "MiniMax-M2.5",
