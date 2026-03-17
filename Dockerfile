@@ -3,6 +3,9 @@
 # ============================================
 FROM node:20-bookworm-slim AS builder
 
+# 清除代理设置，避免走公司代理导致 apt/npm 请求失败
+ENV http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY="" no_proxy=""
+
 WORKDIR /app
 
 # 切换为阿里云镜像源
@@ -33,6 +36,9 @@ RUN npm run build
 # Stage 2: Production — 仅运行时
 # ============================================
 FROM node:20-bookworm-slim
+
+# 清除代理设置
+ENV http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY="" no_proxy=""
 
 WORKDIR /app
 
