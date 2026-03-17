@@ -5,6 +5,10 @@ FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 
+# 切换为阿里云镜像源
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null \
+    || sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list
+
 # 安装原生模块编译依赖
 RUN apt-get update && apt-get install -y \
     python3 \
@@ -31,6 +35,10 @@ RUN npm run build
 FROM node:20-bookworm-slim
 
 WORKDIR /app
+
+# 切换为阿里云镜像源
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null \
+    || sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list
 
 # 安装运行时依赖
 RUN apt-get update && apt-get install -y \
