@@ -86,9 +86,15 @@ COPY index.html ./
 RUN useradd -m -s /bin/bash claude
 
 # 创建数据和工作空间目录，并预置 Claude CLI 配置
-RUN mkdir -p /data/db /workspace /home/claude/.claude
+RUN mkdir -p /data/db /workspace /home/claude/.claude/debug /home/claude/.claude/statsig /home/claude/.claude/projects
 COPY claude-settings.json /home/claude/.claude/settings.json
-RUN chown -R claude:claude /app /data /workspace /home/claude/.claude
+# 备份一份默认配置，防止 volume 挂载覆盖后丢失
+RUN cp /home/claude/.claude/settings.json /home/claude/.claude-settings-default.json
+RUN chown -R claude:claude /app /data /workspace /home/claude
+
+# 复制启动脚本
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # 环境变量默认值
 ENV NODE_ENV=production \
@@ -99,11 +105,8 @@ ENV NODE_ENV=production \
 
 EXPOSE 3001
 
-# 切换到非 root 用户
-USER claude
-
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:3001/health || exit 1
 
-CMD ["node", "server/index.js"]
+ENTRYPOINT ["docker-entrypoint.sh"]
