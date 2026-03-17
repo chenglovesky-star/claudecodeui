@@ -1,7 +1,7 @@
 # ============================================
 # Stage 1: Build — 编译前端 + 原生模块
 # ============================================
-FROM node:20-bookworm AS builder
+FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 
