@@ -1,0 +1,30 @@
+services:
+  claude-code-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: claude-code-ui
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    env_file:
+      - docker.env
+    volumes:
+      # SQLite 数据库持久化
+      - claude-data:/data/db
+      # 工作空间目录（团队共享的项目文件）
+      - claude-workspace:/workspace
+      # 挂载宿主机 Claude 凭证和配置（可读写，Claude CLI 运行时需要写入）
+      - ~/.claude:/root/.claude
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  claude-data:
+    driver: local
+  claude-workspace:
+    driver: local

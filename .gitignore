@@ -135,3 +135,4 @@ tasks/
 opencode-manager/
 team/
 claudecodeui/
+docker.env

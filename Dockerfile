@@ -1,0 +1,81 @@
+# ============================================
+# Stage 1: Build — 编译前端 + 原生模块
+# ============================================
+FROM node:20-bookworm AS builder
+
+WORKDIR /app
+
+# 安装原生模块编译依赖
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# 复制依赖描述文件和 postinstall 脚本（npm ci 会触发 postinstall）
+COPY package.json package-lock.json ./
+COPY scripts ./scripts
+
+# 安装所有依赖（含 devDependencies 用于构建前端）
+RUN npm ci
+
+# 复制源代码
+COPY . .
+
+# 构建前端静态文件
+RUN npm run build
+
+# ============================================
+# Stage 2: Production — 仅运行时
+# ============================================
+FROM node:20-bookworm-slim
+
+WORKDIR /app
+
+# 安装运行时依赖
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 Claude CLI
+RUN npm install -g @anthropic-ai/claude-code
+
+# 复制依赖描述文件和 postinstall 脚本
+COPY package.json package-lock.json ./
+COPY scripts ./scripts
+
+# 仅安装生产依赖（忽略 prepare/husky 脚本，然后重建所有原生模块）
+RUN npm ci --omit=dev --ignore-scripts \
+    && npm rebuild \
+    && node scripts/fix-node-pty.js
+
+# 从 builder 阶段复制前端构建产物
+COPY --from=builder /app/dist ./dist
+
+# 复制服务端代码和必要文件
+COPY server ./server
+COPY shared ./shared
+COPY public ./public
+COPY index.html ./
+
+# 创建数据和工作空间目录
+RUN mkdir -p /data/db /workspace
+
+# 环境变量默认值
+ENV NODE_ENV=production \
+    PORT=3001 \
+    HOST=0.0.0.0 \
+    DATABASE_PATH=/data/db/auth.db \
+    WORKSPACES_ROOT=/workspace
+
+EXPOSE 3001
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:3001/health || exit 1
+
+CMD ["node", "server/index.js"]
