@@ -1,0 +1,33 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.minimaxi.com/anthropic",
+    "ANTHROPIC_AUTH_TOKEN": "sk-cp-Mu2tAGd_P5c8JhIAsUOXa1X5ADePAp1emZXv9HQphv2XyxrMBYtYU1YbAaSm4GEJGyQilrKeqGPzWWW5pUmehULvvz1x4UfIthDKZlOIneerRFWXpEbaCUI",
+    "API_TIMEOUT_MS": "3000000",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "ANTHROPIC_MODEL": "MiniMax-M2.5",
+    "ANTHROPIC_SMALL_FAST_MODEL": "MiniMax-M2.5",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "MiniMax-M2.5",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "MiniMax-M2.5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "MiniMax-M2.5",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "Read",
+      "Glob",
+      "Grep",
+      "TodoWrite",
+      "Task",
+      "WebFetch",
+      "WebSearch",
+      "mcp__chrome-devtools*"
+    ],
+    "defaultMode": "bypassPermissions"
+  },
+  "alwaysThinkingEnabled": false,
+  "hasCompletedOnboarding": true,
+  "skipDangerousModePermissionPrompt": true
+}
