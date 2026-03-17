@@ -49,14 +49,20 @@ WORKDIR /app
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null \
     || sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list
 
-# 安装运行时依赖
+# 安装运行时依赖及常用开发工具
 RUN apt-get update && apt-get install -y \
     python3 \
+    python3-pip \
+    python3-venv \
     make \
     g++ \
     git \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    wget \
+    vim \
+    sudo \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3 /usr/bin/python
 
 # 配置 npm 国内镜像源
 RUN npm config set registry https://registry.npmmirror.com
@@ -82,8 +88,9 @@ COPY shared ./shared
 COPY public ./public
 COPY index.html ./
 
-# 创建非 root 用户
-RUN useradd -m -s /bin/bash claude
+# 创建非 root 用户，并赋予 sudo 免密权限
+RUN useradd -m -s /bin/bash claude \
+    && echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude
 
 # 创建数据和工作空间目录，并预置 Claude CLI 配置
 RUN mkdir -p /data/db /workspace /home/claude/.claude/debug /home/claude/.claude/statsig /home/claude/.claude/projects
