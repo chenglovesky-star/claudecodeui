@@ -54,6 +54,28 @@ export class MessageRouter extends EventEmitter {
         this.emit('router:checkStatus', { connectionId, message });
         break;
 
+      case 'get-pending-permissions':
+        this.emit('router:getPendingPermissions', { connectionId, message });
+        break;
+
+      case 'get-active-sessions':
+        this.emit('router:getActiveSessions', { connectionId, message });
+        break;
+
+      case 'cursor-resume':
+        // Backward compat: treat as cursor-command with resume and no prompt
+        message.type = 'cursor-command';
+        message.command = '';
+        message.options = { sessionId: message.sessionId, resume: true, cwd: message.options?.cwd };
+        this.#handleProviderCommand(connectionId, message);
+        break;
+
+      case 'cursor-abort':
+        // Backward compat: treat as abort-session for cursor provider
+        message.provider = 'cursor';
+        this.#handleAbort(connectionId, message);
+        break;
+
       default:
         this.emit('router:unknown', { connectionId, message });
         break;
