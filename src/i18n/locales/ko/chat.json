@@ -4,6 +4,13 @@
     "copied": "복사됨",
     "copyCode": "코드 복사"
   },
+  "chart": {
+    "loading": "차트 로딩 중...",
+    "generating": "차트 생성 중...",
+    "renderFailed": "차트 렌더링 실패, 원본 설정 표시",
+    "tooLarge": "차트 데이터가 너무 큽니다. 원본 설정 표시",
+    "retry": "다시 시도"
+  },
   "copyMessage": {
     "copy": "메시지 복사",
     "copied": "메시지 복사됨"

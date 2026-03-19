@@ -4,6 +4,13 @@
     "copied": "Copied",
     "copyCode": "Copy code"
   },
+  "chart": {
+    "loading": "Loading chart...",
+    "generating": "Generating chart...",
+    "renderFailed": "Chart rendering failed, showing raw config",
+    "tooLarge": "Chart data too large, showing raw config",
+    "retry": "Retry"
+  },
   "copyMessage": {
     "copy": "Copy message",
     "copied": "Message copied"

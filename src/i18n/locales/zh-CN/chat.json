@@ -4,6 +4,13 @@
     "copied": "已复制",
     "copyCode": "复制代码"
   },
+  "chart": {
+    "loading": "图表加载中...",
+    "generating": "图表生成中...",
+    "renderFailed": "图表渲染失败，显示原始配置",
+    "tooLarge": "图表数据过大，显示原始配置",
+    "retry": "重试"
+  },
   "copyMessage": {
     "copy": "复制消息",
     "copied": "消息已复制"
