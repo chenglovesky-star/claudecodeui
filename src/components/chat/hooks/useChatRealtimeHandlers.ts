@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { decodeHtmlEntities, formatUsageLimitText } from '../utils/chatFormatting';
 import { safeLocalStorage } from '../utils/chatStorage';
@@ -163,6 +163,36 @@ export function useChatRealtimeHandlers({
   onNavigateToSession,
 }: UseChatRealtimeHandlersArgs) {
   const lastProcessedMessageRef = useRef<LatestChatMessage | null>(null);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearFallbackTimer = useCallback(() => {
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+  }, []);
+
+  const startFallbackTimer = useCallback(() => {
+    clearFallbackTimer();
+    const timeout = 90000;
+    fallbackTimerRef.current = setTimeout(() => {
+      console.warn('[Chat] Fallback timeout triggered - server appears unresponsive');
+      setChatMessages(prev => [...prev, {
+        type: 'error',
+        content: '响应超时，请重试或中止当前会话',
+        timestamp: new Date(),
+        isTimeout: true,
+        timeoutType: 'clientFallback',
+      }]);
+      setIsLoading(false);
+    }, timeout);
+  }, [clearFallbackTimer, setChatMessages, setIsLoading]);
+
+  const resetFallbackTimer = useCallback(() => {
+    if (fallbackTimerRef.current) {
+      startFallbackTimer();
+    }
+  }, [startFallbackTimer]);
 
   useEffect(() => {
     if (!latestMessage) {
@@ -342,6 +372,9 @@ export function useChatRealtimeHandlers({
         setClaudeStatus({ text: phaseText, tokens: 0, can_interrupt: true });
         setIsLoading(true);
         setCanAbortSession(true);
+        if (latestMessage.phase === 'acknowledged') {
+          startFallbackTimer();
+        }
         break;
       }
 
@@ -415,6 +448,7 @@ export function useChatRealtimeHandlers({
             const decodedText = decodeHtmlEntities(messageData.delta.text);
             const isFirstChunk = !streamBufferRef.current && !streamTimerRef.current;
             streamBufferRef.current += decodedText;
+            resetFallbackTimer();
             if (isFirstChunk) {
               const chunk = streamBufferRef.current;
               streamBufferRef.current = '';
@@ -757,6 +791,7 @@ export function useChatRealtimeHandlers({
         break;
 
       case 'claude-error':
+        clearFallbackTimer();
         finalizeLifecycleForCurrentView(latestMessage.sessionId, currentSessionId, selectedSession?.id);
         setChatMessages((previous) => [
           ...previous,
@@ -916,6 +951,7 @@ export function useChatRealtimeHandlers({
         break;
 
       case 'claude-complete': {
+        clearFallbackTimer();
         const pendingSessionId = sessionStorage.getItem('pendingSessionId');
         const completedSessionId =
           latestMessage.sessionId || currentSessionId || pendingSessionId;
@@ -1236,6 +1272,7 @@ export function useChatRealtimeHandlers({
         break;
 
       case 'session-aborted': {
+        clearFallbackTimer();
         const pendingSessionId =
           typeof window !== 'undefined' ? sessionStorage.getItem('pendingSessionId') : null;
         const abortedSessionId = latestMessage.sessionId || currentSessionId;
@@ -1346,6 +1383,7 @@ export function useChatRealtimeHandlers({
       case 'error':
         // Generic backend failure (e.g., provider process failed before a provider-specific
         // completion event was emitted). Treat it as terminal for current view lifecycle.
+        clearFallbackTimer();
         finalizeLifecycleForCurrentView(latestMessage.sessionId, currentSessionId, selectedSession?.id);
         if (latestMessage.error) {
           setChatMessages((previous) => [
@@ -1358,6 +1396,97 @@ export function useChatRealtimeHandlers({
           ]);
         }
         break;
+
+      case 'session-timeout': {
+        clearFallbackTimer();
+        // Flush any pending stream content
+        if (streamBufferRef.current) {
+          const chunk = streamBufferRef.current;
+          streamBufferRef.current = '';
+          if (streamTimerRef.current) {
+            clearTimeout(streamTimerRef.current);
+            streamTimerRef.current = null;
+          }
+          appendStreamingChunk(setChatMessages, chunk, false);
+        }
+
+        const timeoutMessages: Record<string, string> = {
+          firstResponse: '会话首响应超时（60秒无输出）',
+          activity: '会话活动超时（120秒无新输出）',
+          toolExecution: '工具执行超时（10分钟）',
+          global: '会话全局超时（30分钟）',
+        };
+
+        setChatMessages(prev => [...prev, {
+          type: 'error',
+          content: timeoutMessages[latestMessage.timeoutType as string] || `会话超时 (${latestMessage.timeoutType})`,
+          timestamp: new Date(),
+          isTimeout: true,
+          timeoutType: latestMessage.timeoutType,
+        }]);
+        setIsLoading(false);
+        setCanAbortSession(false);
+        break;
+      }
+
+      case 'session-error': {
+        clearFallbackTimer();
+        setChatMessages(prev => [...prev, {
+          type: 'error',
+          content: latestMessage.error || '会话异常',
+          timestamp: new Date(),
+        }]);
+        setIsLoading(false);
+        setCanAbortSession(false);
+        break;
+      }
+
+      case 'quota-exceeded': {
+        clearFallbackTimer();
+        setChatMessages(prev => [...prev, {
+          type: 'error',
+          content: latestMessage.reason || '服务器繁忙，请稍后重试',
+          timestamp: new Date(),
+        }]);
+        setIsLoading(false);
+        break;
+      }
+
+      case 'session-completed': {
+        clearFallbackTimer();
+        setIsLoading(false);
+        setCanAbortSession(false);
+        break;
+      }
+
+      case 'resume-response': {
+        if (latestMessage.snapshot?.currentContent) {
+          // Replace current streaming message with snapshot content
+          setChatMessages(prev => {
+            const updated = [...prev];
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].type === 'assistant' && updated[i].isStreaming) {
+                const isStillStreaming = latestMessage.currentState === 'streaming' || latestMessage.currentState === 'tool_executing';
+                updated[i] = { ...updated[i], content: latestMessage.snapshot.currentContent, isStreaming: isStillStreaming };
+                break;
+              }
+            }
+            return updated;
+          });
+        }
+
+        if (
+          latestMessage.currentState === 'completed' ||
+          latestMessage.currentState === 'timeout' ||
+          latestMessage.currentState === 'error' ||
+          latestMessage.currentState === 'aborted'
+        ) {
+          clearFallbackTimer();
+          setIsLoading(false);
+          setCanAbortSession(false);
+        }
+        break;
+      }
 
       default:
         break;
@@ -1381,5 +1510,14 @@ export function useChatRealtimeHandlers({
     onSessionNotProcessing,
     onReplaceTemporarySession,
     onNavigateToSession,
+    startFallbackTimer,
+    resetFallbackTimer,
+    clearFallbackTimer,
   ]);
+
+  useEffect(() => {
+    return () => {
+      clearFallbackTimer();
+    };
+  }, [clearFallbackTimer]);
 }
