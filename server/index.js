@@ -70,6 +70,7 @@ import { ChatHandler } from './websocket/ChatHandler.js';
 import { SessionManager } from './session/SessionManager.js';
 import { ProcessManager } from './session/ProcessManager.js';
 import { MessageBuffer } from './message/MessageBuffer.js';
+import { MessageRouter } from './message/MessageRouter.js';
 import { ClaudeSDKProvider } from './providers/claude-sdk.js';
 import { ClaudeCLIProvider } from './providers/claude-cli.js';
 import { CursorCLIProvider } from './providers/cursor-cli.js';
@@ -272,8 +273,6 @@ const transport = new TransportLayer(registry);
 registry.startZombieScan();
 transport.start();
 const shellHandler = new ShellHandler(registry, transport);
-const chatHandler = new ChatHandler({ registry, transport, router: null });
-
 const sessionManager = new SessionManager();
 const processManager = new ProcessManager();
 const messageBuffer = new MessageBuffer();
@@ -285,36 +284,11 @@ processManager.registerProvider('cursor', CursorCLIProvider);
 processManager.registerProvider('gemini', GeminiCLIProvider);
 processManager.registerProvider('codex', OpenAICodexProvider);
 
-// Wire session layer events
-processManager.on('process:output', ({ sessionId, data }) => {
-  const session = sessionManager.getSession(sessionId);
-  if (!session) return;
-  sessionManager.transition(sessionId, 'output');
-  if (data?.data?.delta?.text) {
-    messageBuffer.appendContent(sessionId, data.data.delta.text);
-  }
-});
+// Create MessageRouter and bind events (P3: application layer)
+const router = new MessageRouter({ transport, sessionManager, processManager, messageBuffer, registry });
+router.bindEvents();
 
-processManager.on('process:complete', ({ sessionId, result }) => {
-  sessionManager.transition(sessionId, 'complete');
-  messageBuffer.addCriticalEvent(sessionId, { type: 'session-completed', sessionId });
-  sessionManager.cleanup(sessionId);
-  // Delay buffer cleanup 60s to allow resume after completion
-  setTimeout(() => messageBuffer.clearSession(sessionId), 60000);
-});
-
-processManager.on('process:error', ({ sessionId, error }) => {
-  sessionManager.transition(sessionId, 'error');
-  messageBuffer.addCriticalEvent(sessionId, { type: 'session-error', sessionId, error: error?.message });
-  sessionManager.cleanup(sessionId);
-  setTimeout(() => messageBuffer.clearSession(sessionId), 60000);
-});
-
-sessionManager.on('session:timeout', ({ sessionId, timeoutType }) => {
-  console.log(`[Index] Session timeout: ${sessionId} (${timeoutType})`);
-  messageBuffer.addCriticalEvent(sessionId, { type: 'session-timeout', sessionId, timeoutType });
-  processManager.abortSession(sessionId);
-});
+const chatHandler = new ChatHandler({ registry, transport, router });
 
 sessionManager.on('session:stateChanged', ({ sessionId, from, to, event }) => {
   console.log(`[Index] Session ${sessionId}: ${from} → ${to} (event: ${event})`);

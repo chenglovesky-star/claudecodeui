@@ -294,5 +294,9 @@ export class ChatHandler extends EventEmitter {
             console.log('Chat client disconnected');
             registry.unregister(connectionId);
         });
+
+        ws.on('error', (error) => {
+            console.error('[Chat] WebSocket error:', error.message);
+        });
     }
 }

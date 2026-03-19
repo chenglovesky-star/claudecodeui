@@ -394,6 +394,8 @@ export function useChatRealtimeHandlers({
             ),
           );
         }
+        // Start fallback timer for all providers (not just Claude)
+        startFallbackTimer();
         break;
 
       case 'token-budget':
