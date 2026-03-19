@@ -21,6 +21,113 @@
 - 5-20 人中等团队并发使用
 - 无向后兼容约束，前后端一起改
 
+## 架构原则
+
+本次重构遵循以下架构原则，所有设计决策必须与之对齐：
+
+### P1：单一职责（Single Responsibility）
+
+每个模块只做一件事。当前 `server/index.js` 同时负责 HTTP 路由、WebSocket 连接管理、心跳、Claude 查询调度、消息分发、Shell 处理——违反了这一原则。重构后：
+
+| 模块 | 唯一职责 | 不关心 |
+|------|---------|--------|
+| TransportLayer | 连接存活性和数据传输能力 | 消息语义、会话状态 |
+| ConnectionRegistry | 连接注册与生命周期追踪 | 消息内容、心跳策略 |
+| SessionManager | 会话状态机和超时控制 | 连接细节、进程实现 |
+| ProcessManager | 进程启停和资源回收 | 会话逻辑、消息协议 |
+| MessageRouter | 消息协议解析和路由分发 | 连接管理、进程管理 |
+| MessageBuffer | 消息缓冲和断线恢复数据 | 消息路由、会话超时 |
+| ShellHandler | Shell WebSocket 和 PTY 管理 | 聊天消息、Claude 查询 |
+| Provider 适配器 | 特定 AI 后端的通信协议 | 其他 Provider 的实现 |
+
+**检验标准**：如果修改一个模块需要同时改另一个模块的内部实现（而非接口），说明耦合过紧。
+
+### P2：依赖倒置（Dependency Inversion）
+
+高层模块不依赖低层模块的具体实现，都依赖抽象接口。
+
+```
+MessageRouter ──→ ISession（接口）←── SessionManager
+SessionManager ──→ IProvider（接口）←── claude-sdk / claude-cli / cursor / ...
+SessionManager ──→ ITransport（接口）←── TransportLayer
+```
+
+**IProvider 统一接口**：
+```typescript
+interface IProvider {
+  start(config: QueryConfig): void;
+  abort(): void;
+  onOutput(callback: (data: ProviderOutput) => void): void;
+  onComplete(callback: (result: CompletionResult) => void): void;
+  onError(callback: (error: ProviderError) => void): void;
+  dispose(): void;
+}
+```
+
+**ITransport 统一接口**：
+```typescript
+interface ITransport {
+  send(connectionId: string, message: object): SendResult;
+  onMessage(connectionId: string, callback: (msg: object) => void): void;
+  isAlive(connectionId: string): boolean;
+  getBackpressureState(connectionId: string): 'normal' | 'congested' | 'blocked';
+}
+```
+
+**ISession 统一接口**：
+```typescript
+interface ISession {
+  create(userId: number, connectionId: string, config: SessionConfig): string;
+  abort(sessionId: string): void;
+  getState(sessionId: string): SessionState;
+  resume(sessionId: string, lastSeqId: number): ResumeData;
+}
+```
+
+新增 Provider 只需实现 `IProvider`，无需改动 SessionManager 或 MessageRouter。
+
+### P3：事件驱动解耦（Event-Driven Decoupling）
+
+模块间通过事件通信，不直接调用彼此方法。使用 Node.js `EventEmitter` 实现：
+
+```
+TransportLayer ──emit('connection:dead')──→ SessionManager 监听并清理会话
+SessionManager ──emit('session:timeout')──→ MessageRouter 监听并发送前端事件
+ProcessManager ──emit('process:exit')──→ SessionManager 监听并更新状态
+MessageBuffer ──emit('buffer:overflow')──→ MessageRouter 监听并发送截断通知
+```
+
+**好处**：
+- TransportLayer 不知道 SessionManager 的存在，只发布事件
+- 新增监听者不需要修改发布者的代码
+- 便于单元测试（mock EventEmitter 即可）
+
+### P4：防御性编程（Defensive Programming）
+
+所有边界都假设对方可能失败：
+- 每个异步操作都有超时，**没有永远等待的代码路径**
+- 每个资源分配都有对应的释放路径（进程、连接、定时器、缓冲区）
+- 每个错误都向上传播到用户可见的 UI 反馈，**不静默吞掉错误**
+- 队列/缓冲区都有上限，超限时明确的降级策略而非 OOM
+
+### P5：代码整洁（Clean Code）
+
+- **文件大小**：单文件不超过 300 行。超过时必须拆分
+- **函数长度**：单函数不超过 40 行。超过时提取子函数
+- **命名一致性**：事件名 `domain:action` 格式（如 `session:timeout`、`connection:dead`）；消息类型 `kebab-case`（如 `claude-response`、`session-completed`）
+- **无魔法数字**：所有阈值（超时时间、队列大小、缓冲上限）提取为命名常量，集中定义在 `server/config/constants.js`
+- **日志规范**：每个模块使用带前缀的日志（`[Transport]`、`[Session]`、`[Router]`），便于问题定位
+- **无死代码**：重构过程中移除所有未使用的变量、函数、导入
+
+### P6：可测试性（Testability）
+
+- 模块间通过接口交互，可独立 mock 测试
+- 状态机逻辑纯函数化，输入状态+事件 → 输出新状态，无副作用
+- 定时器通过注入（传入 `setTimeout` 函数引用）而非直接调用，测试时可用 fake timer
+- 关键路径需有测试覆盖：超时触发、进程清理、断线恢复、背压降级
+
+---
+
 ## 架构设计
 
 ### 三层消息管道
@@ -34,6 +141,8 @@
 ---
 
 ## 第一层：传输层
+
+> **原则对齐**：TransportLayer 只关心"连接是否活着、能否发数据"（P1）。通过 `ITransport` 接口暴露能力（P2）。连接死亡时 emit `connection:dead` 事件，不直接调用 SessionManager（P3）。所有心跳和背压阈值提取为常量（P5）。
 
 ### 心跳协议
 
@@ -80,6 +189,8 @@ drain 事件触发后恢复发送队列。
 ---
 
 ## 第二层：会话层
+
+> **原则对齐**：SessionManager 只管会话生命周期（P1）。通过 `ISession` 接口暴露能力，通过 `IProvider` 接口调用后端（P2）。超时/abort 时 emit `session:timeout`、`session:error` 事件（P3）。每个异步路径都有超时兜底（P4）。状态机为纯函数 `(state, event) → newState`（P6）。
 
 ### 会话状态机
 
@@ -201,6 +312,8 @@ abort 请求
 
 ## 第三层：应用层
 
+> **原则对齐**：MessageRouter 只负责消息解析和路由（P1）。不直接操作连接或进程，通过 `ISession` 和 `ITransport` 接口交互（P2）。监听 `session:*` 事件转发给前端（P3）。消息类型 kebab-case、事件名 domain:action（P5）。
+
 ### 消息协议
 
 **客户端 → 服务端**：
@@ -267,17 +380,19 @@ abort 请求
 ```
 server/
 ├── index.js                      ← 入口，启动和模块组装（~200行）
+├── config/
+│   └── constants.js              ← 所有阈值常量集中定义（P5：无魔法数字）
 ├── websocket/
-│   ├── TransportLayer.js         ← 连接管理、心跳、背压
+│   ├── TransportLayer.js         ← 连接管理、心跳、背压（实现 ITransport）
 │   ├── ConnectionRegistry.js     ← 连接注册表、僵尸清理
 │   └── ShellHandler.js           ← Shell WebSocket 连接处理（PTY 管理）
 ├── session/
-│   ├── SessionManager.js         ← 会话生命周期、超时、配额
+│   ├── SessionManager.js         ← 会话生命周期、超时、配额（实现 ISession）
 │   └── ProcessManager.js         ← CLI/SDK 进程管理、强制清理
 ├── message/
 │   ├── MessageRouter.js          ← 消息协议、路由分发
 │   └── MessageBuffer.js          ← 关键事件缓冲 + snapshot 维护
-├── providers/                    ← Provider 适配器（统一接口）
+├── providers/                    ← Provider 适配器（均实现 IProvider）
 │   ├── claude-sdk.js             ← Claude Agent SDK 适配
 │   ├── claude-cli.js             ← Claude CLI 适配
 │   ├── cursor-cli.js             ← Cursor 适配
@@ -317,3 +432,22 @@ server/
 | 客户端 | `src/contexts/WebSocketContext.tsx` | 重写：适配新协议 |
 | 客户端 | `src/components/chat/hooks/useChatRealtimeHandlers.ts` | 重写：适配新消息类型 |
 | 客户端 | `src/components/chat/hooks/useChatSessionState.ts` | 修改：新增超时/恢复状态 |
+| 服务端 | `server/config/constants.js` | 新增：集中定义阈值常量 |
+
+---
+
+## 架构合规检查清单
+
+每个模块实现完成后，必须通过以下检查：
+
+| 检查项 | 对应原则 | 标准 |
+|--------|---------|------|
+| 单一职责 | P1 | 能否用一句话描述模块做什么？改这个模块是否不需要改其他模块的内部实现？ |
+| 接口依赖 | P2 | 是否只通过 ITransport/ISession/IProvider 接口交互？有无直接 import 具体实现？ |
+| 事件解耦 | P3 | 模块间是否通过 EventEmitter 通信？有无跨模块直接方法调用？ |
+| 无永久等待 | P4 | 每个异步操作是否都有超时？每个资源分配是否有释放路径？ |
+| 文件大小 | P5 | 单文件是否 ≤ 300 行？单函数是否 ≤ 40 行？ |
+| 命名规范 | P5 | 事件名是否 `domain:action`？消息类型是否 `kebab-case`？有无魔法数字？ |
+| 日志前缀 | P5 | 日志是否带 `[ModuleName]` 前缀？ |
+| 可测试 | P6 | 能否独立 mock 测试？状态机是否纯函数？定时器是否可注入？ |
+| 无死代码 | P5 | 有无未使用的变量、函数、导入？ |
