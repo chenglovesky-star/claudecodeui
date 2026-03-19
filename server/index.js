@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // Load environment variables before other imports execute
 import './load-env.js';
+import { validateConfig } from './config/validateConfig.js';
+validateConfig();
+
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
