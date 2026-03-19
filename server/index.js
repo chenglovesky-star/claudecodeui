@@ -68,6 +68,8 @@ import geminiRoutes from './routes/gemini.js';
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames, userProjectsDb, userDb } from './database/db.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 import { IS_PLATFORM } from './constants/config.js';
+import { ConnectionRegistry } from './websocket/ConnectionRegistry.js';
+import { TransportLayer } from './websocket/TransportLayer.js';
 
 const VALID_PROVIDERS = ['claude', 'codex', 'cursor', 'gemini'];
 
@@ -91,7 +93,6 @@ const WATCHER_IGNORED_PATTERNS = [
 const WATCHER_DEBOUNCE_MS = 300;
 let projectsWatchers = [];
 let projectsWatcherDebounceTimer = null;
-const connectedClients = new Set();
 let isGetProjectsRunning = false; // Flag to prevent reentrant calls
 
 // Broadcast progress to all connected WebSocket clients
@@ -100,9 +101,9 @@ function broadcastProgress(progress) {
         type: 'loading_progress',
         ...progress
     });
-    connectedClients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(message);
+    registry.getAllByType('chat').forEach((conn) => {
+        if (conn.ws.readyState === WebSocket.OPEN) {
+            conn.ws.send(message);
         }
     });
 }
@@ -148,11 +149,12 @@ async function setupProjectsWatcher() {
                 const updatedProjects = await getProjects(broadcastProgress);
 
                 // Notify all connected clients about the project changes (per-user filtering)
-                connectedClients.forEach(client => {
+                registry.getAllByType('chat').forEach((conn) => {
+                    const client = conn.ws;
                     if (client.readyState === WebSocket.OPEN) {
                         let projectsForClient = updatedProjects;
-                        if (client.userId) {
-                            const ownedNames = userProjectsDb.getProjectNames(client.userId);
+                        if (conn.userId) {
+                            const ownedNames = userProjectsDb.getProjectNames(conn.userId);
                             projectsForClient = updatedProjects.filter(p => ownedNames.has(p.name));
                         }
                         const updateMessage = JSON.stringify({
@@ -325,6 +327,11 @@ const wss = new WebSocketServer({
         return true;
     }
 });
+
+const registry = new ConnectionRegistry();
+const transport = new TransportLayer(registry);
+registry.startZombieScan();
+transport.start();
 
 // Make WebSocket server available to routes
 app.locals.wss = wss;
@@ -1409,43 +1416,25 @@ const uploadFilesHandler = async (req, res) => {
 
 app.post('/api/projects/:projectName/files/upload', authenticateToken, authorizeProject, uploadFilesHandler);
 
-// ─── WebSocket keep-alive: server-side ping every 30s ───
-const WS_PING_INTERVAL_MS = 30000;
-const WS_PONG_TIMEOUT_MS = 10000;
-
-const wsHeartbeatInterval = setInterval(() => {
-    wss.clients.forEach((ws) => {
-        if (ws._isAlive === false) {
-            // No pong received since last ping → terminate dead connection
-            console.log('[WARN] Terminating unresponsive WebSocket client');
-            return ws.terminate();
-        }
-        ws._isAlive = false;
-        ws.ping(); // protocol-level ping
-    });
-}, WS_PING_INTERVAL_MS);
-
-wss.on('close', () => {
-    clearInterval(wsHeartbeatInterval);
-});
-
 // WebSocket connection handler that routes based on URL path
 wss.on('connection', (ws, request) => {
     const url = request.url;
     console.log('[INFO] Client connected to:', url);
 
-    // Mark connection as alive
-    ws._isAlive = true;
-    ws.on('pong', () => { ws._isAlive = true; }); // protocol-level pong
-
-    // Parse URL to get pathname without query parameters
     const urlObj = new URL(url, 'http://localhost');
     const pathname = urlObj.pathname;
 
+    const userId = request.user?.userId || request.user?.id || 0;
+    const username = request.user?.username || 'anonymous';
+
     if (pathname === '/shell') {
+        const connectionId = registry.register(ws, 'shell', userId, username);
+        ws._connectionId = connectionId;
         handleShellConnection(ws);
     } else if (pathname === '/ws') {
-        handleChatConnection(ws, request);
+        const connectionId = registry.register(ws, 'chat', userId, username);
+        ws._connectionId = connectionId;
+        handleChatConnection(ws, request, connectionId);
     } else {
         console.log('[WARN] Unknown WebSocket path:', pathname);
         ws.close();
@@ -1483,7 +1472,7 @@ class WebSocketWriter {
 }
 
 // Handle chat WebSocket connections
-function handleChatConnection(ws, request) {
+function handleChatConnection(ws, request, connectionId) {
     // 绑定 userId 和 username 到 ws 对象，用于按用户过滤广播和工作区隔离
     // 注意: authenticateWebSocket 返回 JWT payload { userId, username }，不是数据库对象 { id, username }
     if (request && request.user) {
@@ -1492,9 +1481,6 @@ function handleChatConnection(ws, request) {
     }
     console.log('[INFO] Chat WebSocket connected, userId:', ws.userId, 'username:', ws.username);
 
-    // Add to connected clients for project updates
-    connectedClients.add(ws);
-
     // Wrap WebSocket with writer for consistent interface with SSEStreamWriter
     const writer = new WebSocketWriter(ws);
 
@@ -1502,11 +1488,9 @@ function handleChatConnection(ws, request) {
         try {
             const data = JSON.parse(message);
 
-            // Heartbeat: respond to ping with pong
-            if (data.type === 'ping') {
-                if (ws.readyState === 1) {
-                    ws.send(JSON.stringify({ type: 'pong' }));
-                }
+            // Heartbeat: handle application-level heartbeat
+            if (data.type === 'heartbeat') {
+                transport.handleHeartbeat(connectionId, data);
                 return;
             }
 
@@ -1729,8 +1713,7 @@ function handleChatConnection(ws, request) {
 
     ws.on('close', () => {
         console.log('🔌 Chat client disconnected');
-        // Remove from connected clients
-        connectedClients.delete(ws);
+        registry.unregister(connectionId);
     });
 }
 
@@ -2682,5 +2665,17 @@ async function startServer() {
         process.exit(1);
     }
 }
+
+// Graceful shutdown: clean up transport and registry
+process.on('SIGTERM', () => {
+    transport.stop();
+    registry.dispose();
+    process.exit(0);
+});
+process.on('SIGINT', () => {
+    transport.stop();
+    registry.dispose();
+    process.exit(0);
+});
 
 startServer();
