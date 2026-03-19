@@ -366,12 +366,15 @@ processManager.on('process:complete', ({ sessionId, result }) => {
   sessionManager.transition(sessionId, 'complete');
   messageBuffer.addCriticalEvent(sessionId, { type: 'session-completed', sessionId });
   sessionManager.cleanup(sessionId);
+  // Delay buffer cleanup 60s to allow resume after completion
+  setTimeout(() => messageBuffer.clearSession(sessionId), 60000);
 });
 
 processManager.on('process:error', ({ sessionId, error }) => {
   sessionManager.transition(sessionId, 'error');
   messageBuffer.addCriticalEvent(sessionId, { type: 'session-error', sessionId, error: error?.message });
   sessionManager.cleanup(sessionId);
+  setTimeout(() => messageBuffer.clearSession(sessionId), 60000);
 });
 
 sessionManager.on('session:timeout', ({ sessionId, timeoutType }) => {

@@ -19,9 +19,9 @@ const TERMINAL_STATES = new Set(['completed', 'timeout', 'error', 'aborted']);
 export function nextState(currentState, event) {
   const transitions = {
     'idle':           { 'start': 'running' },
-    'running':        { 'output': 'streaming', 'timeout': 'timeout', 'error': 'error', 'abort': 'aborted' },
-    'streaming':      { 'tool_use': 'tool_executing', 'complete': 'completed', 'timeout': 'timeout', 'error': 'error', 'abort': 'aborted' },
-    'tool_executing': { 'tool_result': 'streaming', 'output': 'streaming', 'timeout': 'timeout', 'error': 'error', 'abort': 'aborted' },
+    'running':        { 'output': 'streaming', 'complete': 'completed', 'timeout': 'timeout', 'error': 'error', 'abort': 'aborted' },
+    'streaming':      { 'output': 'streaming', 'tool_use': 'tool_executing', 'complete': 'completed', 'timeout': 'timeout', 'error': 'error', 'abort': 'aborted' },
+    'tool_executing': { 'tool_result': 'streaming', 'output': 'streaming', 'complete': 'completed', 'timeout': 'timeout', 'error': 'error', 'abort': 'aborted' },
   };
   return transitions[currentState]?.[event] || currentState;
 }
@@ -127,7 +127,14 @@ export class SessionManager extends EventEmitter {
     const from = session.state;
     const to = nextState(from, event);
 
-    if (from === to) return from; // no-op
+    // Self-loop: streaming + output should still refresh activity timeout
+    if (from === to) {
+      if (from === 'streaming' && event === 'output') {
+        session.lastActivityAt = Date.now();
+        this._refreshActivityTimeout(session);
+      }
+      return from;
+    }
 
     session.state = to;
     session.lastActivityAt = Date.now();
@@ -249,6 +256,12 @@ export class SessionManager extends EventEmitter {
       default:
         break;
     }
+  }
+
+  /** Refresh activity timeout without full state transition (for streaming self-loop). */
+  _refreshActivityTimeout(session) {
+    this._clearTimer(session, 'activity');
+    this._startTimer(session, 'activity', SESSION_ACTIVITY_TIMEOUT_MS, 'activity');
   }
 }
 
