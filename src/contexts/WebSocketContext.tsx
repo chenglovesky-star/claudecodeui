@@ -46,6 +46,8 @@ const useWebSocketProviderState = (): WebSocketContextType => {
   const messageQueueRef = useRef<any[]>([]);
   const isConnectingRef = useRef(false); // Prevent duplicate connect() calls
   const missedCountRef = useRef(0);
+  const lastSeqIdRef = useRef<number>(0);
+  const activeSessionIdRef = useRef<string | null>(null);
   const { token } = useAuth();
 
   // ─── Heartbeat ───
@@ -133,6 +135,16 @@ const useWebSocketProviderState = (): WebSocketContextType => {
         reconnectAttemptRef.current = 0;
         startHeartbeat(websocket);
         flushMessageQueue(websocket);
+
+        // Resume active session if reconnecting
+        if (activeSessionIdRef.current && lastSeqIdRef.current > 0) {
+          console.log(`[WS] Resuming session ${activeSessionIdRef.current} from seqId ${lastSeqIdRef.current}`);
+          websocket.send(JSON.stringify({
+            type: 'resume',
+            sessionId: activeSessionIdRef.current,
+            lastSeqId: lastSeqIdRef.current,
+          }));
+        }
       };
 
       websocket.onmessage = (event) => {
@@ -144,6 +156,26 @@ const useWebSocketProviderState = (): WebSocketContextType => {
             clearPongTimeout();
             missedCountRef.current = 0;
             return;
+          }
+
+          if (data.type === 'resume-response') {
+            console.log(`[WS] Resume response received, state: ${data.currentState}`);
+            lastSeqIdRef.current = data.lastSeqId || lastSeqIdRef.current;
+            setLatestMessage(data);
+            return;
+          }
+
+          // Track seqId for gap detection
+          if (data.seqId !== undefined) {
+            if (data.seqId > lastSeqIdRef.current + 1 && lastSeqIdRef.current > 0) {
+              console.warn(`[WS] SeqId gap: expected ${lastSeqIdRef.current + 1}, got ${data.seqId}`);
+            }
+            lastSeqIdRef.current = data.seqId;
+          }
+
+          // Track active session
+          if (data.sessionId) {
+            activeSessionIdRef.current = data.sessionId;
           }
 
           // Debug flow logging

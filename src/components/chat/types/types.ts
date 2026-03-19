@@ -46,6 +46,8 @@ export interface ChatMessage {
     currentToolIndex: number;
     isComplete: boolean;
   };
+  isTimeout?: boolean;
+  timeoutType?: string;
   [key: string]: unknown;
 }
 
@@ -89,6 +91,31 @@ export interface Question {
   header?: string;
   options: QuestionOption[];
   multiSelect?: boolean;
+}
+
+// New server message types for WebSocket pipeline
+export type ServerMessageType =
+  | 'session-started'
+  | 'claude-response'
+  | 'session-completed'
+  | 'session-timeout'
+  | 'session-error'
+  | 'session-aborted'
+  | 'resume-response'
+  | 'heartbeat-ack'
+  | 'quota-exceeded'
+  | 'backpressure';
+
+export interface ResumeResponse {
+  type: 'resume-response';
+  missedCriticalEvents: Array<{ type: string; seqId?: number; [key: string]: unknown }>;
+  snapshot?: {
+    currentContent: string;
+    completedBlocks: string[];
+    pendingToolUses: string[];
+  };
+  currentState: string;
+  lastSeqId: number;
 }
 
 export interface ChatInterfaceProps {
