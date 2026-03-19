@@ -126,11 +126,52 @@ idle → running → streaming → completed
 - 收到 `content_block_start`（type=tool_use）→ 进入 `tool_executing`
 - 收到 `tool_result` 或下一个非 tool_use 的 `content_block_start` → 回到 `streaming`
 
+### SDK 查询超时中断机制
+
+`for await (const message of queryInstance)` 循环无法被外部超时直接打断。采用以下方案：
+
+**Claude Agent SDK**：使用 `AbortController` 传入 SDK 的 `query()` 方法。超时触发时调用 `controller.abort()`，SDK 内部抛出 `AbortError`，`for await` 循环自然退出。如果 SDK 不支持 AbortSignal，使用 `Promise.race` 包装：
+
+```javascript
+const timeoutPromise = new Promise((_, reject) =>
+  setTimeout(() => reject(new Error('SESSION_TIMEOUT')), timeoutMs)
+);
+
+try {
+  for await (const message of queryInstance) {
+    clearTimeout(activityTimer);
+    activityTimer = setTimeout(() => controller.abort(), activityTimeoutMs);
+    // 处理消息...
+  }
+} catch (err) {
+  if (err.name === 'AbortError' || err.message === 'SESSION_TIMEOUT') {
+    // 超时处理：通知前端，清理资源
+  }
+}
+```
+
+**Claude CLI 子进程**：超时直接走进程强制清理流程（SIGTERM → SIGKILL），stdout 流自然关闭，解析循环退出。
+
+### 多 Provider 支持策略
+
+当前项目支持多个 Provider（Claude SDK、Claude CLI、Cursor、Codex、Gemini）。本次重构策略：
+
+- **SessionManager 和 ProcessManager 为所有 Provider 提供统一接口**：超时、状态机、进程清理适用于所有 Provider
+- ProcessManager 通过 `providerType` 字段区分不同后端，调用对应的适配器
+- 各 Provider 适配器（`claude-sdk.js`、`claude-cli.js`、`cursor-cli.js`、`openai-codex.js`、`gemini-cli.js`）实现统一的接口：`start()`、`abort()`、`onOutput(callback)`、`onComplete(callback)`、`onError(callback)`
+- 未来新增 Provider 只需实现这个接口即可接入
+
 ### 进程强制清理
 
 ```
-abort 请求 → SIGTERM → 等待 5 秒 → SIGKILL → 从 Map 中删除
+abort 请求
+  → SIGTERM
+  → 监听 exit 事件，等待 5 秒
+  → 如果 5 秒内收到 exit → 确认退出，从 Map 中删除
+  → 如果 5 秒超时未 exit → SIGKILL → 再等 2 秒 → 强制从 Map 中删除
 ```
+
+**关键**：只有在确认进程退出（exit 事件）或 SIGKILL 超时后才从 Map 中删除引用，避免发完信号就丢失进程引用的问题。
 
 ### 资源配额
 
@@ -144,12 +185,12 @@ abort 请求 → SIGTERM → 等待 5 秒 → SIGKILL → 从 Map 中删除
 
 **关键事件缓冲**（上限 500 条）：
 - 缓存所有状态变更事件：`session-started`、`tool_use`、`session-completed`、`session-timeout`、`session-error`
-- LRU 淘汰，但 `session-started` 和最后一条状态变更事件永远钉住
+- FIFO 淘汰（先进先出），但 `session-started` 和最后一条状态变更事件永远钉住
 - 会话结束后清理
 
-**流式缓冲**（环形，200 条）：
-- 缓存最近的 `content_block_delta` 消息
-- 环形覆盖
+**流式恢复策略**：
+- 不使用环形缓冲存储流式 delta（delta 粒度太小，缓冲区几秒就被覆盖，实用价值低）
+- 直接依赖 snapshot 恢复：断线重连时发送完整的 currentContent，前端替换而非追加
 
 **Snapshot 维护**：
 - `MessageBuffer` 在每次收到 `content_block_delta` 时追加到 `currentContent`
@@ -181,12 +222,12 @@ abort 请求 → SIGTERM → 等待 5 秒 → SIGKILL → 从 Map 中删除
 | `session-timeout` | 超时终止 | `{ sessionId, seqId, reason, timeoutType }` |
 | `session-error` | 异常 | `{ sessionId, seqId, error }` |
 | `session-aborted` | 用户中止确认 | `{ sessionId, seqId }` |
-| `resume-response` | 重连恢复数据 | `{ missedCriticalEvents, snapshot?, currentState }` |
+| `resume-response` | 重连恢复数据 | `{ missedCriticalEvents, snapshot?, currentState, lastSeqId }` |
 | `heartbeat-ack` | 心跳回复 | `{ ts }` |
 | `quota-exceeded` | 配额超限 | `{ reason }` |
 | `backpressure` | 拥塞通知 | `{ sessionId }` |
 
-所有服务端消息携带递增 `seqId`，客户端据此判断是否有缺失。
+**seqId 作用域**：以 connection 为作用域递增，与 sessionId 无关。每个 WebSocket 连接维护自己的 seqId 计数器。`heartbeat-ack`、`quota-exceeded` 等不绑定 session 的消息同样携带 seqId，确保客户端可以检测任何消息缺失。
 
 ### 断线恢复流程
 
@@ -209,8 +250,11 @@ abort 请求 → SIGTERM → 等待 5 秒 → SIGKILL → 从 Map 中删除
 ### 前端防卡死兜底
 
 即使所有服务端机制都失效，前端自身兜底：
-- 发送 `claude-command` 后启动 90 秒本地计时器
+- 发送 `claude-command` 后启动本地计时器
 - 收到任何 `claude-response` 时重置计时器
+- 根据会话状态动态调整超时：
+  - `running` / `streaming` → 90 秒
+  - `tool_executing` → 10 分钟 + 30 秒余量（与服务端工具执行超时对齐）
 - 超时后显示"响应超时，是否重试？"按钮
 - 不再无限等待
 
@@ -225,16 +269,22 @@ server/
 ├── index.js                      ← 入口，启动和模块组装（~200行）
 ├── websocket/
 │   ├── TransportLayer.js         ← 连接管理、心跳、背压
-│   └── ConnectionRegistry.js     ← 连接注册表、僵尸清理
+│   ├── ConnectionRegistry.js     ← 连接注册表、僵尸清理
+│   └── ShellHandler.js           ← Shell WebSocket 连接处理（PTY 管理）
 ├── session/
 │   ├── SessionManager.js         ← 会话生命周期、超时、配额
 │   └── ProcessManager.js         ← CLI/SDK 进程管理、强制清理
 ├── message/
 │   ├── MessageRouter.js          ← 消息协议、路由分发
-│   └── MessageBuffer.js          ← 双缓冲（关键事件 + 流式）+ snapshot 维护
+│   └── MessageBuffer.js          ← 关键事件缓冲 + snapshot 维护
+├── providers/                    ← Provider 适配器（统一接口）
+│   ├── claude-sdk.js             ← Claude Agent SDK 适配
+│   ├── claude-cli.js             ← Claude CLI 适配
+│   ├── cursor-cli.js             ← Cursor 适配
+│   ├── openai-codex.js           ← Codex 适配
+│   └── gemini-cli.js             ← Gemini 适配
 ├── routes/                       ← 现有 HTTP routes（不变）
-├── middleware/                   ← 现有中间件（不变）
-└── claude-sdk.js / claude-cli.js ← 适配为被 ProcessManager 调用
+└── middleware/                   ← 现有中间件（不变）
 ```
 
 ### 死代码清理
@@ -258,8 +308,12 @@ server/
 | 服务端 | `server/session/ProcessManager.js` | 新增 |
 | 服务端 | `server/message/MessageRouter.js` | 新增 |
 | 服务端 | `server/message/MessageBuffer.js` | 新增 |
-| 服务端 | `server/claude-sdk.js` | 修改：适配 ProcessManager |
-| 服务端 | `server/claude-cli.js` | 修改：适配 ProcessManager |
+| 服务端 | `server/websocket/ShellHandler.js` | 新增：Shell 连接处理 |
+| 服务端 | `server/providers/claude-sdk.js` | 重构：统一 Provider 接口 |
+| 服务端 | `server/providers/claude-cli.js` | 重构：统一 Provider 接口 |
+| 服务端 | `server/providers/cursor-cli.js` | 重构：统一 Provider 接口 |
+| 服务端 | `server/providers/openai-codex.js` | 重构：统一 Provider 接口 |
+| 服务端 | `server/providers/gemini-cli.js` | 重构：统一 Provider 接口 |
 | 客户端 | `src/contexts/WebSocketContext.tsx` | 重写：适配新协议 |
 | 客户端 | `src/components/chat/hooks/useChatRealtimeHandlers.ts` | 重写：适配新消息类型 |
 | 客户端 | `src/components/chat/hooks/useChatSessionState.ts` | 修改：新增超时/恢复状态 |
