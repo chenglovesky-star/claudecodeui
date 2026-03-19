@@ -3,8 +3,9 @@
 
 import { EventEmitter } from 'events';
 import { BUFFER_CRITICAL_EVENTS_MAX, BUFFER_SEQ_ID_START } from '../config/constants.js';
+import { createLogger } from '../config/logger.js';
 
-const LOG_PREFIX = '[Buffer]';
+const log = createLogger('Buffer');
 
 // Critical event types
 const CRITICAL_TYPES = new Set([
@@ -101,9 +102,7 @@ export class MessageBuffer extends EventEmitter {
         if (!isPinned) {
           session.criticalEvents.splice(i, 1);
           evicted = true;
-          console.log(
-            `${LOG_PREFIX} session=${sessionId} evicted seqId=${e.seqId} type=${e.type}`
-          );
+          log.info(`session=${sessionId} evicted seqId=${e.seqId} type=${e.type}`);
           break;
         }
       }
@@ -209,7 +208,7 @@ export class MessageBuffer extends EventEmitter {
   clearSession(sessionId) {
     this._sessions.delete(sessionId);
     this._seqCounters.delete(sessionId);
-    console.log(`${LOG_PREFIX} session=${sessionId} cleared`);
+    log.info(`session=${sessionId} cleared`);
   }
 }
 

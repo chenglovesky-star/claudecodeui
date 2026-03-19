@@ -3,6 +3,9 @@
 
 import { EventEmitter } from 'events';
 import path from 'path';
+import { createLogger } from '../config/logger.js';
+
+const log = createLogger('Chat');
 import { queryClaudeSDK, abortClaudeSDKSession, isClaudeSDKSessionActive, getActiveClaudeSDKSessions, resolveToolApproval, getPendingApprovalsForSession, reconnectSessionWriter } from '../claude-sdk.js';
 import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursorSessions } from '../cursor-cli.js';
 import { queryCodex, abortCodexSession, isCodexSessionActive, getActiveCodexSessions } from '../openai-codex.js';
@@ -55,7 +58,7 @@ export class ChatHandler extends EventEmitter {
             ws.userId = request.user.userId || request.user.id;
             ws.username = request.user.username;
         }
-        console.log('[INFO] Chat WebSocket connected, userId:', ws.userId, 'username:', ws.username);
+        log.info(`Chat WebSocket connected, userId: ${ws.userId} username: ${ws.username}`);
 
         // Wrap WebSocket with writer for consistent interface with SSEStreamWriter
         const writer = new WebSocketWriter(ws);
@@ -74,9 +77,9 @@ export class ChatHandler extends EventEmitter {
                 }
 
                 if (data.type === 'claude-command') {
-                    console.log('[DEBUG] User message:', data.command || '[Continue/Resume]');
-                    console.log('📁 Project:', data.options?.projectPath || 'Unknown');
-                    console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
+                    log.debug(`User message: ${data.command || '[Continue/Resume]'}`);
+                    log.debug(`Project: ${data.options?.projectPath || 'Unknown'}`);
+                    log.debug(`Session: ${data.options?.sessionId ? 'Resume' : 'New'}`);
 
                     // Validate projectPath/cwd within user workspace
                     if (ws.username) {
@@ -94,10 +97,10 @@ export class ChatHandler extends EventEmitter {
                     // Use Claude Agents SDK
                     await queryClaudeSDK(data.command, data.options, writer);
                 } else if (data.type === 'cursor-command') {
-                    console.log('[DEBUG] Cursor message:', data.command || '[Continue/Resume]');
-                    console.log('📁 Project:', data.options?.cwd || 'Unknown');
-                    console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
-                    console.log('🤖 Model:', data.options?.model || 'default');
+                    log.debug(`Cursor message: ${data.command || '[Continue/Resume]'}`);
+                    log.debug(`Project: ${data.options?.cwd || 'Unknown'}`);
+                    log.debug(`Session: ${data.options?.sessionId ? 'Resume' : 'New'}`);
+                    log.debug(`Model: ${data.options?.model || 'default'}`);
 
                     // Validate cwd within user workspace
                     if (ws.username && data.options?.cwd) {
@@ -111,10 +114,10 @@ export class ChatHandler extends EventEmitter {
 
                     await spawnCursor(data.command, data.options, writer);
                 } else if (data.type === 'codex-command') {
-                    console.log('[DEBUG] Codex message:', data.command || '[Continue/Resume]');
-                    console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
-                    console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
-                    console.log('🤖 Model:', data.options?.model || 'default');
+                    log.debug(`Codex message: ${data.command || '[Continue/Resume]'}`);
+                    log.debug(`Project: ${data.options?.projectPath || data.options?.cwd || 'Unknown'}`);
+                    log.debug(`Session: ${data.options?.sessionId ? 'Resume' : 'New'}`);
+                    log.debug(`Model: ${data.options?.model || 'default'}`);
 
                     // Validate projectPath/cwd within user workspace
                     if (ws.username) {
@@ -131,10 +134,10 @@ export class ChatHandler extends EventEmitter {
 
                     await queryCodex(data.command, data.options, writer);
                 } else if (data.type === 'gemini-command') {
-                    console.log('[DEBUG] Gemini message:', data.command || '[Continue/Resume]');
-                    console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
-                    console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
-                    console.log('🤖 Model:', data.options?.model || 'default');
+                    log.debug(`Gemini message: ${data.command || '[Continue/Resume]'}`);
+                    log.debug(`Project: ${data.options?.projectPath || data.options?.cwd || 'Unknown'}`);
+                    log.debug(`Session: ${data.options?.sessionId ? 'Resume' : 'New'}`);
+                    log.debug(`Model: ${data.options?.model || 'default'}`);
 
                     // Validate projectPath/cwd within user workspace
                     if (ws.username) {
@@ -151,10 +154,10 @@ export class ChatHandler extends EventEmitter {
 
                     await spawnGemini(data.command, data.options, writer);
                 } else if (data.type === 'claude-cli-command') {
-                    console.log('[DEBUG] Claude CLI message:', data.command || '[Continue/Resume]');
-                    console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
-                    console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
-                    console.log('🤖 Model:', data.options?.model || 'default');
+                    log.debug(`Claude CLI message: ${data.command || '[Continue/Resume]'}`);
+                    log.debug(`Project: ${data.options?.projectPath || data.options?.cwd || 'Unknown'}`);
+                    log.debug(`Session: ${data.options?.sessionId ? 'Resume' : 'New'}`);
+                    log.debug(`Model: ${data.options?.model || 'default'}`);
 
                     // Validate projectPath/cwd within user workspace
                     if (ws.username) {
@@ -172,14 +175,14 @@ export class ChatHandler extends EventEmitter {
                     await spawnClaudeCLI(data.command, data.options, writer);
                 } else if (data.type === 'cursor-resume') {
                     // Backward compatibility: treat as cursor-command with resume and no prompt
-                    console.log('[DEBUG] Cursor resume session (compat):', data.sessionId);
+                    log.debug(`Cursor resume session (compat): ${data.sessionId}`);
                     await spawnCursor('', {
                         sessionId: data.sessionId,
                         resume: true,
                         cwd: data.options?.cwd
                     }, writer);
                 } else if (data.type === 'abort-session') {
-                    console.log('[DEBUG] Abort session request:', data.sessionId);
+                    log.debug(`Abort session request: ${data.sessionId}`);
                     const provider = data.provider || 'claude';
                     let success;
 
@@ -215,7 +218,7 @@ export class ChatHandler extends EventEmitter {
                         });
                     }
                 } else if (data.type === 'cursor-abort') {
-                    console.log('[DEBUG] Abort Cursor session:', data.sessionId);
+                    log.debug(`Abort Cursor session: ${data.sessionId}`);
                     const success = abortCursorSession(data.sessionId);
                     writer.send({
                         type: 'session-aborted',
@@ -278,7 +281,7 @@ export class ChatHandler extends EventEmitter {
                     });
                 }
             } catch (error) {
-                console.error('[ERROR] Chat WebSocket error:', error.message);
+                log.error({ err: error }, 'Chat WebSocket error');
                 // Include sessionId so the frontend session filter doesn't discard this event,
                 // which would leave the UI stuck in "Processing" forever.
                 const errorSessionId = data?.options?.sessionId || data?.sessionId || writer.getSessionId() || null;
@@ -291,12 +294,12 @@ export class ChatHandler extends EventEmitter {
         });
 
         ws.on('close', () => {
-            console.log('Chat client disconnected');
+            log.info('Chat client disconnected');
             registry.unregister(connectionId);
         });
 
         ws.on('error', (error) => {
-            console.error('[Chat] WebSocket error:', error.message);
+            log.error({ err: error }, 'WebSocket error');
         });
     }
 }

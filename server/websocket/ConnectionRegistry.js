@@ -7,6 +7,9 @@ import {
   HEARTBEAT_INTERVAL_MS,
   HEARTBEAT_PONG_TIMEOUT_MS,
 } from '../config/constants.js';
+import { createLogger } from '../config/logger.js';
+
+const log = createLogger('Registry');
 
 /**
  * ConnectionRegistry — 连接注册表
@@ -50,7 +53,7 @@ export class ConnectionRegistry extends EventEmitter {
     };
 
     this.#connections.set(connectionId, record);
-    console.log(`[Registry] registered ${type} connection ${connectionId} (user=${userId})`);
+    log.info(`registered ${type} connection ${connectionId} (user=${userId})`);
     this.emit('connection:registered', { connectionId, type, userId });
 
     return connectionId;
@@ -66,7 +69,7 @@ export class ConnectionRegistry extends EventEmitter {
 
     // Emit BEFORE delete so listeners (e.g. TransportLayer.teardownConnection)
     // can still access the ws reference via event payload
-    console.log(`[Registry] unregistered ${record.type} connection ${connectionId} (user=${record.userId})`);
+    log.info(`unregistered ${record.type} connection ${connectionId} (user=${record.userId})`);
     this.emit('connection:unregistered', { connectionId, type: record.type, userId: record.userId, ws: record.ws });
     this.#connections.delete(connectionId);
   }
@@ -154,8 +157,8 @@ export class ConnectionRegistry extends EventEmitter {
       const now = Date.now();
       for (const record of this.#connections.values()) {
         if (now - record.lastAliveAt > deadThresholdMs) {
-          console.log(
-            `[Registry] zombie detected: ${record.connectionId} (user=${record.userId}, ` +
+          log.info(
+            `zombie detected: ${record.connectionId} (user=${record.userId}, ` +
             `silent=${now - record.lastAliveAt}ms)`
           );
           this.emit('connection:dead', {
@@ -168,7 +171,7 @@ export class ConnectionRegistry extends EventEmitter {
       }
     }, ZOMBIE_SCAN_INTERVAL_MS);
 
-    console.log(`[Registry] zombie scan started (interval=${ZOMBIE_SCAN_INTERVAL_MS}ms, threshold=${deadThresholdMs}ms)`);
+    log.info(`zombie scan started (interval=${ZOMBIE_SCAN_INTERVAL_MS}ms, threshold=${deadThresholdMs}ms)`);
   }
 
   /**
@@ -178,7 +181,7 @@ export class ConnectionRegistry extends EventEmitter {
     if (!this.#zombieScanTimer) return;
     clearInterval(this.#zombieScanTimer);
     this.#zombieScanTimer = null;
-    console.log('[Registry] zombie scan stopped');
+    log.info('zombie scan stopped');
   }
 
   /**
@@ -187,7 +190,7 @@ export class ConnectionRegistry extends EventEmitter {
   dispose() {
     this.stopZombieScan();
     this.#connections.clear();
-    console.log('[Registry] disposed');
+    log.info('disposed');
   }
 }
 

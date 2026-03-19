@@ -8,6 +8,9 @@ import {
   BACKPRESSURE_WARN_BYTES,
   BACKPRESSURE_BLOCK_BYTES,
 } from '../config/constants.js';
+import { createLogger } from '../config/logger.js';
+
+const log = createLogger('Transport');
 
 /**
  * TransportLayer — 统一传输层
@@ -34,7 +37,7 @@ export class TransportLayer extends EventEmitter {
     registry.on('connection:registered', ({ connectionId }) => this.setupConnection(connectionId));
     registry.on('connection:unregistered', ({ connectionId, ws }) => this.teardownConnection(connectionId, ws));
 
-    console.log('[Transport] TransportLayer initialized');
+    log.info('TransportLayer initialized');
   }
 
   // ─── 心跳管理 ────────────────────────────────────────────────────────────
@@ -42,7 +45,7 @@ export class TransportLayer extends EventEmitter {
   start() {
     if (this.#heartbeatTimer) return;
     this.#heartbeatTimer = setInterval(() => this.#runHeartbeatCycle(), HEARTBEAT_INTERVAL_MS);
-    console.log(`[Transport] heartbeat started (interval=${HEARTBEAT_INTERVAL_MS}ms, maxMissed=${HEARTBEAT_MAX_MISSED})`);
+    log.info(`heartbeat started (interval=${HEARTBEAT_INTERVAL_MS}ms, maxMissed=${HEARTBEAT_MAX_MISSED})`);
   }
 
   stop() {
@@ -56,21 +59,21 @@ export class TransportLayer extends EventEmitter {
     }
     this.#drainListeners.clear();
     this.#sendQueues.clear();
-    console.log('[Transport] heartbeat stopped');
+    log.info('heartbeat stopped');
   }
 
   #runHeartbeatCycle() {
     for (const record of this.#registry.getAll()) {
       const { connectionId, ws, missedHeartbeats } = record;
       if (missedHeartbeats >= HEARTBEAT_MAX_MISSED) {
-        console.log(`[Transport] terminating dead connection ${connectionId} (missed=${missedHeartbeats})`);
+        log.info(`terminating dead connection ${connectionId} (missed=${missedHeartbeats})`);
         ws.terminate();
         this.emit('transport:dead', { connectionId });
         this.#registry.unregister(connectionId);
       } else {
         this.#registry.markMissed(connectionId);
         try { ws.ping(); } catch (err) {
-          console.warn(`[Transport] ping failed for ${connectionId}:`, err.message);
+          log.warn(`ping failed for ${connectionId}: ${err.message}`);
         }
       }
     }
@@ -81,14 +84,14 @@ export class TransportLayer extends EventEmitter {
   setupConnection(connectionId) {
     const record = this.#registry.get(connectionId);
     if (!record?.ws) {
-      console.warn(`[Transport] setupConnection: record not found for ${connectionId}`);
+      log.warn(`setupConnection: record not found for ${connectionId}`);
       return;
     }
     const pongHandler = () => this.#registry.markAlive(connectionId);
     record.ws.on('pong', pongHandler);
     this.#pongListeners.set(connectionId, pongHandler);
     this.#sendQueues.set(connectionId, []);
-    console.log(`[Transport] setup done: ${connectionId}`);
+    log.info(`setup done: ${connectionId}`);
   }
 
   teardownConnection(connectionId, ws) {
@@ -107,10 +110,10 @@ export class TransportLayer extends EventEmitter {
 
     const queue = this.#sendQueues.get(connectionId);
     if (queue?.length > 0) {
-      console.warn(`[Transport] teardown ${connectionId}: discarding ${queue.length} queued message(s)`);
+      log.warn(`teardown ${connectionId}: discarding ${queue.length} queued message(s)`);
     }
     this.#sendQueues.delete(connectionId);
-    console.log(`[Transport] teardown done: ${connectionId}`);
+    log.info(`teardown done: ${connectionId}`);
   }
 
   // ─── 应用级心跳 ──────────────────────────────────────────────────────────
@@ -131,7 +134,7 @@ export class TransportLayer extends EventEmitter {
   send(connectionId, message) {
     const record = this.#registry.get(connectionId);
     if (!record || record.ws.readyState !== 1 /* OPEN */) {
-      console.warn(`[Transport] send: connection unavailable (${connectionId})`);
+      log.warn(`send: connection unavailable (${connectionId})`);
       return { success: false, backpressure: 'blocked' };
     }
 
@@ -145,7 +148,7 @@ export class TransportLayer extends EventEmitter {
         ws.send(payload);
         return { success: true, backpressure: 'normal' };
       } catch (err) {
-        console.warn(`[Transport] send error (${connectionId}):`, err.message);
+        log.warn(`send error (${connectionId}): ${err.message}`);
         return { success: false, backpressure: 'blocked' };
       }
     }
@@ -154,10 +157,10 @@ export class TransportLayer extends EventEmitter {
       try {
         ws.send(payload);
         this.emit('transport:congested', { connectionId });
-        console.warn(`[Transport] congested ${connectionId} (buffered=${buffered}B)`);
+        log.warn(`congested ${connectionId} (buffered=${buffered}B)`);
         return { success: true, backpressure: 'congested' };
       } catch (err) {
-        console.warn(`[Transport] send error congested (${connectionId}):`, err.message);
+        log.warn(`send error congested (${connectionId}): ${err.message}`);
         return { success: false, backpressure: 'blocked' };
       }
     }
@@ -165,7 +168,7 @@ export class TransportLayer extends EventEmitter {
     // 阻塞：入队等待 drain
     this.#enqueue(connectionId, ws, payload);
     this.emit('transport:blocked', { connectionId });
-    console.warn(`[Transport] blocked ${connectionId} (buffered=${buffered}B), queued`);
+    log.warn(`blocked ${connectionId} (buffered=${buffered}B), queued`);
     return { success: true, backpressure: 'blocked' };
   }
 
@@ -187,7 +190,7 @@ export class TransportLayer extends EventEmitter {
     if (!queue || queue.length === 0) return;
 
     if (!record || record.ws.readyState !== 1 /* OPEN */) {
-      console.warn(`[Transport] flushQueue: connection closed, discarding queue for ${connectionId}`);
+      log.warn(`flushQueue: connection closed, discarding queue for ${connectionId}`);
       this.#sendQueues.set(connectionId, []);
       return;
     }
@@ -197,7 +200,7 @@ export class TransportLayer extends EventEmitter {
       if ((ws.bufferedAmount ?? 0) >= BACKPRESSURE_BLOCK_BYTES) break;
       const payload = queue.shift();
       try { ws.send(payload); } catch (err) {
-        console.warn(`[Transport] flushQueue error (${connectionId}):`, err.message);
+        log.warn(`flushQueue error (${connectionId}): ${err.message}`);
         break;
       }
     }

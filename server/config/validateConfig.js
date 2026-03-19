@@ -1,6 +1,10 @@
 // server/config/validateConfig.js
 // Startup configuration validation
 
+import { createLogger } from './logger.js';
+
+const log = createLogger('Config');
+
 const warnings = [];
 const errors = [];
 
@@ -27,15 +31,13 @@ export function validateConfig() {
 
   // Print results
   if (warnings.length > 0) {
-    console.warn('[Config] Warnings:');
-    warnings.forEach(w => console.warn(`  - ${w}`));
+    warnings.forEach(w => log.warn(w));
   }
 
   if (errors.length > 0) {
-    console.error('[Config] FATAL configuration errors:');
-    errors.forEach(e => console.error(`  - ${e}`));
+    errors.forEach(e => log.error(e));
     process.exit(1);
   }
 
-  console.log('[Config] Configuration validated');
+  log.info('Configuration validated');
 }

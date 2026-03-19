@@ -11,6 +11,9 @@ import {
   QUOTA_MAX_SESSIONS_PER_USER,
   QUOTA_MAX_SESSIONS_GLOBAL,
 } from '../config/constants.js';
+import { createLogger } from '../config/logger.js';
+
+const log = createLogger('Session');
 
 // ── Terminal states ──────────────────────────────────────────────────────────
 const TERMINAL_STATES = new Set(['completed', 'timeout', 'error', 'aborted']);
@@ -106,7 +109,7 @@ export class SessionManager extends EventEmitter {
     };
 
     this._sessions.set(sessionId, session);
-    console.log(`[Session] Created ${sessionId} user=${userId} provider=${providerType}`);
+    log.info(`Created ${sessionId} user=${userId} provider=${providerType}`);
     this.emit('session:created', { sessionId, userId, providerType });
     return sessionId;
   }
@@ -120,7 +123,7 @@ export class SessionManager extends EventEmitter {
   transition(sessionId, event) {
     const session = this._sessions.get(sessionId);
     if (!session) {
-      console.warn(`[Session] transition: unknown session ${sessionId}`);
+      log.warn(`transition: unknown session ${sessionId}`);
       return undefined;
     }
 
@@ -139,7 +142,7 @@ export class SessionManager extends EventEmitter {
     session.state = to;
     session.lastActivityAt = Date.now();
 
-    console.log(`[Session] ${sessionId} ${from} --${event}--> ${to}`);
+    log.info(`${sessionId} ${from} --${event}--> ${to}`);
     this._manageTimers(session, from, to);
     this.emit('session:stateChanged', { sessionId, from, to, event });
     return to;
@@ -178,7 +181,7 @@ export class SessionManager extends EventEmitter {
     if (!session) return;
     this._clearAllTimers(session);
     this._sessions.delete(sessionId);
-    console.log(`[Session] Cleaned up ${sessionId}`);
+    log.info(`Cleaned up ${sessionId}`);
   }
 
   /**
@@ -208,7 +211,7 @@ export class SessionManager extends EventEmitter {
     }
     session.timers[timerKey] = this._setTimeout(() => {
       session.timers[timerKey] = null;
-      console.warn(`[Session] ${session.sessionId} timeout: ${timeoutType}`);
+      log.warn(`${session.sessionId} timeout: ${timeoutType}`);
       this.transition(session.sessionId, 'timeout');
       this.emit('session:timeout', { sessionId: session.sessionId, timeoutType });
     }, ms);

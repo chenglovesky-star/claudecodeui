@@ -6,6 +6,9 @@ import pty from 'node-pty';
 import { WebSocket } from 'ws';
 import legacySessionManager from '../sessionManager.js';
 import { PTY_SESSION_TIMEOUT_MS, SHELL_URL_PARSE_BUFFER_LIMIT } from '../config/constants.js';
+import { createLogger } from '../config/logger.js';
+
+const log = createLogger('Shell');
 
 // ─── URL detection helpers ───────────────────────────────────────────────────
 
@@ -91,7 +94,7 @@ export class ShellHandler {
      * @param {string} connectionId
      */
     handleConnection(ws, connectionId) {
-        console.log('[Shell] Client connected');
+        log.info('Client connected');
         let shellProcess = null;
         let ptySessionKey = null;
         let urlDetectionBuffer = '';
@@ -100,7 +103,7 @@ export class ShellHandler {
         ws.on('message', async (message) => {
             try {
                 const data = JSON.parse(message);
-                console.log('[Shell] Message received:', data.type);
+                log.info(`Message received: ${data.type}`);
 
                 if (data.type === 'init') {
                     const projectPath = data.projectPath || process.cwd();
@@ -129,7 +132,7 @@ export class ShellHandler {
                     if (isLoginCommand) {
                         const oldSession = this.ptySessionsMap.get(ptySessionKey);
                         if (oldSession) {
-                            console.log('[Shell] Cleaning up existing login session:', ptySessionKey);
+                            log.info(`Cleaning up existing login session: ${ptySessionKey}`);
                             if (oldSession.timeoutId) clearTimeout(oldSession.timeoutId);
                             if (oldSession.pty && oldSession.pty.kill) oldSession.pty.kill();
                             this.ptySessionsMap.delete(ptySessionKey);
@@ -138,7 +141,7 @@ export class ShellHandler {
 
                     const existingSession = isLoginCommand ? null : this.ptySessionsMap.get(ptySessionKey);
                     if (existingSession) {
-                        console.log('[Shell] Reconnecting to existing PTY session:', ptySessionKey);
+                        log.info(`Reconnecting to existing PTY session: ${ptySessionKey}`);
                         shellProcess = existingSession.pty;
 
                         clearTimeout(existingSession.timeoutId);
@@ -149,7 +152,7 @@ export class ShellHandler {
                         }));
 
                         if (existingSession.buffer && existingSession.buffer.length > 0) {
-                            console.log(`[Shell] Sending ${existingSession.buffer.length} buffered messages`);
+                            log.info(`Sending ${existingSession.buffer.length} buffered messages`);
                             existingSession.buffer.forEach(bufferedData => {
                                 ws.send(JSON.stringify({
                                     type: 'output',
@@ -163,11 +166,11 @@ export class ShellHandler {
                         return;
                     }
 
-                    console.log('[Shell] Starting shell in:', projectPath);
-                    console.log('[Shell] Session info:', hasSession ? `Resume session ${sessionId}` : (isPlainShell ? 'Plain shell mode' : 'New session'));
-                    console.log('[Shell] Provider:', isPlainShell ? 'plain-shell' : provider);
+                    log.info(`Starting shell in: ${projectPath}`);
+                    log.info(`Session info: ${hasSession ? `Resume session ${sessionId}` : (isPlainShell ? 'Plain shell mode' : 'New session')}`);
+                    log.info(`Provider: ${isPlainShell ? 'plain-shell' : provider}`);
                     if (initialCommand) {
-                        console.log('[Shell] Initial command:', initialCommand);
+                        log.info(`Initial command: ${initialCommand}`);
                     }
 
                     // First send a welcome message
@@ -243,7 +246,7 @@ export class ShellHandler {
                                         resumeId = sess.cliSessionId;
                                     }
                                 } catch (err) {
-                                    console.error('[Shell] Failed to get Gemini CLI session ID:', err);
+                                    log.error({ err }, 'Failed to get Gemini CLI session ID');
                                 }
                             }
 
@@ -279,7 +282,7 @@ export class ShellHandler {
                             }
                         }
 
-                        console.log('[Shell] Executing shell command:', shellCommand);
+                        log.info(`Executing shell command: ${shellCommand}`);
 
                         // Use appropriate shell based on platform
                         const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
@@ -288,7 +291,7 @@ export class ShellHandler {
                         // Use terminal dimensions from client if provided, otherwise use defaults
                         const termCols = data.cols || 80;
                         const termRows = data.rows || 24;
-                        console.log('[Shell] Using terminal dimensions:', termCols, 'x', termRows);
+                        log.info(`Using terminal dimensions: ${termCols} x ${termRows}`);
 
                         shellProcess = pty.spawn(shell, shellArgs, {
                             name: 'xterm-256color',
@@ -303,7 +306,7 @@ export class ShellHandler {
                             }
                         });
 
-                        console.log('[Shell] Shell process started with PTY, PID:', shellProcess.pid);
+                        log.info(`Shell process started with PTY, PID: ${shellProcess.pid}`);
 
                         this.ptySessionsMap.set(ptySessionKey, {
                             pty: shellProcess,
@@ -380,7 +383,7 @@ export class ShellHandler {
 
                         // Handle process exit
                         shellProcess.onExit((exitCode) => {
-                            console.log('[Shell] Shell process exited with code:', exitCode.exitCode, 'signal:', exitCode.signal);
+                            log.info(`Shell process exited with code: ${exitCode.exitCode} signal: ${exitCode.signal}`);
                             const session = this.ptySessionsMap.get(ptySessionKey);
                             if (session && session.ws && session.ws.readyState === WebSocket.OPEN) {
                                 session.ws.send(JSON.stringify({
@@ -396,7 +399,7 @@ export class ShellHandler {
                         });
 
                     } catch (spawnError) {
-                        console.error('[Shell] Error spawning process:', spawnError);
+                        log.error({ err: spawnError }, 'Error spawning process');
                         ws.send(JSON.stringify({
                             type: 'output',
                             data: `\r\n\x1b[31mError: ${spawnError.message}\x1b[0m\r\n`
@@ -409,20 +412,20 @@ export class ShellHandler {
                         try {
                             shellProcess.write(data.data);
                         } catch (error) {
-                            console.error('[Shell] Error writing to shell:', error);
+                            log.error({ err: error }, 'Error writing to shell');
                         }
                     } else {
-                        console.warn('[Shell] No active shell process to send input to');
+                        log.warn('No active shell process to send input to');
                     }
                 } else if (data.type === 'resize') {
                     // Handle terminal resize
                     if (shellProcess && shellProcess.resize) {
-                        console.log('[Shell] Terminal resize requested:', data.cols, 'x', data.rows);
+                        log.info(`Terminal resize requested: ${data.cols} x ${data.rows}`);
                         shellProcess.resize(data.cols, data.rows);
                     }
                 }
             } catch (error) {
-                console.error('[Shell] WebSocket error:', error.message);
+                log.error({ err: error }, 'WebSocket message error');
                 if (ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'output',
@@ -433,17 +436,17 @@ export class ShellHandler {
         });
 
         ws.on('close', () => {
-            console.log('[Shell] Client disconnected');
+            log.info('Client disconnected');
             if (connectionId) this.registry.unregister(connectionId);
 
             if (ptySessionKey) {
                 const session = this.ptySessionsMap.get(ptySessionKey);
                 if (session) {
-                    console.log('[Shell] PTY session kept alive, will timeout in 30 minutes:', ptySessionKey);
+                    log.info(`PTY session kept alive, will timeout in 30 minutes: ${ptySessionKey}`);
                     session.ws = null;
 
                     session.timeoutId = setTimeout(() => {
-                        console.log('[Shell] PTY session timeout, killing process:', ptySessionKey);
+                        log.info(`PTY session timeout, killing process: ${ptySessionKey}`);
                         if (session.pty && session.pty.kill) {
                             session.pty.kill();
                         }
@@ -454,7 +457,7 @@ export class ShellHandler {
         });
 
         ws.on('error', (error) => {
-            console.error('[Shell] WebSocket error:', error);
+            log.error({ err: error }, 'WebSocket error');
         });
     }
 
@@ -468,6 +471,6 @@ export class ShellHandler {
             if (session.pty?.kill) session.pty.kill();
         }
         this.ptySessionsMap.clear();
-        console.log('[Shell] All PTY sessions disposed');
+        log.info('All PTY sessions disposed');
     }
 }

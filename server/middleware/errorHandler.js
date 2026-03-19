@@ -1,6 +1,10 @@
 // server/middleware/errorHandler.js
 // Global Express error handler and unhandled rejection catcher
 
+import { createLogger } from '../config/logger.js';
+
+const log = createLogger('Error');
+
 /**
  * Express error-handling middleware.
  * Must be added AFTER all routes.
@@ -10,9 +14,9 @@ export function errorHandler(err, req, res, next) {
   const status = err.statusCode || err.status || 500;
   const message = err.message || 'Internal server error';
 
-  console.error(`[Error] ${req.method} ${req.originalUrl} → ${status}: ${message}`);
+  log.error(`${req.method} ${req.originalUrl} → ${status}: ${message}`);
   if (status === 500) {
-    console.error('[Error] Stack:', err.stack);
+    log.error({ stack: err.stack }, 'Stack trace');
   }
 
   res.status(status).json({
@@ -28,11 +32,11 @@ export function errorHandler(err, req, res, next) {
  */
 export function setupGlobalErrorHandlers() {
   process.on('unhandledRejection', (reason, promise) => {
-    console.error('[CRITICAL] Unhandled Promise rejection:', reason);
+    log.fatal({ reason }, 'Unhandled Promise rejection');
   });
 
   process.on('uncaughtException', (error) => {
-    console.error('[CRITICAL] Uncaught exception:', error);
+    log.fatal({ err: error }, 'Uncaught exception');
     // Give time for logging, then exit
     setTimeout(() => process.exit(1), 1000);
   });

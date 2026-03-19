@@ -6,6 +6,9 @@ import {
   PROCESS_SIGTERM_TIMEOUT_MS,
   PROCESS_SIGKILL_TIMEOUT_MS,
 } from '../config/constants.js';
+import { createLogger } from '../config/logger.js';
+
+const log = createLogger('Process');
 
 // ── ProcessManager ────────────────────────────────────────────────────────────
 export class ProcessManager extends EventEmitter {
@@ -28,7 +31,7 @@ export class ProcessManager extends EventEmitter {
    */
   registerProvider(type, ProviderClass) {
     this.#registry.set(type, ProviderClass);
-    console.log(`[Process] registered provider type: ${type}`);
+    log.info(`registered provider type: ${type}`);
   }
 
   // ── Session lifecycle ─────────────────────────────────────────────────────
@@ -73,7 +76,7 @@ export class ProcessManager extends EventEmitter {
     // Start in background (do not await)
     provider.start(config);
 
-    console.log(`[Process] started ${providerType} session ${sessionId}`);
+    log.info(`started ${providerType} session ${sessionId}`);
   }
 
   /**
@@ -83,7 +86,7 @@ export class ProcessManager extends EventEmitter {
   async abortSession(sessionId) {
     const entry = this.#activeProviders.get(sessionId);
     if (!entry) {
-      console.warn(`[Process] abortSession: session ${sessionId} not found`);
+      log.warn(`abortSession: session ${sessionId} not found`);
       return;
     }
 
@@ -97,7 +100,7 @@ export class ProcessManager extends EventEmitter {
 
     if (!cleanExit) {
       // Step 3: escalate to force kill (SIGKILL equivalent)
-      console.warn(`[Process] session ${sessionId} did not exit after SIGTERM, force killing`);
+      log.warn(`session ${sessionId} did not exit after SIGTERM, force killing`);
       provider.dispose();
 
       // Step 4: wait for SIGKILL timeout
@@ -109,7 +112,7 @@ export class ProcessManager extends EventEmitter {
 
     // Step 6: emit killed event
     this.emit('process:killed', { sessionId });
-    console.log(`[Process] session ${sessionId} killed`);
+    log.info(`session ${sessionId} killed`);
   }
 
   // ── Query helpers ─────────────────────────────────────────────────────────
@@ -166,7 +169,7 @@ export class ProcessManager extends EventEmitter {
     } catch {
       // ignore dispose errors during normal cleanup
     }
-    console.log(`[Process] cleaned up session ${sessionId}`);
+    log.info(`cleaned up session ${sessionId}`);
   }
 
   /**
