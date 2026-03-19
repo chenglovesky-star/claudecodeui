@@ -62,6 +62,7 @@ import codexRoutes from './routes/codex.js';
 import geminiRoutes from './routes/gemini.js';
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames, userProjectsDb, userDb } from './database/db.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
+import { authLimiter, apiLimiter } from './middleware/rateLimiter.js';
 import { IS_PLATFORM } from './constants/config.js';
 import { ConnectionRegistry } from './websocket/ConnectionRegistry.js';
 import { TransportLayer } from './websocket/TransportLayer.js';
@@ -323,8 +324,11 @@ app.get('/health', (req, res) => {
 // Optional API key validation (if configured)
 app.use('/api', validateApiKey);
 
-// Authentication routes (public)
-app.use('/api/auth', authRoutes);
+// General API rate limiter (applied after health check, before authenticated routes)
+app.use('/api', apiLimiter);
+
+// Authentication routes (public) — stricter rate limit
+app.use('/api/auth', authLimiter, authRoutes);
 
 // Projects API Routes (protected)
 app.use('/api/projects', authenticateToken, projectsRoutes);
