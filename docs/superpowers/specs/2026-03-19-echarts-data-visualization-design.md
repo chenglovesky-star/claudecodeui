@@ -78,13 +78,24 @@ interface EChartsRendererProps {
 }
 ```
 
+```typescript
+interface EChartsRendererProps {
+  option: string;       // ECharts option JSON 字符串
+  isStreaming?: boolean; // 消息是否仍在流式输出中
+}
+```
+
 核心职责：
-- **JSON 解析与校验**：解析 option 字符串，格式错误时降级为代码块
-- **自适应尺寸**：宽度跟随消息气泡，高度根据图表类型智能计算
+- **JSON 解析与安全校验**：仅使用 `JSON.parse` 解析 option 字符串。**安全红线：绝对不能使用 `eval` 或 `new Function` 解析 option**，只接受纯 JSON，不支持 JavaScript 函数表达式
+- **自适应尺寸**：宽度跟随消息气泡，高度根据图表类型智能计算（混合图取最大高度值，默认 400px）
 - **主题适配**：读取当前深色/浅色主题，应用对应 ECharts 主题色
-- **懒加载**：`React.lazy` + 动态 `import('echarts')` 按需加载
+- **懒加载**：`React.lazy` 加载整个 `EChartsRenderer.tsx` 文件（内部静态 import echarts），Vite 自动拆分 chunk，只一层异步
 - **resize 响应**：监听容器宽度变化，自动 `chart.resize()`
 - **销毁清理**：组件卸载时调用 `chart.dispose()` 防止内存泄漏
+- **内置 Error Boundary**：组件内部自包含 `react-error-boundary`，单个图表崩溃不影响整条消息渲染
+- **多实例安全**：同一条消息中可包含多个 `echarts` 代码块，每个独立实例化和销毁
+- **option 体积上限**：JSON 字符串超过 100KB 时降级为代码块并提示
+- **国际化**：降级提示文案通过 i18next 处理
 
 ### Markdown.tsx 修改
 
@@ -92,7 +103,11 @@ interface EChartsRendererProps {
 
 ```typescript
 if (language === 'echarts') {
-  return <EChartsRenderer option={children} />
+  return (
+    <Suspense fallback={<div>图表加载中...</div>}>
+      <EChartsRenderer option={children} isStreaming={isStreaming} />
+    </Suspense>
+  )
 }
 // 否则走原有的 react-syntax-highlighter 逻辑
 ```
@@ -128,7 +143,7 @@ echarts.use([
 ]);
 ```
 
-体积预估：按需引入后约 300-400KB gzip，通过 React.lazy 动态加载。
+体积预估：按需引入后约 180-250KB gzip，通过 React.lazy 动态加载（Vite 自动 chunk 拆分）。注意：MapChart 不含地图 GeoJSON 数据，如需中国地图等需额外引入。
 
 ## 容错与降级策略
 
@@ -142,9 +157,14 @@ echarts.use([
 
 ## 流式渲染处理
 
-- 流式进行中（代码块未闭合）→ 显示带 loading 动画的占位符"图表生成中..."
-- 代码块闭合后 → 解析 JSON 并渲染图表
-- 避免不完整 JSON 频繁尝试解析的性能问题
+流式场景下依赖两层机制：
+
+1. **react-markdown 解析行为**：未闭合的代码块不会生成 code 节点，因此天然不会触发 EChartsRenderer。流式期间用户看到的是原始文本逐步输出，闭合后 react-markdown 重新解析才会生成图表组件。
+
+2. **组件内容错处理**：如果 react-markdown 在某些情况下将未闭合的代码块也输出为 code 节点，EChartsRenderer 内部处理：
+   - `JSON.parse` 失败 + `isStreaming === true` → 显示 "图表生成中..." 加载占位符
+   - `JSON.parse` 失败 + `isStreaming === false` → 降级为代码块 + 错误提示
+   - `JSON.parse` 成功 → 正常渲染图表
 
 ## 尺寸策略
 
