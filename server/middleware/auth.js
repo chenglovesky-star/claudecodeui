@@ -11,6 +11,9 @@ const getUserWorkspaceRoot = (username) => {
 
 // Get JWT secret from environment or use default (for development)
 const JWT_SECRET = process.env.JWT_SECRET || 'claude-ui-dev-secret-change-in-production';
+if (!process.env.JWT_SECRET) {
+  console.warn('[SECURITY] WARNING: Using default JWT_SECRET. Set JWT_SECRET environment variable in production!');
+}
 
 // Optional API key middleware
 const validateApiKey = (req, res, next) => {
@@ -69,21 +72,23 @@ const authenticateToken = async (req, res, next) => {
     req.user = user;
     req.user.workspaceRoot = user.username ? getUserWorkspaceRoot(user.username) : WORKSPACES_ROOT;
     next();
-  } catch (error) {
-    console.error('Token verification error:', error);
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
+    }
     return res.status(403).json({ error: 'Invalid token' });
   }
 };
 
-// Generate JWT token (never expires)
+// Generate JWT token (expires in 7 days)
 const generateToken = (user) => {
   return jwt.sign(
-    { 
-      userId: user.id, 
-      username: user.username 
+    {
+      userId: user.id,
+      username: user.username
     },
-    JWT_SECRET
-    // No expiration - token lasts forever
+    JWT_SECRET,
+    { expiresIn: '7d' }
   );
 };
 
