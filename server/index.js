@@ -50,7 +50,7 @@ import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursor
 import { queryCodex, abortCodexSession, isCodexSessionActive, getActiveCodexSessions } from './openai-codex.js';
 import { spawnGemini, abortGeminiSession, isGeminiSessionActive, getActiveGeminiSessions } from './gemini-cli.js';
 import { spawnClaudeCLI, abortClaudeCLISession, isClaudeCLISessionActive, testContextContinuity } from './claude-cli.js';
-import sessionManager from './sessionManager.js';
+import legacySessionManager from './sessionManager.js';
 import gitRoutes from './routes/git.js';
 import authRoutes from './routes/auth.js';
 import mcpRoutes from './routes/mcp.js';
@@ -70,6 +70,14 @@ import { validateApiKey, authenticateToken, authenticateWebSocket } from './midd
 import { IS_PLATFORM } from './constants/config.js';
 import { ConnectionRegistry } from './websocket/ConnectionRegistry.js';
 import { TransportLayer } from './websocket/TransportLayer.js';
+import { SessionManager } from './session/SessionManager.js';
+import { ProcessManager } from './session/ProcessManager.js';
+import { MessageBuffer } from './message/MessageBuffer.js';
+import { ClaudeSDKProvider } from './providers/claude-sdk.js';
+import { ClaudeCLIProvider } from './providers/claude-cli.js';
+import { CursorCLIProvider } from './providers/cursor-cli.js';
+import { GeminiCLIProvider } from './providers/gemini-cli.js';
+import { OpenAICodexProvider } from './providers/openai-codex.js';
 
 const VALID_PROVIDERS = ['claude', 'codex', 'cursor', 'gemini'];
 
@@ -332,6 +340,49 @@ const registry = new ConnectionRegistry();
 const transport = new TransportLayer(registry);
 registry.startZombieScan();
 transport.start();
+
+const sessionManager = new SessionManager();
+const processManager = new ProcessManager();
+const messageBuffer = new MessageBuffer();
+
+// Register Provider adapters
+processManager.registerProvider('claude', ClaudeSDKProvider);
+processManager.registerProvider('claude-cli', ClaudeCLIProvider);
+processManager.registerProvider('cursor', CursorCLIProvider);
+processManager.registerProvider('gemini', GeminiCLIProvider);
+processManager.registerProvider('codex', OpenAICodexProvider);
+
+// Wire session layer events
+processManager.on('process:output', ({ sessionId, data }) => {
+  const session = sessionManager.getSession(sessionId);
+  if (!session) return;
+  sessionManager.transition(sessionId, 'output');
+  if (data?.data?.delta?.text) {
+    messageBuffer.appendContent(sessionId, data.data.delta.text);
+  }
+});
+
+processManager.on('process:complete', ({ sessionId, result }) => {
+  sessionManager.transition(sessionId, 'complete');
+  messageBuffer.addCriticalEvent(sessionId, { type: 'session-completed', sessionId });
+  sessionManager.cleanup(sessionId);
+});
+
+processManager.on('process:error', ({ sessionId, error }) => {
+  sessionManager.transition(sessionId, 'error');
+  messageBuffer.addCriticalEvent(sessionId, { type: 'session-error', sessionId, error: error?.message });
+  sessionManager.cleanup(sessionId);
+});
+
+sessionManager.on('session:timeout', ({ sessionId, timeoutType }) => {
+  console.log(`[Index] Session timeout: ${sessionId} (${timeoutType})`);
+  messageBuffer.addCriticalEvent(sessionId, { type: 'session-timeout', sessionId, timeoutType });
+  processManager.abortSession(sessionId);
+});
+
+sessionManager.on('session:stateChanged', ({ sessionId, from, to, event }) => {
+  console.log(`[Index] Session ${sessionId}: ${from} → ${to} (event: ${event})`);
+});
 
 // Make WebSocket server available to routes
 app.locals.wss = wss;
@@ -1866,7 +1917,7 @@ function handleShellConnection(ws) {
                                 // Gemini CLI enforces its own native session IDs, unlike other agents that accept arbitrary string names.
                                 // The UI only knows about its internal generated `sessionId` (e.g. gemini_1234).
                                 // We must fetch the mapping from the backend session manager to pass the native `cliSessionId` to the shell.
-                                const sess = sessionManager.getSession(sessionId);
+                                const sess = legacySessionManager.getSession(sessionId);
                                 if (sess && sess.cliSessionId) {
                                     resumeId = sess.cliSessionId;
                                 }
@@ -2671,11 +2722,15 @@ async function startServer() {
 process.on('SIGTERM', () => {
     transport.stop();
     registry.dispose();
+    sessionManager.dispose();
+    processManager.dispose();
     process.exit(0);
 });
 process.on('SIGINT', () => {
     transport.stop();
     registry.dispose();
+    sessionManager.dispose();
+    processManager.dispose();
     process.exit(0);
 });
 
