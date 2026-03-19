@@ -26,7 +26,7 @@ const buildWebSocketUrl = (token: string | null) => {
   return `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`;
 };
 
-// ─── Constants ───
+// ─── Constants (MUST match server/config/constants.js) ───
 const HEARTBEAT_INTERVAL_MS = 20000;       // Aligned with server
 const HEARTBEAT_ACK_TIMEOUT_MS = 8000;     // Ack timeout
 const HEARTBEAT_MAX_MISSED = 2;            // Disconnect after 2 consecutive misses

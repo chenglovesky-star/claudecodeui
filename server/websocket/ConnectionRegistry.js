@@ -64,9 +64,11 @@ export class ConnectionRegistry extends EventEmitter {
     const record = this.#connections.get(connectionId);
     if (!record) return;
 
-    this.#connections.delete(connectionId);
+    // Emit BEFORE delete so listeners (e.g. TransportLayer.teardownConnection)
+    // can still access the ws reference via event payload
     console.log(`[Registry] unregistered ${record.type} connection ${connectionId} (user=${record.userId})`);
-    this.emit('connection:unregistered', { connectionId, type: record.type, userId: record.userId });
+    this.emit('connection:unregistered', { connectionId, type: record.type, userId: record.userId, ws: record.ws });
+    this.#connections.delete(connectionId);
   }
 
   /**

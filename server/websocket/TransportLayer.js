@@ -32,7 +32,7 @@ export class TransportLayer extends EventEmitter {
     this.#registry = registry;
 
     registry.on('connection:registered', ({ connectionId }) => this.setupConnection(connectionId));
-    registry.on('connection:unregistered', ({ connectionId }) => this.teardownConnection(connectionId));
+    registry.on('connection:unregistered', ({ connectionId, ws }) => this.teardownConnection(connectionId, ws));
 
     console.log('[Transport] TransportLayer initialized');
   }
@@ -91,18 +91,17 @@ export class TransportLayer extends EventEmitter {
     console.log(`[Transport] setup done: ${connectionId}`);
   }
 
-  teardownConnection(connectionId) {
+  teardownConnection(connectionId, ws) {
+    // ws is passed from the event payload (emitted BEFORE registry delete)
     const pongHandler = this.#pongListeners.get(connectionId);
     if (pongHandler) {
-      const record = this.#registry.get(connectionId);
-      if (record?.ws) record.ws.removeListener('pong', pongHandler);
+      if (ws) ws.removeListener('pong', pongHandler);
       this.#pongListeners.delete(connectionId);
     }
 
     const drainHandler = this.#drainListeners.get(connectionId);
     if (drainHandler) {
-      const record = this.#registry.get(connectionId);
-      if (record?.ws) record.ws.removeListener('drain', drainHandler);
+      if (ws) ws.removeListener('drain', drainHandler);
       this.#drainListeners.delete(connectionId);
     }
 

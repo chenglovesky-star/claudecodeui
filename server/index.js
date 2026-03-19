@@ -2063,6 +2063,7 @@ function handleShellConnection(ws) {
 
     ws.on('close', () => {
         console.log('🔌 Shell client disconnected');
+        if (ws._connectionId) registry.unregister(ws._connectionId);
 
         if (ptySessionKey) {
             const session = ptySessionsMap.get(ptySessionKey);
