@@ -27,8 +27,9 @@ const buildWebSocketUrl = (token: string | null) => {
 };
 
 // ─── Constants ───
-const HEARTBEAT_INTERVAL_MS = 25000; // Send ping every 25s (below common 30s proxy timeout)
-const PONG_TIMEOUT_MS = 10000;       // Wait 10s for pong before considering connection dead
+const HEARTBEAT_INTERVAL_MS = 20000;       // Aligned with server
+const HEARTBEAT_ACK_TIMEOUT_MS = 8000;     // Ack timeout
+const HEARTBEAT_MAX_MISSED = 2;            // Disconnect after 2 consecutive misses
 const RECONNECT_BASE_MS = 1000;      // Initial reconnect delay
 const RECONNECT_MAX_MS = 30000;      // Max reconnect delay
 const MESSAGE_QUEUE_MAX = 50;        // Max queued messages to prevent memory issues
@@ -44,6 +45,7 @@ const useWebSocketProviderState = (): WebSocketContextType => {
   const reconnectAttemptRef = useRef(0);
   const messageQueueRef = useRef<any[]>([]);
   const isConnectingRef = useRef(false); // Prevent duplicate connect() calls
+  const missedCountRef = useRef(0);
   const { token } = useAuth();
 
   // ─── Heartbeat ───
@@ -64,16 +66,20 @@ const useWebSocketProviderState = (): WebSocketContextType => {
 
   const startHeartbeat = useCallback((ws: WebSocket) => {
     stopHeartbeat();
+    missedCountRef.current = 0;
     heartbeatTimerRef.current = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'ping' }));
+        ws.send(JSON.stringify({ type: 'heartbeat', ts: Date.now() }));
 
-        // Start pong timeout — if no pong in 10s, force reconnect
         clearPongTimeout();
         pongTimeoutRef.current = setTimeout(() => {
-          console.warn('[WS] Pong timeout — connection appears dead, forcing reconnect');
-          ws.close(); // triggers onclose → reconnect
-        }, PONG_TIMEOUT_MS);
+          missedCountRef.current++;
+          console.warn(`[WS] Heartbeat ack timeout (${missedCountRef.current}/${HEARTBEAT_MAX_MISSED})`);
+          if (missedCountRef.current >= HEARTBEAT_MAX_MISSED) {
+            console.warn('[WS] Connection appears dead, forcing reconnect');
+            ws.close();
+          }
+        }, HEARTBEAT_ACK_TIMEOUT_MS);
       }
     }, HEARTBEAT_INTERVAL_MS);
   }, [stopHeartbeat, clearPongTimeout]);
@@ -133,9 +139,10 @@ const useWebSocketProviderState = (): WebSocketContextType => {
         try {
           const data = JSON.parse(event.data);
 
-          // Handle pong — clear timeout, connection is alive
-          if (data.type === 'pong') {
+          // Handle heartbeat-ack — clear timeout, connection is alive
+          if (data.type === 'heartbeat-ack') {
             clearPongTimeout();
+            missedCountRef.current = 0;
             return;
           }
 
