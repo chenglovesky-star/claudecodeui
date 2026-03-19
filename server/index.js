@@ -4,6 +4,7 @@ import './load-env.js';
 import { validateConfig } from './config/validateConfig.js';
 validateConfig();
 
+
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -66,6 +67,7 @@ import geminiRoutes from './routes/gemini.js';
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames, userProjectsDb, userDb } from './database/db.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 import { authLimiter, apiLimiter } from './middleware/rateLimiter.js';
+import { errorHandler, setupGlobalErrorHandlers } from './middleware/errorHandler.js';
 import { IS_PLATFORM } from './constants/config.js';
 import { ConnectionRegistry } from './websocket/ConnectionRegistry.js';
 import { TransportLayer } from './websocket/TransportLayer.js';
@@ -80,6 +82,9 @@ import { ClaudeCLIProvider } from './providers/claude-cli.js';
 import { CursorCLIProvider } from './providers/cursor-cli.js';
 import { GeminiCLIProvider } from './providers/gemini-cli.js';
 import { OpenAICodexProvider } from './providers/openai-codex.js';
+
+// Set up global error handlers early (after all imports)
+setupGlobalErrorHandlers();
 
 const VALID_PROVIDERS = ['claude', 'codex', 'cursor', 'gemini'];
 
@@ -1856,6 +1861,13 @@ app.get('*', (req, res) => {
         res.redirect(`http://localhost:${process.env.VITE_PORT || 5173}`);
     }
 });
+
+// 404 handler (after all routes, before error handler)
+app.use('/api', (req, res) => {
+  res.status(404).json({ success: false, error: 'Endpoint not found' });
+});
+
+app.use(errorHandler);
 
 // Helper function to convert permissions to rwx format
 function permToRwx(perm) {
