@@ -405,6 +405,9 @@ export function useChatRealtimeHandlers({
         break;
 
       case 'claude-response': {
+        // Reset fallback timer on ANY claude-response, not just text delta
+        // This prevents false timeouts during tool_use, subagent execution, etc.
+        resetFallbackTimer();
         if (messageData && typeof messageData === 'object' && messageData.type) {
           // Handle thinking delta (streaming thinking content)
           if (messageData.type === 'content_block_delta' && messageData.delta?.type === 'thinking_delta') {
@@ -806,6 +809,7 @@ export function useChatRealtimeHandlers({
         break;
 
       case 'cursor-system':
+        resetFallbackTimer();
         try {
           const cursorData = latestMessage.data;
           if (
@@ -996,6 +1000,7 @@ export function useChatRealtimeHandlers({
       }
 
       case 'codex-response': {
+        resetFallbackTimer();
         const codexData = latestMessage.data;
         if (!codexData) {
           break;
@@ -1168,6 +1173,7 @@ export function useChatRealtimeHandlers({
         break;
 
       case 'gemini-response': {
+        resetFallbackTimer();
         const geminiData = latestMessage.data;
 
         if (geminiData && geminiData.type === 'message' && typeof geminiData.content === 'string') {
