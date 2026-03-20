@@ -16,11 +16,7 @@ const initialState: LoginFormState = {
   password: '',
 };
 
-type LoginFormProps = {
-  onSwitchToRegister?: () => void;
-};
-
-export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
+export default function LoginForm() {
   const { t } = useTranslation('auth');
   const { login } = useAuth();
 
@@ -37,7 +33,6 @@ export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
       event.preventDefault();
       setErrorMessage('');
 
-      // Keep form validation local so each auth screen owns its own UI feedback.
       if (!formState.username.trim() || !formState.password) {
         setErrorMessage(t('login.errors.requiredFields'));
         return;
@@ -88,19 +83,6 @@ export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
         >
           {isSubmitting ? t('login.loading') : t('login.submit')}
         </button>
-
-        {onSwitchToRegister && (
-          <p className="text-center text-sm text-gray-500 dark:text-gray-400">
-            {t('login.noAccount')}{' '}
-            <button
-              type="button"
-              onClick={onSwitchToRegister}
-              className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
-            >
-              {t('login.signUp')}
-            </button>
-          </p>
-        )}
       </form>
     </AuthScreenLayout>
   );

@@ -6,7 +6,6 @@ import type {
   AuthContextValue,
   AuthProviderProps,
   AuthSessionPayload,
-  AuthStatusPayload,
   AuthUser,
   AuthUserPayload,
   OnboardingStatusPayload,
@@ -38,8 +37,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(() => readStoredToken());
   const [isLoading, setIsLoading] = useState(true);
-  const [needsSetup, setNeedsSetup] = useState(false);
-  const [allowRegistration, setAllowRegistration] = useState(true);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,7 +63,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setHasCompletedOnboarding(Boolean(payload?.hasCompletedOnboarding));
     } catch (caughtError) {
       console.error('Error checking onboarding status:', caughtError);
-      // Fail open to avoid blocking access on transient onboarding status errors.
       setHasCompletedOnboarding(true);
     }
   }, []);
@@ -79,18 +75,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       setIsLoading(true);
       setError(null);
-
-      const statusResponse = await api.auth.status();
-      const statusPayload = await parseJsonSafely<AuthStatusPayload>(statusResponse);
-
-      setAllowRegistration(statusPayload?.allowRegistration !== false);
-
-      if (statusPayload?.needsSetup) {
-        setNeedsSetup(true);
-        return;
-      }
-
-      setNeedsSetup(false);
 
       if (!token) {
         return;
@@ -121,7 +105,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     if (IS_PLATFORM) {
       setUser({ username: 'platform-user' });
-      setNeedsSetup(false);
       void checkOnboardingStatus().finally(() => {
         setIsLoading(false);
       });
@@ -145,37 +128,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         setSession(payload.user, payload.token);
-        setNeedsSetup(false);
         await checkOnboardingStatus();
         return { success: true };
       } catch (caughtError) {
         console.error('Login error:', caughtError);
-        setError(AUTH_ERROR_MESSAGES.networkError);
-        return { success: false, error: AUTH_ERROR_MESSAGES.networkError };
-      }
-    },
-    [checkOnboardingStatus, setSession],
-  );
-
-  const register = useCallback<AuthContextValue['register']>(
-    async (username, password) => {
-      try {
-        setError(null);
-        const response = await api.auth.register(username, password);
-        const payload = await parseJsonSafely<AuthSessionPayload>(response);
-
-        if (!response.ok || !payload?.token || !payload.user) {
-          const message = resolveApiErrorMessage(payload, AUTH_ERROR_MESSAGES.registrationFailed);
-          setError(message);
-          return { success: false, error: message };
-        }
-
-        setSession(payload.user, payload.token);
-        setNeedsSetup(false);
-        await checkOnboardingStatus();
-        return { success: true };
-      } catch (caughtError) {
-        console.error('Registration error:', caughtError);
         setError(AUTH_ERROR_MESSAGES.networkError);
         return { success: false, error: AUTH_ERROR_MESSAGES.networkError };
       }
@@ -199,25 +155,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
       user,
       token,
       isLoading,
-      needsSetup,
-      allowRegistration,
       hasCompletedOnboarding,
       error,
       login,
-      register,
       logout,
       refreshOnboardingStatus,
     }),
     [
-      allowRegistration,
       error,
       hasCompletedOnboarding,
       isLoading,
       login,
       logout,
-      needsSetup,
       refreshOnboardingStatus,
-      register,
       token,
       user,
     ],

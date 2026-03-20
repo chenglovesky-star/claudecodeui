@@ -37,12 +37,9 @@ export type AuthContextValue = {
   user: AuthUser | null;
   token: string | null;
   isLoading: boolean;
-  needsSetup: boolean;
-  allowRegistration: boolean;
   hasCompletedOnboarding: boolean;
   error: string | null;
   login: (username: string, password: string) => Promise<AuthActionResult>;
-  register: (username: string, password: string) => Promise<AuthActionResult>;
   logout: () => void;
   refreshOnboardingStatus: () => Promise<void>;
 };
