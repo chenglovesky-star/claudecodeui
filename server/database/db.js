@@ -223,6 +223,23 @@ const userDb = {
     }
   },
 
+  // Find or create a local user record for Hive-authenticated users
+  findOrCreateUserFromHive: (username) => {
+    try {
+      let user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+      if (user) {
+        db.prepare('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
+        return { id: user.id, username: user.username };
+      }
+      // Create new local user with placeholder password (auth is via Hive)
+      const stmt = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)');
+      const result = stmt.run(username, 'HIVE_AUTH_NO_LOCAL_PASSWORD');
+      return { id: result.lastInsertRowid, username };
+    } catch (err) {
+      throw err;
+    }
+  },
+
   hasCompletedOnboarding: (userId) => {
     try {
       const row = db.prepare('SELECT has_completed_onboarding FROM users WHERE id = ?').get(userId);
