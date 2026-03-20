@@ -19,15 +19,17 @@ export class OpenAICodexProvider extends BaseProvider {
    * @param {object} config - { command, options, writer }
    */
   async start(config) {
-    const { command, options, writer } = config;
+    const { command, options, writer, transport, connectionId } = config;
     this.isRunning = true;
     this.#writer = writer;
 
-    // Create a proxy writer that intercepts send() to emit events
-    const originalSend = writer.send.bind(writer);
+    // Proxy writer: route through transport.send() for backpressure
     writer.send = (data) => {
-      // Forward to original WebSocket
-      originalSend(data);
+      if (transport && connectionId) {
+        transport.send(connectionId, data);
+      } else {
+        if (writer.ws?.readyState === 1) writer.ws.send(JSON.stringify(data));
+      }
 
       // Also emit as provider events
       if (data.type === 'codex-response') {

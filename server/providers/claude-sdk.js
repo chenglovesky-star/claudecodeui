@@ -22,17 +22,22 @@ export class ClaudeSDKProvider extends BaseProvider {
    * writer is a WebSocketWriter that has send() method
    */
   async start(config) {
-    const { command, options, writer } = config;
+    const { command, options, writer, transport, connectionId } = config;
     this.isRunning = true;
     this.#writer = writer;
 
-    // Create a proxy writer that intercepts send() to emit events
-    const originalSend = writer.send.bind(writer);
+    // Proxy writer: route through transport.send() for backpressure,
+    // then emit provider events for SessionManager state tracking
     writer.send = (data) => {
-      // Forward to original WebSocket
-      originalSend(data);
+      // Send via transport (backpressure-aware, seqId-stamped)
+      if (transport && connectionId) {
+        transport.send(connectionId, data);
+      } else {
+        // Fallback: direct WebSocket send (shouldn't happen in normal flow)
+        if (writer.ws?.readyState === 1) writer.ws.send(JSON.stringify(data));
+      }
 
-      // Also emit as provider events
+      // Emit provider events for pipeline state tracking
       if (data.type === 'claude-response') {
         this.emitOutput(data);
       } else if (data.type === 'claude-complete') {
@@ -46,7 +51,6 @@ export class ClaudeSDKProvider extends BaseProvider {
         data.type === 'token-budget' ||
         data.type === 'claude-permission-request'
       ) {
-        // Pass through other messages
         this.emitOutput(data);
       }
     };

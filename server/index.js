@@ -74,7 +74,11 @@ import { IS_PLATFORM } from './constants/config.js';
 import { ConnectionRegistry } from './websocket/ConnectionRegistry.js';
 import { TransportLayer } from './websocket/TransportLayer.js';
 import { ShellHandler } from './websocket/ShellHandler.js';
-import { ChatHandler } from './websocket/ChatHandler.js';
+import { ChatHandler, WebSocketWriter } from './websocket/ChatHandler.js';
+import { resolveToolApproval, getPendingApprovalsForSession, isClaudeSDKSessionActive, getActiveClaudeSDKSessions, reconnectSessionWriter } from './claude-sdk.js';
+import { getActiveCursorSessions } from './cursor-cli.js';
+import { getActiveCodexSessions } from './openai-codex.js';
+import { getActiveGeminiSessions } from './gemini-cli.js';
 import { SessionManager } from './session/SessionManager.js';
 import { ProcessManager } from './session/ProcessManager.js';
 import { MessageBuffer } from './message/MessageBuffer.js';
@@ -297,153 +301,82 @@ processManager.registerProvider('codex', OpenAICodexProvider);
 const router = new MessageRouter({ transport, sessionManager, processManager, messageBuffer, registry });
 router.bindEvents();
 
-// ─── Bridge: router events → old provider functions ──────────────────────────
-// This keeps actual provider execution in the battle-tested old code while
-// routing, session creation, and quota checking go through the new pipeline.
+// ─── Single pipeline: router → ProcessManager → Provider adapters ────────────
+// No bridge, no dual paths. Provider adapters emit events → ProcessManager →
+// SessionManager transitions + MessageBuffer + transport.send() (via bindEvents)
 
-// Bridge: router:startSession → call old provider functions
-router.on('router:startSession', async ({ sessionId, providerType, connectionId, message }) => {
+router.on('router:startSession', ({ sessionId, providerType, connectionId, message }) => {
   const conn = registry.get(connectionId);
   if (!conn) return;
 
-  const { WebSocketWriter } = await import('./websocket/ChatHandler.js');
   const writer = new WebSocketWriter(conn.ws);
   writer.setSessionId(sessionId);
 
-  const command = message.command;
-  const options = message.options || {};
-
-  try {
-    // Transition to streaming immediately so SessionManager doesn't firstResponse-timeout
-    // (old providers send output via writer, not through ProcessManager events)
-    sessionManager.transition(sessionId, 'output');
-
-    switch (providerType) {
-      case 'claude': {
-        const { queryClaudeSDK } = await import('./claude-sdk.js');
-        await queryClaudeSDK(command, options, writer);
-        break;
-      }
-      case 'cursor': {
-        const { spawnCursor } = await import('./cursor-cli.js');
-        await spawnCursor(command, options, writer);
-        break;
-      }
-      case 'codex': {
-        const { queryCodex } = await import('./openai-codex.js');
-        await queryCodex(command, options, writer);
-        break;
-      }
-      case 'gemini': {
-        const { spawnGemini } = await import('./gemini-cli.js');
-        await spawnGemini(command, options, writer);
-        break;
-      }
-      case 'claude-cli': {
-        const { spawnClaudeCLI } = await import('./claude-cli.js');
-        await spawnClaudeCLI(command, options, writer);
-        break;
-      }
-      default:
-        console.error(`[Index] Unknown providerType: ${providerType}`);
-    }
-    // Provider finished normally → transition to completed
-    sessionManager.transition(sessionId, 'complete');
-    sessionManager.cleanup(sessionId);
-  } catch (error) {
-    console.error(`[Index] Provider ${providerType} error:`, error.message);
-    sessionManager.transition(sessionId, 'error');
-    sessionManager.cleanup(sessionId);
-    transport.send(connectionId, { type: 'error', error: error.message, sessionId });
-  }
-});
-
-// Bridge: router:permissionResponse → forward to Claude SDK
-router.on('router:permissionResponse', ({ connectionId, message }) => {
-  import('./claude-sdk.js').then(({ resolveToolApproval }) => {
-    if (message.requestId) {
-      resolveToolApproval(message.requestId, {
-        allow: Boolean(message.allow),
-        updatedInput: message.updatedInput,
-        message: message.message,
-        rememberEntry: message.rememberEntry
-      });
-    }
+  processManager.startSession(sessionId, providerType, {
+    command: message.command,
+    options: message.options || {},
+    writer,
+    transport,
+    connectionId,
   });
 });
 
-// Bridge: router:checkStatus → check old provider sessions
-router.on('router:checkStatus', async ({ connectionId, message }) => {
-  const provider = message.provider || 'claude';
-  const sessionId = message.sessionId;
-  let isActive = false;
+// Permission responses: forward to Claude SDK (only Claude SDK uses permissions)
+router.on('router:permissionResponse', ({ connectionId, message }) => {
+  if (message.requestId) {
+    resolveToolApproval(message.requestId, {
+      allow: Boolean(message.allow),
+      updatedInput: message.updatedInput,
+      message: message.message,
+      rememberEntry: message.rememberEntry
+    });
+  }
+});
 
-  try {
-    if (provider === 'cursor') {
-      const { isCursorSessionActive } = await import('./cursor-cli.js');
-      isActive = isCursorSessionActive(sessionId);
-    } else if (provider === 'codex') {
-      const { isCodexSessionActive } = await import('./openai-codex.js');
-      isActive = isCodexSessionActive(sessionId);
-    } else if (provider === 'gemini') {
-      const { isGeminiSessionActive } = await import('./gemini-cli.js');
-      isActive = isGeminiSessionActive(sessionId);
-    } else if (provider === 'claude-cli') {
-      const { isClaudeCLISessionActive } = await import('./claude-cli.js');
-      isActive = isClaudeCLISessionActive(sessionId);
-    } else {
-      const { isClaudeSDKSessionActive, reconnectSessionWriter } = await import('./claude-sdk.js');
-      isActive = isClaudeSDKSessionActive(sessionId);
-      if (isActive) {
-        const conn = registry.get(connectionId);
-        if (conn) reconnectSessionWriter(sessionId, conn.ws);
-      }
-    }
-  } catch (e) { /* ignore */ }
+// Session status: use ProcessManager for active check, fall back to old providers for reconnect
+router.on('router:checkStatus', ({ connectionId, message }) => {
+  const sessionId = message.sessionId;
+  const isActive = processManager.isActive(sessionId);
+
+  // Claude SDK reconnect: swap writer to new WebSocket on page refresh
+  if (isActive && (message.provider === 'claude' || !message.provider)) {
+    const conn = registry.get(connectionId);
+    if (conn) reconnectSessionWriter(sessionId, conn.ws);
+  }
 
   transport.send(connectionId, {
     type: 'session-status',
     sessionId,
-    provider,
+    provider: message.provider || 'claude',
     isProcessing: isActive
   });
 });
 
-// Bridge: router:getPendingPermissions → query Claude SDK
-router.on('router:getPendingPermissions', async ({ connectionId, message }) => {
+// Pending permissions: query Claude SDK
+router.on('router:getPendingPermissions', ({ connectionId, message }) => {
   const sessionId = message.sessionId;
-  try {
-    const { isClaudeSDKSessionActive, getPendingApprovalsForSession } = await import('./claude-sdk.js');
-    if (sessionId && isClaudeSDKSessionActive(sessionId)) {
-      const pending = getPendingApprovalsForSession(sessionId);
-      transport.send(connectionId, {
-        type: 'pending-permissions-response',
-        sessionId,
-        data: pending
-      });
-    }
-  } catch (e) { /* ignore */ }
+  if (sessionId && isClaudeSDKSessionActive(sessionId)) {
+    const pending = getPendingApprovalsForSession(sessionId);
+    transport.send(connectionId, {
+      type: 'pending-permissions-response',
+      sessionId,
+      data: pending
+    });
+  }
 });
 
-// Bridge: router:getActiveSessions → query all old providers
-router.on('router:getActiveSessions', async ({ connectionId }) => {
-  try {
-    const { getActiveClaudeSDKSessions } = await import('./claude-sdk.js');
-    const { getActiveCursorSessions } = await import('./cursor-cli.js');
-    const { getActiveCodexSessions } = await import('./openai-codex.js');
-    const { getActiveGeminiSessions } = await import('./gemini-cli.js');
-    transport.send(connectionId, {
-      type: 'active-sessions',
-      sessions: {
-        claude: getActiveClaudeSDKSessions(),
-        cursor: getActiveCursorSessions(),
-        codex: getActiveCodexSessions(),
-        gemini: getActiveGeminiSessions()
-      }
-    });
-  } catch (e) { /* ignore */ }
+// Active sessions: aggregate from ProcessManager + old provider tracking
+router.on('router:getActiveSessions', ({ connectionId }) => {
+  transport.send(connectionId, {
+    type: 'active-sessions',
+    sessions: {
+      claude: getActiveClaudeSDKSessions(),
+      cursor: getActiveCursorSessions(),
+      codex: getActiveCodexSessions(),
+      gemini: getActiveGeminiSessions()
+    }
+  });
 });
-// ─────────────────────────────────────────────────────────────────────────────
 
 const chatHandler = new ChatHandler({ registry, transport, router });
 
