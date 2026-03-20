@@ -314,6 +314,10 @@ router.on('router:startSession', async ({ sessionId, providerType, connectionId,
   const options = message.options || {};
 
   try {
+    // Transition to streaming immediately so SessionManager doesn't firstResponse-timeout
+    // (old providers send output via writer, not through ProcessManager events)
+    sessionManager.transition(sessionId, 'output');
+
     switch (providerType) {
       case 'claude': {
         const { queryClaudeSDK } = await import('./claude-sdk.js');
@@ -343,8 +347,13 @@ router.on('router:startSession', async ({ sessionId, providerType, connectionId,
       default:
         console.error(`[Index] Unknown providerType: ${providerType}`);
     }
+    // Provider finished normally → transition to completed
+    sessionManager.transition(sessionId, 'complete');
+    sessionManager.cleanup(sessionId);
   } catch (error) {
     console.error(`[Index] Provider ${providerType} error:`, error.message);
+    sessionManager.transition(sessionId, 'error');
+    sessionManager.cleanup(sessionId);
     transport.send(connectionId, { type: 'error', error: error.message, sessionId });
   }
 });

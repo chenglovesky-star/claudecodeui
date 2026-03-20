@@ -56,9 +56,11 @@ export class ChatHandler extends EventEmitter {
 
     #validateWorkspace(username, projectPath) {
         if (!username || !projectPath) return true;
-        const userRoot = path.join(WORKSPACES_ROOT, username);
+        // Validate against WORKSPACES_ROOT (broad security boundary),
+        // NOT WORKSPACES_ROOT/username (that's for browse-filesystem only)
         const resolved = path.resolve(projectPath);
-        return resolved.startsWith(userRoot + path.sep) || resolved === userRoot;
+        const root = path.resolve(WORKSPACES_ROOT);
+        return resolved.startsWith(root + path.sep) || resolved === root;
     }
 
     handleConnection(ws, request, connectionId) {
