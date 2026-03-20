@@ -163,8 +163,14 @@ function createMarkdownComponents(isStreaming?: boolean) {
   };
 }
 
+// System tags that should never be rendered to users
+const SYSTEM_TAG_RE = /<(?:system-reminder|command-message|command-name|command-args|local-command-stdout|task-notification|tool_use_error|fast_mode_info|custom-command-content[^>]*)>[\s\S]*?<\/(?:system-reminder|command-message|command-name|command-args|local-command-stdout|task-notification|tool_use_error|fast_mode_info|custom-command-content)>/g;
+
 export function Markdown({ children, className, isStreaming }: MarkdownProps) {
-  const content = normalizeInlineCodeFences(String(children ?? ''));
+  const raw = String(children ?? '');
+  // Strip system/internal tags before rendering (safety net)
+  const cleaned = raw.replace(SYSTEM_TAG_RE, '').trim();
+  const content = normalizeInlineCodeFences(cleaned);
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
   const rehypePlugins = useMemo(() => [rehypeKatex], []);
   const components = useMemo(() => createMarkdownComponents(isStreaming), [isStreaming]);

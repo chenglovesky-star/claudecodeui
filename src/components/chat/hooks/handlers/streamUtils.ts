@@ -1,6 +1,32 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { ChatMessage } from '../../types/types';
 
+// System tags that should never be shown to users
+const SYSTEM_TAG_PATTERNS = [
+  /<system-reminder>[\s\S]*?<\/system-reminder>/g,
+  /<command-message>[\s\S]*?<\/command-message>/g,
+  /<command-name>[\s\S]*?<\/command-name>/g,
+  /<command-args>[\s\S]*?<\/command-args>/g,
+  /<local-command-stdout>[\s\S]*?<\/local-command-stdout>/g,
+  /<task-notification>[\s\S]*?<\/task-notification>/g,
+  /<tool_use_error>[\s\S]*?<\/tool_use_error>/g,
+  /<fast_mode_info>[\s\S]*?<\/fast_mode_info>/g,
+  /<custom-command-content[^>]*>[\s\S]*?<\/custom-command-content>/g,
+];
+
+/**
+ * Strip system/internal tags from content before displaying to users.
+ * These tags are Claude Code internals that leak into assistant messages.
+ */
+export function stripSystemTags(content: string): string {
+  if (!content) return content;
+  let cleaned = content;
+  for (const pattern of SYSTEM_TAG_PATTERNS) {
+    cleaned = cleaned.replace(pattern, '');
+  }
+  return cleaned;
+}
+
 export const appendStreamingChunk = (
   setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>,
   chunk: string,
@@ -9,6 +35,9 @@ export const appendStreamingChunk = (
   if (!chunk) {
     return;
   }
+  // Strip system tags from streaming content before displaying
+  chunk = stripSystemTags(chunk);
+  if (!chunk.trim()) return;
 
   setChatMessages((previous) => {
     const updated = [...previous];
