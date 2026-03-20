@@ -29,6 +29,10 @@ export function validateConfig() {
     warnings.push('DATABASE_PATH not set, using default location');
   }
 
+  if (process.env.DEFAULT_BROWSE_PATH) {
+    log.info(`DEFAULT_BROWSE_PATH set to: ${process.env.DEFAULT_BROWSE_PATH}`);
+  }
+
   // Print results
   if (warnings.length > 0) {
     warnings.forEach(w => log.warn(w));

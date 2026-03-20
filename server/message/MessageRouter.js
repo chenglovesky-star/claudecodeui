@@ -25,6 +25,7 @@ export class MessageRouter extends EventEmitter {
   }
 
   handleMessage(connectionId, message) {
+    console.log(`[Router] handleMessage: type=${message.type} connectionId=${connectionId}`);
     switch (message.type) {
       case 'heartbeat':
         this.#transport.handleHeartbeat(connectionId, message);
@@ -85,13 +86,17 @@ export class MessageRouter extends EventEmitter {
   #handleProviderCommand(connectionId, message) {
     const providerType = PROVIDER_MAP[message.type];
     const conn = this.#registry.get(connectionId);
+    console.log(`[Router] handleProviderCommand: provider=${providerType} conn=${!!conn} userId=${conn?.userId}`);
     if (!conn) return;
 
     try {
       const sessionId = this.#sessionManager.create(conn.userId, connectionId, { providerType });
+      console.log(`[Router] session created: ${sessionId}, transitioning to start`);
       this.#sessionManager.transition(sessionId, 'start');
+      console.log(`[Router] emitting router:startSession, listeners=${this.listenerCount('router:startSession')}`);
       this.emit('router:startSession', { sessionId, providerType, connectionId, message });
     } catch (err) {
+      console.error(`[Router] handleProviderCommand error:`, err.message);
       if (err.name === 'QuotaExceededError') {
         this.#transport.send(connectionId, { type: 'quota-exceeded', reason: err.message });
       } else {

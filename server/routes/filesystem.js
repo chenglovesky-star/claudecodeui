@@ -6,9 +6,13 @@ import { WORKSPACES_ROOT, validateWorkspacePath } from './projects.js';
 
 const router = express.Router();
 
+// DEFAULT_BROWSE_PATH: separate from security boundary (WORKSPACES_ROOT)
+// Controls the default starting directory when browsing files
+const DEFAULT_BROWSE_PATH = process.env.DEFAULT_BROWSE_PATH || null;
+
 const expandWorkspacePath = (inputPath, userWorkspaceRoot) => {
     const root = userWorkspaceRoot || WORKSPACES_ROOT;
-    if (!inputPath) return root;
+    if (!inputPath) return DEFAULT_BROWSE_PATH || root;
     if (inputPath === '~') {
         return root;
     }
@@ -73,8 +77,8 @@ router.get('/browse-filesystem', async (req, res) => {
         const userRoot = req.user && req.user.workspaceRoot ? req.user.workspaceRoot : WORKSPACES_ROOT;
         console.log('[API] Browse filesystem request for path:', dirPath);
         console.log('[API] User workspace root is:', userRoot);
-        // Default to user's workspace directory if no path provided
-        const defaultRoot = userRoot;
+        // Default to DEFAULT_BROWSE_PATH (if set), then user workspace root
+        const defaultRoot = DEFAULT_BROWSE_PATH || userRoot;
         let targetPath = dirPath ? expandWorkspacePath(dirPath, userRoot) : defaultRoot;
 
         // Resolve and normalize the path

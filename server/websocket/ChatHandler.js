@@ -86,8 +86,10 @@ export class ChatHandler extends EventEmitter {
                 // Workspace validation for provider commands
                 if (PROVIDER_COMMAND_TYPES.has(data.type)) {
                     const projectPath = data.options?.projectPath || data.options?.cwd;
+                    log.info(`Provider command: type=${data.type} user=${ws.username} path=${projectPath}`);
                     if (!this.#validateWorkspace(ws.username, projectPath)) {
                         const userRoot = path.join(WORKSPACES_ROOT, ws.username);
+                        log.warn(`Workspace denied: user=${ws.username} path=${projectPath} root=${userRoot}`);
                         transport.send(connectionId, {
                             type: 'error',
                             error: `Access denied: project path must be within your workspace (${userRoot})`
