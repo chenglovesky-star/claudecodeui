@@ -219,6 +219,12 @@ function mapCliOptionsToSDK(options = {}) {
   // Clear CLAUDECODE from child process env to prevent nested-instance detection.
   // The server may itself be running inside Claude Code, inheriting CLAUDECODE=1.
   const cleanEnv = { ...process.env };
+
+  // Override API key if one was assigned by the key pool
+  if (options._assignedApiKey) {
+    cleanEnv.ANTHROPIC_AUTH_TOKEN = options._assignedApiKey;
+  }
+
   delete cleanEnv.CLAUDECODE;
 
   // Ensure PATH includes common node installation directories so the SDK can
@@ -698,6 +704,17 @@ async function queryClaudeSDK(command, options = {}, ws) {
     console.log('claude-complete event sent');
 
   } catch (error) {
+    // Detect 429 rate limit errors
+    const is429 = error?.status === 429
+      || error?.message?.includes('rate_limit')
+      || error?.message?.includes('429');
+
+    if (is429) {
+      const phase = sessionCreatedSent ? 'mid-stream' : 'pre-stream';
+      error._rateLimitPhase = phase;
+      error._isRateLimit = true;
+    }
+
     console.error('SDK query error:', error);
 
     // Clean up session on error
