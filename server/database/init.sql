@@ -76,3 +76,19 @@ CREATE TABLE IF NOT EXISTS user_projects (
 
 CREATE INDEX IF NOT EXISTS idx_user_projects_user_id ON user_projects(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_projects_project_name ON user_projects(project_name);
+
+-- Per-user MCP server configurations
+CREATE TABLE IF NOT EXISTS user_mcp_servers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'stdio',
+    config_json TEXT NOT NULL DEFAULT '{}',
+    scope TEXT NOT NULL DEFAULT 'user',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(user_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_mcp_servers_user_id ON user_mcp_servers(user_id);

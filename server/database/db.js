@@ -115,6 +115,21 @@ const runMigrations = () => {
     db.exec('CREATE INDEX IF NOT EXISTS idx_user_projects_user_id ON user_projects(user_id)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_user_projects_project_name ON user_projects(project_name)');
 
+    // Create user_mcp_servers table if it doesn't exist (per-user MCP persistence)
+    db.exec(`CREATE TABLE IF NOT EXISTS user_mcp_servers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'stdio',
+      config_json TEXT NOT NULL DEFAULT '{}',
+      scope TEXT NOT NULL DEFAULT 'user',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(user_id, name)
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_user_mcp_servers_user_id ON user_mcp_servers(user_id)');
+
     console.log('Database migrations completed successfully');
   } catch (error) {
     console.error('Error running migrations:', error.message);
@@ -550,6 +565,57 @@ const userProjectsDb = {
   },
 };
 
+// Per-user MCP server configuration operations
+const userMcpDb = {
+  // Upsert (add or update) an MCP server for a user
+  upsert: (userId, name, type, configJson, scope = 'user') => {
+    const configStr = typeof configJson === 'string' ? configJson : JSON.stringify(configJson);
+    db.prepare(`
+      INSERT INTO user_mcp_servers (user_id, name, type, config_json, scope)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, name)
+      DO UPDATE SET type = excluded.type, config_json = excluded.config_json,
+                    scope = excluded.scope, updated_at = CURRENT_TIMESTAMP
+    `).run(userId, name, type, configStr, scope);
+  },
+
+  // Get all MCP servers for a user
+  getAll: (userId) => {
+    return db.prepare(
+      'SELECT id, name, type, config_json, scope, created_at, updated_at FROM user_mcp_servers WHERE user_id = ?'
+    ).all(userId);
+  },
+
+  // Get a single MCP server by name for a user
+  getByName: (userId, name) => {
+    return db.prepare(
+      'SELECT id, name, type, config_json, scope FROM user_mcp_servers WHERE user_id = ? AND name = ?'
+    ).get(userId, name);
+  },
+
+  // Delete an MCP server by name for a user
+  remove: (userId, name) => {
+    const result = db.prepare(
+      'DELETE FROM user_mcp_servers WHERE user_id = ? AND name = ?'
+    ).run(userId, name);
+    return result.changes > 0;
+  },
+
+  // Build SDK-compatible mcpServers object from DB rows
+  toSdkFormat: (rows) => {
+    const servers = {};
+    for (const row of rows) {
+      try {
+        const config = JSON.parse(row.config_json);
+        servers[row.name] = { type: row.type, ...config };
+      } catch {
+        console.warn(`[MCP-DB] Invalid config JSON for server "${row.name}", skipping`);
+      }
+    }
+    return servers;
+  },
+};
+
 // Backward compatibility - keep old names pointing to new system
 const githubTokensDb = {
   createGithubToken: (userId, tokenName, githubToken, description = null) => {
@@ -578,5 +644,6 @@ export {
   sessionNamesDb,
   applyCustomSessionNames,
   userProjectsDb,
+  userMcpDb,
   githubTokensDb // Backward compatibility
 };
