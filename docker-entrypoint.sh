@@ -7,8 +7,8 @@ chown -R claude:claude /home/claude/.claude /data /workspace 2>/dev/null || true
 # 确保 Claude CLI 所需子目录存在
 su claude -c "mkdir -p /home/claude/.claude/debug /home/claude/.claude/statsig /home/claude/.claude/projects"
 
-# 如果 settings.json 不存在（被空 volume 覆盖），从备份恢复
-if [ ! -f /home/claude/.claude/settings.json ] && [ -f /home/claude/.claude-settings-default.json ]; then
+# 每次启动都从镜像内置模板恢复 settings.json（确保模板更新生效，不被 volume 中的旧文件覆盖）
+if [ -f /home/claude/.claude-settings-default.json ]; then
     cp /home/claude/.claude-settings-default.json /home/claude/.claude/settings.json
     chown claude:claude /home/claude/.claude/settings.json
 fi
@@ -21,41 +21,21 @@ if [ -d /home/claude/.claude-skills-default ] && [ "$(ls -A /home/claude/.claude
     echo "Built-in skills synced to /home/claude/.claude/skills"
 fi
 
-# 处理 settings.json：清理空值/注释值，然后用环境变量覆盖（如有）
+# 清理 settings.json 中的空值和注释占位符（以 # 开头的值）
 SETTINGS_FILE="/home/claude/.claude/settings.json"
 if [ -f "$SETTINGS_FILE" ] && command -v node >/dev/null 2>&1; then
     node -e "
 const fs = require('fs');
 const settings = JSON.parse(fs.readFileSync('$SETTINGS_FILE', 'utf8'));
-if (!settings.env) settings.env = {};
-
-// 第一步：清理 claude-settings.json 中的空值和注释占位符（以 # 开头的值）
-for (const [key, val] of Object.entries(settings.env)) {
-    if (!val || val.startsWith('#')) {
-        delete settings.env[key];
+if (settings.env) {
+    for (const [key, val] of Object.entries(settings.env)) {
+        if (!val || val.startsWith('#')) delete settings.env[key];
     }
 }
-
-// 第二步：环境变量覆盖（优先级高于文件中的值）
-const overrideKeys = [
-    'ANTHROPIC_BASE_URL',
-    'ANTHROPIC_AUTH_TOKEN',
-    'API_TIMEOUT_MS',
-    'ANTHROPIC_MODEL',
-    'ANTHROPIC_SMALL_FAST_MODEL',
-    'ANTHROPIC_DEFAULT_SONNET_MODEL',
-    'ANTHROPIC_DEFAULT_OPUS_MODEL',
-    'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-];
-
-for (const key of overrideKeys) {
-    if (process.env[key]) settings.env[key] = process.env[key];
-}
-
 fs.writeFileSync('$SETTINGS_FILE', JSON.stringify(settings, null, 2));
 "
     chown claude:claude "$SETTINGS_FILE"
-    echo "Settings.json 已处理完成（清理空值 + 环境变量覆盖）"
+    echo "Settings.json 已从模板生成（空值已清理）"
 fi
 
 # 导出完整 PATH，确保 claude 用户的子进程能找到 node、claude 等全局命令
