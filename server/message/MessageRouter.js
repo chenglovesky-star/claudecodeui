@@ -14,14 +14,20 @@ export class MessageRouter extends EventEmitter {
   #processManager;
   #messageBuffer;
   #registry;
+  #requestQueue;
 
-  constructor({ transport, sessionManager, processManager, messageBuffer, registry }) {
+  constructor({ transport, sessionManager, processManager, messageBuffer, registry, requestQueue }) {
     super();
     this.#transport = transport;
     this.#sessionManager = sessionManager;
     this.#processManager = processManager;
     this.#messageBuffer = messageBuffer;
     this.#registry = registry;
+    this.#requestQueue = requestQueue || null;
+  }
+
+  setRequestQueue(queue) {
+    this.#requestQueue = queue;
   }
 
   handleMessage(connectionId, message) {
@@ -89,6 +95,53 @@ export class MessageRouter extends EventEmitter {
     console.log(`[Router] handleProviderCommand: provider=${providerType} conn=${!!conn} userId=${conn?.userId}`);
     if (!conn) return;
 
+    // If no queue configured, use original flow
+    if (!this.#requestQueue) {
+      return this.#startSessionDirect(connectionId, message, providerType, conn);
+    }
+
+    // Enqueue request
+    const result = this.#requestQueue.enqueue({
+      userId: conn.userId,
+      username: conn.username,
+      connectionId,
+      command: message.command,
+      options: message.options || {},
+      onDispatched: ({ assignedKey }) => {
+        const enrichedMessage = {
+          ...message,
+          options: { ...(message.options || {}), _assignedApiKey: assignedKey.apiKey, _assignedKeyId: assignedKey.id },
+        };
+        this.#startSessionDirect(connectionId, enrichedMessage, providerType, conn);
+      },
+    });
+
+    if (result.rejected) {
+      this.#transport.send(connectionId, {
+        type: 'queue-status',
+        data: { status: 'rejected', message: result.reason },
+      });
+      return;
+    }
+
+    if (!result.queued) {
+      // Fast path: key immediately available
+      const enrichedMessage = {
+        ...message,
+        options: { ...(message.options || {}), _assignedApiKey: result.assignedKey.apiKey, _assignedKeyId: result.assignedKey.id },
+      };
+      this.#startSessionDirect(connectionId, enrichedMessage, providerType, conn);
+      return;
+    }
+
+    // Queued: notify frontend
+    this.#transport.send(connectionId, {
+      type: 'queue-status',
+      data: { status: 'queued', position: result.position, estimatedWaitSec: result.position * 10, queuedAt: Date.now() },
+    });
+  }
+
+  #startSessionDirect(connectionId, message, providerType, conn) {
     try {
       const sessionId = this.#sessionManager.create(conn.userId, connectionId, { providerType });
       console.log(`[Router] session created: ${sessionId}, transitioning to start`);
