@@ -271,9 +271,23 @@ export default function ChatMessagesPane({
         </>
       )}
 
-      {isLoading && !chatMessages.some(m => m.isStreaming) && (
-        <AssistantThinkingIndicator selectedProvider={provider} />
-      )}
+      {isLoading && !chatMessages.some(m => m.isStreaming) && (() => {
+        // Don't show the full "thinking" indicator if the assistant already
+        // has visible content (e.g., intermediate text between tool calls).
+        // Show a subtle inline indicator instead.
+        const lastAssistantMsg = [...chatMessages].reverse().find(
+          m => m.type === 'assistant' && m.content && !m.isToolUse
+        );
+        if (lastAssistantMsg) {
+          return (
+            <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-400 dark:text-gray-500">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
+              <span>处理中...</span>
+            </div>
+          );
+        }
+        return <AssistantThinkingIndicator selectedProvider={provider} />;
+      })()}
     </div>
   );
 }
