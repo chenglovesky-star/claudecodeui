@@ -47,8 +47,8 @@ const useWebSocketProviderState = (): WebSocketContextType => {
   const messageQueueRef = useRef<any[]>([]);
   const isConnectingRef = useRef(false); // Prevent duplicate connect() calls
   const missedCountRef = useRef(0);
-  const lastSeqIdRef = useRef<number>(0);
-  const activeSessionIdRef = useRef<string | null>(null);
+  const lastSeqIdMapRef = useRef<Map<string, number>>(new Map());
+  const activeSessionIdsRef = useRef<Set<string>>(new Set());
   const authFailureCountRef = useRef(0);
   const { token, logout } = useAuth();
 
@@ -139,14 +139,19 @@ const useWebSocketProviderState = (): WebSocketContextType => {
         startHeartbeat(websocket);
         flushMessageQueue(websocket);
 
-        // Resume active session if reconnecting
-        if (activeSessionIdRef.current && lastSeqIdRef.current > 0) {
-          console.log(`[WS] Resuming session ${activeSessionIdRef.current} from seqId ${lastSeqIdRef.current}`);
-          websocket.send(JSON.stringify({
-            type: 'resume',
-            sessionId: activeSessionIdRef.current,
-            lastSeqId: lastSeqIdRef.current,
-          }));
+        // Resume all active sessions if reconnecting
+        if (activeSessionIdsRef.current.size > 0) {
+          activeSessionIdsRef.current.forEach(sessionId => {
+            const lastSeqId = lastSeqIdMapRef.current.get(sessionId) || 0;
+            if (lastSeqId > 0) {
+              console.log(`[WS] Resuming session ${sessionId} from seqId ${lastSeqId}`);
+              websocket.send(JSON.stringify({
+                type: 'resume',
+                sessionId,
+                lastSeqId,
+              }));
+            }
+          });
         }
       };
 
@@ -162,23 +167,26 @@ const useWebSocketProviderState = (): WebSocketContextType => {
           }
 
           if (data.type === 'resume-response') {
-            console.log(`[WS] Resume response received, state: ${data.currentState}`);
-            lastSeqIdRef.current = data.lastSeqId || lastSeqIdRef.current;
+            console.log(`[WS] Resume response for session ${data.sessionId}, state: ${data.currentState}`);
+            if (data.sessionId && data.lastSeqId) {
+              lastSeqIdMapRef.current.set(data.sessionId, data.lastSeqId);
+            }
             setLatestMessage(data);
             return;
           }
 
-          // Track seqId for gap detection
-          if (data.seqId !== undefined) {
-            if (data.seqId > lastSeqIdRef.current + 1 && lastSeqIdRef.current > 0) {
-              console.warn(`[WS] SeqId gap: expected ${lastSeqIdRef.current + 1}, got ${data.seqId}`);
+          // Track seqId per session for gap detection
+          if (data.seqId !== undefined && data.sessionId) {
+            const prevSeqId = lastSeqIdMapRef.current.get(data.sessionId) || 0;
+            if (data.seqId > prevSeqId + 1 && prevSeqId > 0) {
+              console.warn(`[WS] SeqId gap for session ${data.sessionId}: expected ${prevSeqId + 1}, got ${data.seqId}`);
             }
-            lastSeqIdRef.current = data.seqId;
+            lastSeqIdMapRef.current.set(data.sessionId, data.seqId);
           }
 
-          // Track active session
+          // Track all active sessions
           if (data.sessionId) {
-            activeSessionIdRef.current = data.sessionId;
+            activeSessionIdsRef.current.add(data.sessionId);
           }
 
           // Debug flow logging
@@ -217,6 +225,19 @@ const useWebSocketProviderState = (): WebSocketContextType => {
           }
 
           setLatestMessage(data);
+
+          // Clean up completed/errored sessions from tracking
+          const sessionEndTypes = new Set([
+            'session-completed', 'session-aborted', 'session-timeout', 'session-error',
+            'claude-complete', 'cursor-complete', 'codex-complete', 'gemini-complete',
+          ]);
+          if (data.type && sessionEndTypes.has(data.type) && data.sessionId) {
+            activeSessionIdsRef.current.delete(data.sessionId);
+            // Keep seqId for a minute in case of late messages
+            setTimeout(() => {
+              lastSeqIdMapRef.current.delete(data.sessionId);
+            }, 60000);
+          }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
         }
