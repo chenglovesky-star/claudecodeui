@@ -21,7 +21,7 @@ if [ -d /home/claude/.claude-skills-default ] && [ "$(ls -A /home/claude/.claude
     echo "Built-in skills synced to /home/claude/.claude/skills"
 fi
 
-# 从环境变量动态注入敏感配置到 settings.json（避免硬编码密钥）
+# 处理 settings.json：清理空值/注释值，然后用环境变量覆盖（如有）
 SETTINGS_FILE="/home/claude/.claude/settings.json"
 if [ -f "$SETTINGS_FILE" ] && command -v node >/dev/null 2>&1; then
     node -e "
@@ -29,26 +29,33 @@ const fs = require('fs');
 const settings = JSON.parse(fs.readFileSync('$SETTINGS_FILE', 'utf8'));
 if (!settings.env) settings.env = {};
 
-// 只注入已明确设置（非空）的环境变量，未设置的不写入 settings.json
-const envMap = {
-    'ANTHROPIC_BASE_URL': process.env.ANTHROPIC_BASE_URL,
-    'ANTHROPIC_AUTH_TOKEN': process.env.ANTHROPIC_AUTH_TOKEN,
-    'API_TIMEOUT_MS': process.env.API_TIMEOUT_MS,
-    'ANTHROPIC_MODEL': process.env.ANTHROPIC_MODEL,
-    'ANTHROPIC_SMALL_FAST_MODEL': process.env.ANTHROPIC_SMALL_FAST_MODEL,
-    'ANTHROPIC_DEFAULT_SONNET_MODEL': process.env.ANTHROPIC_DEFAULT_SONNET_MODEL,
-    'ANTHROPIC_DEFAULT_OPUS_MODEL': process.env.ANTHROPIC_DEFAULT_OPUS_MODEL,
-    'ANTHROPIC_DEFAULT_HAIKU_MODEL': process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL,
-};
+// 第一步：清理 claude-settings.json 中的空值和注释占位符（以 # 开头的值）
+for (const [key, val] of Object.entries(settings.env)) {
+    if (!val || val.startsWith('#')) {
+        delete settings.env[key];
+    }
+}
 
-for (const [key, val] of Object.entries(envMap)) {
-    if (val) settings.env[key] = val;
+// 第二步：环境变量覆盖（优先级高于文件中的值）
+const overrideKeys = [
+    'ANTHROPIC_BASE_URL',
+    'ANTHROPIC_AUTH_TOKEN',
+    'API_TIMEOUT_MS',
+    'ANTHROPIC_MODEL',
+    'ANTHROPIC_SMALL_FAST_MODEL',
+    'ANTHROPIC_DEFAULT_SONNET_MODEL',
+    'ANTHROPIC_DEFAULT_OPUS_MODEL',
+    'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+];
+
+for (const key of overrideKeys) {
+    if (process.env[key]) settings.env[key] = process.env[key];
 }
 
 fs.writeFileSync('$SETTINGS_FILE', JSON.stringify(settings, null, 2));
 "
     chown claude:claude "$SETTINGS_FILE"
-    echo "Settings.json 已从环境变量注入敏感配置"
+    echo "Settings.json 已处理完成（清理空值 + 环境变量覆盖）"
 fi
 
 # 导出完整 PATH，确保 claude 用户的子进程能找到 node、claude 等全局命令
