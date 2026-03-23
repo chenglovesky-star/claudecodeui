@@ -76,12 +76,14 @@ async function scanCommandsDirectory(dir, baseDir, namespace) {
 }
 
 /**
- * Scan ~/.claude/skills/ for skill directories containing SKILL.md
+ * Scan a single skills directory for skill directories containing SKILL.md
+ * @param {string} skillsDir - Directory to scan
+ * @param {string} namespace - Namespace for discovered skills
+ * @param {string} [descPrefix] - Optional prefix for description
+ * @returns {Promise<Array>} Array of skill objects
  */
-async function scanSkillsDirectory() {
+async function scanSingleSkillsDir(skillsDir, namespace, descPrefix) {
   const skills = [];
-  const skillsDir = path.join(os.homedir(), '.claude', 'skills');
-
   try {
     await fs.access(skillsDir);
     const entries = await fs.readdir(skillsDir, { withFileTypes: true });
@@ -104,9 +106,9 @@ async function scanSkillsDirectory() {
           name: '/' + entry.name,
           path: skillMdPath,
           relativePath: entry.name + '/SKILL.md',
-          description,
-          namespace: 'skill',
-          metadata: { ...frontmatter, type: 'skill' }
+          description: descPrefix ? `(${descPrefix}) ${description}` : description,
+          namespace,
+          metadata: { ...frontmatter, type: 'skill', builtin: namespace === 'builtin-skill' }
         });
       } catch (err) {
         if (err.code !== 'ENOENT') {
@@ -116,7 +118,34 @@ async function scanSkillsDirectory() {
     }
   } catch (err) {
     if (err.code !== 'ENOENT' && err.code !== 'EACCES') {
-      console.error(`Error scanning skills directory:`, err.message);
+      console.error(`Error scanning skills directory ${skillsDir}:`, err.message);
+    }
+  }
+  return skills;
+}
+
+/**
+ * Scan all skill sources: built-in (server/skills/), user (~/.claude/skills/), plugins
+ */
+async function scanSkillsDirectory() {
+  const skills = [];
+
+  // 1. Scan built-in skills (server/skills/) — lowest priority, can be overridden by user skills
+  const builtinSkillsDir = path.join(path.dirname(__dirname), 'skills');
+  const builtinSkills = await scanSingleSkillsDir(builtinSkillsDir, 'builtin-skill', '内置');
+  skills.push(...builtinSkills);
+
+  // 2. Scan user-level skills (~/.claude/skills/) — overrides built-in if same name
+  const skillsDir = path.join(os.homedir(), '.claude', 'skills');
+  const userSkills = await scanSingleSkillsDir(skillsDir, 'skill');
+
+  // User skills override built-in skills with the same name
+  for (const userSkill of userSkills) {
+    const builtinIndex = skills.findIndex(s => s.name === userSkill.name);
+    if (builtinIndex !== -1) {
+      skills[builtinIndex] = userSkill; // replace built-in with user version
+    } else {
+      skills.push(userSkill);
     }
   }
 
@@ -593,7 +622,9 @@ router.post('/load', async (req, res) => {
 
     // Security: Prevent path traversal
     const resolvedPath = path.resolve(commandPath);
+    const builtinSkillsBase = path.resolve(path.join(path.dirname(__dirname), 'skills'));
     if (!resolvedPath.startsWith(path.resolve(os.homedir())) &&
+        !resolvedPath.startsWith(builtinSkillsBase) &&
         !resolvedPath.includes('.claude/commands') &&
         !resolvedPath.includes('.claude/skills') &&
         !resolvedPath.includes('.claude/plugins')) {
@@ -677,6 +708,7 @@ router.post('/execute', async (req, res) => {
       const userBase = path.resolve(path.join(os.homedir(), '.claude', 'commands'));
       const skillsBase = path.resolve(path.join(os.homedir(), '.claude', 'skills'));
       const pluginsBase = path.resolve(path.join(os.homedir(), '.claude', 'plugins'));
+      const builtinBase = path.resolve(path.join(path.dirname(__dirname), 'skills'));
       const projectBase = context?.projectPath
         ? path.resolve(path.join(context.projectPath, '.claude', 'commands'))
         : null;
@@ -684,7 +716,7 @@ router.post('/execute', async (req, res) => {
         const rel = path.relative(base, resolvedPath);
         return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
       };
-      if (!(isUnder(userBase) || isUnder(skillsBase) || isUnder(pluginsBase) || (projectBase && isUnder(projectBase)))) {
+      if (!(isUnder(userBase) || isUnder(skillsBase) || isUnder(pluginsBase) || isUnder(builtinBase) || (projectBase && isUnder(projectBase)))) {
         return res.status(403).json({
           error: 'Access denied',
           message: 'Command must be in .claude/commands directory'
@@ -705,6 +737,30 @@ router.post('/execute', async (req, res) => {
       const placeholder = `$${index + 1}`;
       processedContent = processedContent.replace(new RegExp(`\\${placeholder}\\b`, 'g'), arg);
     });
+
+    // For built-in skills with bundled memory, inject memory content into skill prompt
+    const builtinBase = path.resolve(path.join(path.dirname(__dirname), 'skills'));
+    const resolvedCmdPath = path.resolve(commandPath);
+    if (resolvedCmdPath.startsWith(builtinBase)) {
+      const skillMemoryDir = path.join(path.dirname(resolvedCmdPath), 'memory');
+      try {
+        await fs.access(skillMemoryDir);
+        const memFiles = await fs.readdir(skillMemoryDir);
+        const mdFiles = memFiles.filter(f => f.endsWith('.md'));
+        if (mdFiles.length > 0) {
+          let memoryBlock = '\n\n---\n## 内置默认记忆（开箱即用知识库）\n\n';
+          memoryBlock += '> 以下为内置记忆内容。如果用户工作区存在 `./memory/` 目录且有同名文件，应优先使用用户工作区的版本。\n\n';
+          for (const mdFile of mdFiles) {
+            const memContent = await fs.readFile(path.join(skillMemoryDir, mdFile), 'utf8');
+            const { content: memBody } = matter(memContent);
+            memoryBlock += `### 📄 ${mdFile}\n\n${memBody.trim()}\n\n`;
+          }
+          processedContent += memoryBlock;
+        }
+      } catch {
+        // No memory directory, skip injection
+      }
+    }
 
     res.json({
       type: 'custom',

@@ -1,7 +1,7 @@
 # ============================================
 # Stage 1: Build — 编译前端 + 原生模块
 # ============================================
-FROM node:20-bookworm-slim AS builder
+FROM docker.m.daocloud.io/node:22-bookworm-slim AS builder
 
 # 清除代理设置，避免走公司代理导致 apt/npm 请求失败
 ENV http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY="" no_proxy=""
@@ -38,7 +38,7 @@ RUN npm run build
 # ============================================
 # Stage 2: Production — 仅运行时
 # ============================================
-FROM node:20-bookworm-slim
+FROM docker.m.daocloud.io/node:22-bookworm-slim
 
 # 清除代理设置
 ENV http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY="" no_proxy=""

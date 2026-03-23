@@ -136,3 +136,5 @@ opencode-manager/
 team/
 claudecodeui/
 docker.env
+setup-claude-settings.sh
+.superpowers/

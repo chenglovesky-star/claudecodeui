@@ -64,6 +64,20 @@
     ],
     "defaultMode": "bypassPermissions"
   },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "changes=$(git status --porcelain 2>/dev/null); if [ -n \"$changes\" ]; then file_count=$(echo \"$changes\" | wc -l | tr -d ' '); echo \"{\\\"systemMessage\\\":\\\"检测到 ${file_count} 个文件有变更，是否需要提交到 GitHub？请回复 /commit 快速提交，或告诉我你想如何处理这些变更。\\\"}\"; fi",
+            "timeout": 10,
+            "statusMessage": "检查 Git 变更..."
+          }
+        ]
+      }
+    ]
+  },
   "alwaysThinkingEnabled": false,
   "hasCompletedOnboarding": true,
   "skipDangerousModePermissionPrompt": true
