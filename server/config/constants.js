@@ -37,6 +37,20 @@ export const BUFFER_SEQ_ID_START = 1;               // seqId 起始值
 export const CLIENT_FALLBACK_TIMEOUT_MS = 90000;    // 前端兜底超时 90 秒
 export const CLIENT_TOOL_FALLBACK_TIMEOUT_MS = 630000; // 工具执行兜底 10.5 分钟
 
+// ========== 请求队列 ==========
+export const QUEUE_MAX_SIZE = 50;                  // 队列最大长度
+export const QUEUE_TIMEOUT_MS = 120000;            // 排队超时 120 秒
+export const QUEUE_POLL_INTERVAL_MS = 1000;        // 兜底轮询间隔 1 秒
+export const QUOTA_MAX_QUEUE_PER_USER = 3;         // 每用户最大排队数
+
+// ========== API Key 池 ==========
+export const KEY_COOLDOWN_MS = 60000;              // Key 熔断冷却 60 秒
+export const KEY_ERROR_COOLDOWN_MS = 300000;       // Key 错误冷却 5 分钟
+export const KEY_MAX_CONSECUTIVE_ERRORS = 3;       // 连续错误阈值
+export const KEY_RPM_WINDOW_MS = 60000;            // RPM 滑动窗口 60 秒
+export const KEY_DEFAULT_RPM_LIMIT = 50;           // 默认 RPM 上限
+export const MAX_429_RETRIES = 3;                  // 429 最大重试次数
+
 // ========== Shell ==========
 export const PTY_SESSION_TIMEOUT_MS = 1800000;      // PTY 会话超时 30 分钟
 export const SHELL_URL_PARSE_BUFFER_LIMIT = 32768;  // URL 检测缓冲区限制
