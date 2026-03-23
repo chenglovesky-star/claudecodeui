@@ -88,6 +88,9 @@ import { ClaudeCLIProvider } from './providers/claude-cli.js';
 import { CursorCLIProvider } from './providers/cursor-cli.js';
 import { GeminiCLIProvider } from './providers/gemini-cli.js';
 import { OpenAICodexProvider } from './providers/openai-codex.js';
+import { KeyPoolManager } from './queue/KeyPoolManager.js';
+import { RequestQueue } from './queue/RequestQueue.js';
+import { anthropicKeyPoolDb } from './database/anthropicKeyPoolDb.js';
 
 // Set up global error handlers early (after all imports)
 setupGlobalErrorHandlers();
@@ -565,6 +568,86 @@ async function startServer() {
     try {
         // Initialize authentication database
         await initializeDatabase();
+
+        // Initialize Key Pool (must be after DB init)
+        const keyPoolManager = new KeyPoolManager();
+        const dbKeys = anthropicKeyPoolDb.getEnabled();
+        if (dbKeys.length === 0 && process.env.ANTHROPIC_AUTH_TOKEN) {
+          const defaultKey = anthropicKeyPoolDb.add('default', process.env.ANTHROPIC_AUTH_TOKEN, 50);
+          keyPoolManager.loadKeys([{ ...defaultKey, api_key: process.env.ANTHROPIC_AUTH_TOKEN, enabled: 1 }]);
+          console.log('[KeyPool] Imported default key from ANTHROPIC_AUTH_TOKEN');
+        } else {
+          keyPoolManager.loadKeys(dbKeys);
+          console.log(`[KeyPool] Loaded ${dbKeys.length} keys from database`);
+        }
+
+        // Initialize Request Queue
+        const requestQueue = new RequestQueue(keyPoolManager);
+
+        // Inject into router (created at module top level)
+        router.setRequestQueue(requestQueue);
+
+        // Expose to Express app for route handlers
+        app.locals.keyPoolManager = keyPoolManager;
+        app.locals.requestQueue = requestQueue;
+
+        // Session → Key mapping for release on completion
+        const sessionKeyMap = new Map();
+
+        // Track assigned keys per session
+        router.on('router:startSession', ({ sessionId, message }) => {
+          const assignedKeyId = message.options?._assignedKeyId;
+          if (assignedKeyId) {
+            sessionKeyMap.set(sessionId, assignedKeyId);
+          }
+        });
+
+        // Release key when session completes (additional listener, doesn't conflict with existing ones)
+        processManager.on('process:complete', ({ sessionId }) => {
+          const keyId = sessionKeyMap.get(sessionId);
+          if (keyId) {
+            keyPoolManager.release(keyId);
+            sessionKeyMap.delete(sessionId);
+          }
+        });
+        processManager.on('process:error', ({ sessionId }) => {
+          const keyId = sessionKeyMap.get(sessionId);
+          if (keyId) {
+            keyPoolManager.release(keyId);
+            sessionKeyMap.delete(sessionId);
+          }
+        });
+
+        // Clean up queue on WebSocket disconnect
+        registry.on('connection:unregistered', ({ connectionId }) => {
+          requestQueue.cancelByConnection(connectionId);
+        });
+
+        // Push queue status to waiting clients every second
+        setInterval(() => {
+          const statuses = requestQueue.getQueueStatusForAll();
+          for (const status of statuses) {
+            transport.send(status.connectionId, {
+              type: 'queue-status',
+              data: {
+                status: 'queued',
+                position: status.position,
+                estimatedWaitSec: status.estimatedWaitSec,
+                queuedAt: Date.now(),
+              },
+            });
+          }
+        }, 1000);
+
+        // Graceful shutdown for queue and key pool
+        process.on('SIGTERM', () => {
+          requestQueue.dispose();
+          keyPoolManager.dispose();
+        });
+        process.on('SIGINT', () => {
+          requestQueue.dispose();
+          keyPoolManager.dispose();
+        });
 
         // One-time fix: reassign wrongly-assigned projects to the first user
         const firstUser = userDb.getFirstUser();
