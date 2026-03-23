@@ -8,6 +8,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useTranslation } from 'react-i18next';
 import { normalizeInlineCodeFences } from '../../utils/chatFormatting';
 import { copyTextToClipboard } from '../../../../utils/clipboard';
+import { stripSystemTags } from '../../hooks/handlers/streamUtils';
 
 const EChartsRenderer = lazy(() => import('./EChartsRenderer'));
 
@@ -163,18 +164,10 @@ function createMarkdownComponents(isStreaming?: boolean) {
   };
 }
 
-// System tags that should never be rendered to users
-const SYSTEM_TAG_RE = /<(?:system-reminder|command-message|command-name|command-args|local-command-stdout|task-notification|tool_use_error|fast_mode_info|custom-command-content[^>]*)>[\s\S]*?<\/(?:system-reminder|command-message|command-name|command-args|local-command-stdout|task-notification|tool_use_error|fast_mode_info|custom-command-content)>/g;
-
 export function Markdown({ children, className, isStreaming }: MarkdownProps) {
   const raw = String(children ?? '');
   // Strip system/internal tags and skill-loading artifacts before rendering
-  const cleaned = raw
-    .replace(SYSTEM_TAG_RE, '')
-    .replace(/^Base directory for this skill:.*$/gm, '')
-    .replace(/^Launching skill:.*$/gm, '')
-    .replace(/^Tell your human partner that this command is deprecated.*$/gm, '')
-    .trim();
+  const cleaned = stripSystemTags(raw).trim();
   const content = normalizeInlineCodeFences(cleaned);
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
   const rehypePlugins = useMemo(() => [rehypeKatex], []);

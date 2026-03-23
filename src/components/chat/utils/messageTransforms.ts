@@ -1,5 +1,6 @@
 import type { ChatMessage } from '../types/types';
 import { decodeHtmlEntities, unescapeWithMathProtection } from './chatFormatting';
+import { stripSystemTags } from '../hooks/handlers/streamUtils';
 
 export interface DiffLine {
   type: 'added' | 'removed';
@@ -415,19 +416,14 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
         content = customCommandMatch[1];
       }
 
+      // Strip system tags using centralized utility
+      content = stripSystemTags(content).trim();
+
       const shouldSkip =
         !content ||
-        content.startsWith('<command-name>') ||
-        content.startsWith('<command-message>') ||
-        content.startsWith('<command-args>') ||
-        content.startsWith('<local-command-stdout>') ||
-        content.startsWith('<system-reminder>') ||
         content.startsWith('Caveat:') ||
         content.startsWith('This session is being continued from a previous') ||
-        content.startsWith('[Request interrupted') ||
-        content.startsWith('Base directory for this skill:') ||
-        content.startsWith('Launching skill:') ||
-        content.startsWith('Tell your human partner that this command is deprecated');
+        content.startsWith('[Request interrupted');
 
       if (!shouldSkip) {
         // Parse <task-notification> blocks into compact system messages

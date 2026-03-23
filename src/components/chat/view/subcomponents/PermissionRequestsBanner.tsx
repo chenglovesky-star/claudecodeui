@@ -43,7 +43,7 @@ export default function PermissionRequestsBanner({
         const permissionEntry = buildClaudeToolPermissionEntry(request.toolName, rawInput);
         const settings = getClaudeSettings();
         const alreadyAllowed = permissionEntry ? settings.allowedTools.includes(permissionEntry) : false;
-        const rememberLabel = alreadyAllowed ? 'Allow (saved)' : 'Allow & remember';
+        const rememberLabel = alreadyAllowed ? '允许（已保存）' : '允许并记住';
         const matchingRequestIds = permissionEntry
           ? pendingPermissionRequests
               .filter(
@@ -60,14 +60,14 @@ export default function PermissionRequestsBanner({
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-amber-900 dark:text-amber-100">Permission required</div>
+                <div className="text-sm font-semibold text-amber-900 dark:text-amber-100">需要授予权限</div>
                 <div className="text-xs text-amber-800 dark:text-amber-200">
-                  Tool: <span className="font-mono">{request.toolName}</span>
+                  工具: <span className="font-mono">{request.toolName}</span>
                 </div>
               </div>
               {permissionEntry && (
                 <div className="text-xs text-amber-700 dark:text-amber-300">
-                  Allow rule: <span className="font-mono">{permissionEntry}</span>
+                  允许规则: <span className="font-mono">{permissionEntry}</span>
                 </div>
               )}
             </div>
@@ -75,7 +75,7 @@ export default function PermissionRequestsBanner({
             {rawInput && (
               <details className="mt-2">
                 <summary className="cursor-pointer text-xs text-amber-800 hover:text-amber-900 dark:text-amber-200 dark:hover:text-amber-100">
-                  View tool input
+                  查看工具输入
                 </summary>
                 <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-amber-200/60 bg-white/80 p-2 text-xs text-amber-900 dark:border-amber-800/60 dark:bg-gray-900/60 dark:text-amber-100">
                   {rawInput}
@@ -89,7 +89,7 @@ export default function PermissionRequestsBanner({
                 onClick={() => handlePermissionDecision(request.requestId, { allow: true })}
                 className="inline-flex items-center gap-2 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-700"
               >
-                Allow once
+                允许一次
               </button>
               <button
                 type="button"
@@ -113,7 +113,7 @@ export default function PermissionRequestsBanner({
                 onClick={() => handlePermissionDecision(request.requestId, { allow: false, message: 'User denied tool use' })}
                 className="inline-flex items-center gap-2 rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-900/30"
               >
-                Deny
+                拒绝
               </button>
             </div>
           </div>

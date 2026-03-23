@@ -51,20 +51,47 @@ export const getSessionDate = (session: SessionWithProvider): Date => {
   return new Date(session.lastActivity || session.createdAt || 0);
 };
 
+function sanitizeSessionName(name: string): string {
+  if (!name) return name;
+
+  // If the name looks like JSON, extract a meaningful part
+  if (name.startsWith('{') || name.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(name);
+      return parsed.command || parsed.description || parsed.prompt?.slice(0, 50) || parsed.type || '会话';
+    } catch {
+      // Not valid JSON, truncate
+      return name.slice(0, 50);
+    }
+  }
+
+  // If the name contains system tags or internal content, clean it
+  if (name.includes('<') && name.includes('>')) {
+    name = name.replace(/<[^>]+>/g, '').trim();
+  }
+
+  // Strip "Base directory for this skill:" and similar
+  if (name.startsWith('Base directory') || name.startsWith('Launching skill')) {
+    return '会话';
+  }
+
+  return name;
+}
+
 export const getSessionName = (session: SessionWithProvider, t: TFunction): string => {
   if (session.__provider === 'cursor') {
-    return session.summary || session.name || t('projects.untitledSession');
+    return sanitizeSessionName(session.summary || session.name || t('projects.untitledSession'));
   }
 
   if (session.__provider === 'codex') {
-    return session.summary || session.name || t('projects.codexSession');
+    return sanitizeSessionName(session.summary || session.name || t('projects.codexSession'));
   }
 
   if (session.__provider === 'gemini') {
-    return session.summary || session.name || t('projects.newSession');
+    return sanitizeSessionName(session.summary || session.name || t('projects.newSession'));
   }
 
-  return session.summary || t('projects.newSession');
+  return sanitizeSessionName(session.summary || t('projects.newSession'));
 };
 
 export const getSessionTime = (session: SessionWithProvider): string => {

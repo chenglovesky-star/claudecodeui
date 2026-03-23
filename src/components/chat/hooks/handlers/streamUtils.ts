@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { ChatMessage } from '../../types/types';
 
 // System tags that should never be shown to users
-const SYSTEM_TAG_PATTERNS = [
+export const SYSTEM_TAG_PATTERNS = [
   /<system-reminder>[\s\S]*?<\/system-reminder>/g,
   /<command-message>[\s\S]*?<\/command-message>/g,
   /<command-name>[\s\S]*?<\/command-name>/g,
@@ -15,7 +15,7 @@ const SYSTEM_TAG_PATTERNS = [
 ];
 
 // Lines/blocks produced by skill loading that should be stripped from output
-const SKILL_INTERNAL_PATTERNS = [
+export const SKILL_INTERNAL_PATTERNS = [
   /^Base directory for this skill:.*$/gm,
   /^Launching skill:.*$/gm,
   /^Tell your human partner that this command is deprecated.*$/gm,
@@ -161,6 +161,11 @@ export const finalizeStreamingMessage = (setChatMessages: Dispatch<SetStateActio
     const lastIndex = updated.length - 1;
     const last = updated[lastIndex];
     if (last && last.type === 'assistant' && last.isStreaming) {
+      // Remove empty streaming messages entirely
+      if (!last.content?.trim()) {
+        updated.pop();
+        return updated;
+      }
       // Clone the message instead of mutating in place so React can reliably detect state updates.
       updated[lastIndex] = { ...last, isStreaming: false };
     }

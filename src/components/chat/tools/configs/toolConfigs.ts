@@ -554,6 +554,154 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
   },
 
   // ============================================================================
+  // INTERNAL TOOLS (hidden or minimal display)
+  // ============================================================================
+
+  Skill: {
+    input: {
+      type: 'collapsible',
+      title: (input) => `Skill / ${input?.skill || 'Loading'}`,
+      defaultOpen: false,
+      contentType: 'text',
+      getContentProps: (input) => ({
+        content: input?.args || '',
+        format: 'plain'
+      })
+    },
+    result: {
+      hidden: true,
+    }
+  },
+
+  ToolSearch: {
+    input: {
+      type: 'collapsible',
+      title: (input) => `ToolSearch / ${input?.query || ''}`,
+      defaultOpen: false,
+      contentType: 'text',
+      getContentProps: (input) => ({
+        content: input?.query || '',
+        format: 'plain'
+      })
+    },
+    result: {
+      hidden: true,
+    }
+  },
+
+  SendMessage: {
+    input: {
+      type: 'collapsible',
+      title: (input) => `SendMessage → ${input?.to || 'agent'}`,
+      defaultOpen: false,
+      contentType: 'text',
+      getContentProps: (input) => ({
+        content: input?.text || input?.message || '',
+        format: 'plain'
+      })
+    },
+    result: {
+      hideOnSuccess: true,
+    }
+  },
+
+  EnterPlanMode: {
+    input: {
+      type: 'collapsible',
+      title: '进入计划模式',
+      defaultOpen: false,
+      contentType: 'text',
+      getContentProps: () => ({
+        content: '',
+        format: 'plain'
+      })
+    },
+    result: {
+      hidden: true,
+    }
+  },
+
+  EnterWorktree: {
+    input: {
+      type: 'collapsible',
+      title: '创建工作树',
+      defaultOpen: false,
+      contentType: 'text',
+      getContentProps: () => ({
+        content: '',
+        format: 'plain'
+      })
+    },
+    result: {
+      hideOnSuccess: true,
+    }
+  },
+
+  ExitWorktree: {
+    input: {
+      type: 'collapsible',
+      title: '退出工作树',
+      defaultOpen: false,
+      contentType: 'text',
+      getContentProps: () => ({
+        content: '',
+        format: 'plain'
+      })
+    },
+    result: {
+      hideOnSuccess: true,
+    }
+  },
+
+  WebFetch: {
+    input: {
+      type: 'collapsible',
+      title: (input) => {
+        try {
+          return `WebFetch / ${input?.url ? new URL(input.url).hostname : ''}`;
+        } catch {
+          return `WebFetch / ${input?.url || ''}`;
+        }
+      },
+      defaultOpen: false,
+      contentType: 'text',
+      getContentProps: (input) => ({
+        content: input?.url || '',
+        format: 'plain'
+      })
+    },
+    result: {
+      type: 'collapsible',
+      contentType: 'text',
+      getContentProps: (result) => ({
+        content: String(result?.content || '').slice(0, 500),
+        format: 'plain'
+      })
+    }
+  },
+
+  WebSearch: {
+    input: {
+      type: 'collapsible',
+      title: (input) => `WebSearch / ${input?.query || ''}`,
+      defaultOpen: false,
+      contentType: 'text',
+      getContentProps: (input) => ({
+        content: input?.query || '',
+        format: 'plain'
+      })
+    },
+    result: {
+      type: 'collapsible',
+      contentType: 'text',
+      getContentProps: (result) => ({
+        content: String(result?.content || '').slice(0, 500),
+        format: 'plain'
+      })
+    }
+  },
+
+  // ============================================================================
   // DEFAULT FALLBACK
   // ============================================================================
 
@@ -583,7 +731,37 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
  * Get configuration for a tool, with fallback to default
  */
 export function getToolConfig(toolName: string): ToolDisplayConfig {
-  return TOOL_CONFIGS[toolName] || TOOL_CONFIGS.Default;
+  if (TOOL_CONFIGS[toolName]) return TOOL_CONFIGS[toolName];
+
+  // MCP tools: use a compact display showing just the tool name
+  if (toolName.startsWith('mcp__')) {
+    const parts = toolName.split('__');
+    const serverName = parts[1] || 'mcp';
+    const methodName = parts[2] || toolName;
+    return {
+      input: {
+        type: 'collapsible',
+        title: `${serverName} / ${methodName}`,
+        defaultOpen: false,
+        contentType: 'text',
+        getContentProps: (input) => ({
+          content: typeof input === 'string' ? input : JSON.stringify(input, null, 2),
+          format: 'code'
+        })
+      },
+      result: {
+        type: 'collapsible',
+        contentType: 'text',
+        defaultOpen: false,
+        getContentProps: (result) => ({
+          content: String(result?.content || '').slice(0, 1000),
+          format: 'plain'
+        })
+      }
+    };
+  }
+
+  return TOOL_CONFIGS.Default;
 }
 
 /**

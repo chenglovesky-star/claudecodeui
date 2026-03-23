@@ -414,14 +414,49 @@ export function handleClaudePermissionCancelled(ctx: HandlerContext, latestMessa
 export function handleClaudeError(ctx: HandlerContext, latestMessage: LatestChatMessage) {
   ctx.clearFallbackTimer();
   ctx.finalizeLifecycleForCurrentView(latestMessage.sessionId, ctx.currentSessionId, ctx.selectedSession?.id);
-  ctx.setChatMessages((previous) => [
-    ...previous,
-    {
-      type: 'error',
-      content: `Error: ${latestMessage.error}`,
-      timestamp: new Date(),
-    },
-  ]);
+
+  // Clean up streaming state to prevent stale "thinking" indicators
+  if (ctx.streamTimerRef.current) {
+    clearTimeout(ctx.streamTimerRef.current);
+    ctx.streamTimerRef.current = null;
+  }
+  ctx.streamBufferRef.current = '';
+
+  // Finalize any in-progress streaming message
+  ctx.setChatMessages((previous) => {
+    const updated = [...previous];
+    // Mark any streaming messages as complete
+    for (let i = updated.length - 1; i >= 0; i--) {
+      if (updated[i].isStreaming) {
+        updated[i] = { ...updated[i], isStreaming: false };
+      }
+    }
+
+    // Map common error messages to user-friendly text
+    let errorText = latestMessage.error || '发生错误';
+    if (errorText.includes('rate_limit') || errorText.includes('429')) {
+      errorText = '请求过于频繁，请稍后重试';
+    } else if (errorText.includes('timeout') || errorText.includes('ETIMEDOUT')) {
+      errorText = '请求超时，请重试';
+    } else if (errorText.includes('ENOENT')) {
+      errorText = '服务配置错误，请联系管理员';
+    } else if (errorText.includes('authentication') || errorText.includes('invalid api key')) {
+      errorText = 'API 认证失败，请检查配置';
+    }
+
+    return [
+      ...updated,
+      {
+        type: 'error' as const,
+        content: errorText,
+        timestamp: new Date(),
+      },
+    ];
+  });
+
+  ctx.setIsLoading(false);
+  ctx.setCanAbortSession(false);
+  ctx.setClaudeStatus(null);
 }
 
 export function handleClaudeComplete(ctx: HandlerContext, latestMessage: LatestChatMessage) {
@@ -444,11 +479,22 @@ export function handleClaudeComplete(ctx: HandlerContext, latestMessage: LatestC
       if (hasRecentError) {
         return previous; // stderr error already shown
       }
+
+      // Map exit codes to user-friendly messages
+      const errorMessages: Record<number, string> = {
+        1: '处理过程中出错，请重试',
+        2: '命令参数错误',
+        124: '请求超时，请尝试发送更简短的请求',
+        137: '进程被终止（内存不足）',
+        143: '会话被中断',
+      };
+      const friendlyMessage = errorMessages[latestMessage.exitCode!] || `处理出错 (${latestMessage.exitCode})`;
+
       return [
         ...previous,
         {
           type: 'error' as const,
-          content: `Claude CLI exited with code ${latestMessage.exitCode}`,
+          content: friendlyMessage,
           timestamp: new Date(),
         },
       ];
