@@ -7,6 +7,12 @@ type WebSocketContextType = {
   sendMessage: (message: any) => void;
   latestMessage: any | null;
   isConnected: boolean;
+  queueStatus: {
+    status: string;
+    position?: number;
+    estimatedWaitSec?: number;
+    message?: string;
+  } | null;
 };
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -40,6 +46,12 @@ const useWebSocketProviderState = (): WebSocketContextType => {
   const unmountedRef = useRef(false);
   const [latestMessage, setLatestMessage] = useState<any>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [queueStatus, setQueueStatus] = useState<{
+    status: string;
+    position?: number;
+    estimatedWaitSec?: number;
+    message?: string;
+  } | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pongTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -163,6 +175,16 @@ const useWebSocketProviderState = (): WebSocketContextType => {
           if (data.type === 'heartbeat-ack') {
             clearPongTimeout();
             missedCountRef.current = 0;
+            return;
+          }
+
+          if (data.type === 'queue-status') {
+            const queueData = data.data;
+            if (queueData.status === 'dispatched') {
+              setQueueStatus(null); // Clear queue status when dispatched
+            } else {
+              setQueueStatus(queueData);
+            }
             return;
           }
 
@@ -354,8 +376,9 @@ const useWebSocketProviderState = (): WebSocketContextType => {
     ws: wsRef.current,
     sendMessage,
     latestMessage,
-    isConnected
-  }), [sendMessage, latestMessage, isConnected]);
+    isConnected,
+    queueStatus
+  }), [sendMessage, latestMessage, isConnected, queueStatus]);
 
   return value;
 };
