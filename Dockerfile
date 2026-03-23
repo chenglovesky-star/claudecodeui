@@ -93,10 +93,12 @@ RUN useradd -m -s /bin/bash claude \
     && echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude
 
 # 创建数据和工作空间目录，并预置 Claude CLI 配置
-RUN mkdir -p /data/db /workspace /home/claude/.claude/debug /home/claude/.claude/statsig /home/claude/.claude/projects
+RUN mkdir -p /data/db /workspace /home/claude/.claude/debug /home/claude/.claude/statsig /home/claude/.claude/projects /home/claude/.claude/skills
 COPY claude-settings.json /home/claude/.claude/settings.json
 # 备份一份默认配置，防止 volume 挂载覆盖后丢失
 RUN cp /home/claude/.claude/settings.json /home/claude/.claude-settings-default.json
+# 内置技能（打包到镜像，volume 挂载后由 entrypoint 恢复）
+COPY skills/ /home/claude/.claude-skills-default/
 RUN chown -R claude:claude /app /data /workspace /home/claude
 
 # 复制启动脚本

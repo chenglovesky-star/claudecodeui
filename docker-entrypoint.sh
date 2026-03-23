@@ -13,6 +13,14 @@ if [ ! -f /home/claude/.claude/settings.json ] && [ -f /home/claude/.claude-sett
     chown claude:claude /home/claude/.claude/settings.json
 fi
 
+# 同步内置技能到 .claude/skills（每次启动都更新，确保镜像内新技能生效）
+if [ -d /home/claude/.claude-skills-default ] && [ "$(ls -A /home/claude/.claude-skills-default 2>/dev/null)" ]; then
+    mkdir -p /home/claude/.claude/skills
+    cp -r /home/claude/.claude-skills-default/* /home/claude/.claude/skills/
+    chown -R claude:claude /home/claude/.claude/skills
+    echo "Built-in skills synced to /home/claude/.claude/skills"
+fi
+
 # 从环境变量动态注入敏感配置到 settings.json（避免硬编码密钥）
 SETTINGS_FILE="/home/claude/.claude/settings.json"
 if [ -f "$SETTINGS_FILE" ] && command -v node >/dev/null 2>&1; then
