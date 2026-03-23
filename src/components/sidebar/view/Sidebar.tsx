@@ -36,6 +36,7 @@ function Sidebar({
   settingsInitialTab,
   onCloseSettings,
   isMobile,
+  processingSessions,
 }: SidebarProps) {
   const { t } = useTranslation(['sidebar', 'common']);
   const { isPWA } = useDeviceSettings({ trackMobile: false });
@@ -146,6 +147,7 @@ function Sidebar({
     deletingProjects,
     tasksEnabled,
     mcpServerStatus,
+    processingSessions,
     getProjectSessions,
     isProjectStarred,
     onEditingNameChange: setEditingName,

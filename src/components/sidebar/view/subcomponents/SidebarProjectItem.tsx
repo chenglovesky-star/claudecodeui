@@ -25,6 +25,7 @@ type SidebarProjectItemProps = {
   editingSessionName: string;
   tasksEnabled: boolean;
   mcpServerStatus: MCPServerStatus;
+  processingSessions?: Set<string>;
   onEditingNameChange: (name: string) => void;
   onToggleProject: (projectName: string) => void;
   onProjectSelect: (project: Project) => void;
@@ -75,6 +76,7 @@ export default function SidebarProjectItem({
   editingSessionName,
   tasksEnabled,
   mcpServerStatus,
+  processingSessions,
   onEditingNameChange,
   onToggleProject,
   onProjectSelect,
@@ -413,6 +415,7 @@ export default function SidebarProjectItem({
         currentTime={currentTime}
         editingSession={editingSession}
         editingSessionName={editingSessionName}
+        processingSessions={processingSessions}
         onEditingSessionNameChange={onEditingSessionNameChange}
         onStartEditingSession={onStartEditingSession}
         onCancelEditingSession={onCancelEditingSession}

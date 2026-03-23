@@ -15,6 +15,7 @@ type SidebarProjectSessionsProps = {
   currentTime: Date;
   editingSession: string | null;
   editingSessionName: string;
+  processingSessions?: Set<string>;
   onEditingSessionNameChange: (value: string) => void;
   onStartEditingSession: (sessionId: string, initialName: string) => void;
   onCancelEditingSession: () => void;
@@ -60,6 +61,7 @@ export default function SidebarProjectSessions({
   currentTime,
   editingSession,
   editingSessionName,
+  processingSessions,
   onEditingSessionNameChange,
   onStartEditingSession,
   onCancelEditingSession,
@@ -96,6 +98,7 @@ export default function SidebarProjectSessions({
             currentTime={currentTime}
             editingSession={editingSession}
             editingSessionName={editingSessionName}
+            isProcessing={processingSessions?.has(session.id)}
             onEditingSessionNameChange={onEditingSessionNameChange}
             onStartEditingSession={onStartEditingSession}
             onCancelEditingSession={onCancelEditingSession}

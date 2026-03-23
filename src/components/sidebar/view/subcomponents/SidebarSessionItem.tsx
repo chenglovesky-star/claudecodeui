@@ -15,6 +15,7 @@ type SidebarSessionItemProps = {
   currentTime: Date;
   editingSession: string | null;
   editingSessionName: string;
+  isProcessing?: boolean;
   onEditingSessionNameChange: (value: string) => void;
   onStartEditingSession: (sessionId: string, initialName: string) => void;
   onCancelEditingSession: () => void;
@@ -37,6 +38,7 @@ export default function SidebarSessionItem({
   currentTime,
   editingSession,
   editingSessionName,
+  isProcessing,
   onEditingSessionNameChange,
   onStartEditingSession,
   onCancelEditingSession,
@@ -67,6 +69,15 @@ export default function SidebarSessionItem({
       {sessionView.isActive && (
         <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 transform">
           <div className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+        </div>
+      )}
+
+      {isProcessing && (
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1 transform">
+          <span className="relative flex h-2 w-2 flex-shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
+          </span>
         </div>
       )}
 

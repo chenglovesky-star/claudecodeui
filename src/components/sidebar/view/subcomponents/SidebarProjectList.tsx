@@ -27,6 +27,7 @@ export type SidebarProjectListProps = {
   deletingProjects: Set<string>;
   tasksEnabled: boolean;
   mcpServerStatus: MCPServerStatus;
+  processingSessions?: Set<string>;
   getProjectSessions: (project: Project) => SessionWithProvider[];
   isProjectStarred: (projectName: string) => boolean;
   onEditingNameChange: (value: string) => void;
@@ -71,6 +72,7 @@ export default function SidebarProjectList({
   deletingProjects,
   tasksEnabled,
   mcpServerStatus,
+  processingSessions,
   getProjectSessions,
   isProjectStarred,
   onEditingNameChange,
@@ -135,6 +137,7 @@ export default function SidebarProjectList({
               editingSessionName={editingSessionName}
               tasksEnabled={tasksEnabled}
               mcpServerStatus={mcpServerStatus}
+              processingSessions={processingSessions}
               onEditingNameChange={onEditingNameChange}
               onToggleProject={onToggleProject}
               onProjectSelect={onProjectSelect}
