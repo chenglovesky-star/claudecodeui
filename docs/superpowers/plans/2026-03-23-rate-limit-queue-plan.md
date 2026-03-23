@@ -878,32 +878,31 @@ export class RequestQueue extends EventEmitter {
   }
 
   /**
-   * Try to dispatch the next waiting request.
+   * Try to dispatch waiting requests (loop, not recursive).
    */
   _tryDispatchNext() {
-    const next = this.#queue.find(i => i.status === 'waiting');
-    if (!next) return;
+    while (true) {
+      const next = this.#queue.find(i => i.status === 'waiting');
+      if (!next) return;
 
-    const key = this.#keyPool.acquire();
-    if (!key) return;
+      const key = this.#keyPool.acquire();
+      if (!key) return;
 
-    // Dispatch
-    next.status = 'dispatched';
-    this.#removeItem(next.id);
+      // Dispatch
+      next.status = 'dispatched';
+      this.#removeItem(next.id);
 
-    const timer = this.#timeoutTimers.get(next.id);
-    if (timer) {
-      clearTimeout(timer);
-      this.#timeoutTimers.delete(next.id);
+      const timer = this.#timeoutTimers.get(next.id);
+      if (timer) {
+        clearTimeout(timer);
+        this.#timeoutTimers.delete(next.id);
+      }
+
+      if (next.onDispatched) {
+        next.onDispatched({ assignedKey: key, request: next });
+      }
+      this.emit('queue:dispatched', { requestId: next.id, keyId: key.id, userId: next.userId });
     }
-
-    if (next.onDispatched) {
-      next.onDispatched({ assignedKey: key, request: next });
-    }
-    this.emit('queue:dispatched', { requestId: next.id, keyId: key.id, userId: next.userId });
-
-    // Try dispatching more
-    this._tryDispatchNext();
   }
 
   /**
@@ -1015,14 +1014,17 @@ git commit -m "feat: support key pool injection and 429 error detection in claud
 
 ---
 
-### Task 5b: ClaudeSDKProvider 429 重试逻辑
+### Task 5b: 429 重试逻辑（index.js 层 + ClaudeSDKProvider）
 
 **Files:**
 - Modify: `server/providers/claude-sdk.js`
+- Modify: `server/index.js`（startServer 内）
 
-这是设计文档第四部分的核心功能。Task 5 在 `queryClaudeSDK()` 中标记了 `_isRateLimit` 和 `_rateLimitPhase`，本 Task 在 `ClaudeSDKProvider` 中消费这些标记实现重试。
+设计文档第四部分的核心功能。重试职责分为两层：
+- **ClaudeSDKProvider**：捕获 429，发出事件通知，处理 mid-stream 不可重试场景
+- **index.js**：监听事件，标记 Key cooling，acquire 新 Key，重启 session 实现真正的换 Key 重试
 
-- [ ] **Step 1: 在 ClaudeSDKProvider.start() 中添加 429 捕获和重试**
+- [ ] **Step 1: ClaudeSDKProvider 中捕获 429 并发出事件**
 
 修改 `server/providers/claude-sdk.js` 的 `start(config)` 方法。在 `await queryClaudeSDK(command, options, writer)` 调用处包裹 try-catch：
 
@@ -1034,73 +1036,120 @@ async start(config) {
 
   // Proxy writer.send()（现有代码不变）...
 
-  let retryCount = 0;
-  const maxRetries = 3; // MAX_429_RETRIES from constants
-
-  while (retryCount <= maxRetries) {
-    try {
-      await queryClaudeSDK(command, options, writer);
-      break; // 成功，退出循环
-    } catch (error) {
-      if (error._isRateLimit && error._rateLimitPhase === 'pre-stream' && retryCount < maxRetries) {
-        // Pre-stream 429: 可以安全重试
-        retryCount++;
-        console.log(`[Provider] 429 pre-stream, retry ${retryCount}/${maxRetries}, key=${options._assignedKeyId}`);
-
-        // 通知 KeyPoolManager 标记当前 Key 为 cooling
-        // 通过事件通知（provider 不直接依赖 keyPoolManager）
-        this.emit('rate-limited', { keyId: options._assignedKeyId });
-
-        // 等待短暂延迟后重试（使用相同 key，因为 provider 层无法切换 key）
-        // 实际的 Key 切换由上层（index.js 的 rate-limited 事件监听）处理
-        await new Promise(resolve => setTimeout(resolve, 2000 * retryCount));
-        continue;
-      }
-
-      if (error._isRateLimit && error._rateLimitPhase === 'mid-stream') {
-        // Mid-stream 429: 不能透明重试，已有部分输出
-        writer.send({
-          type: 'claude-error',
-          error: '请求被限速中断，请点击继续恢复对话',
-          code: 'RATE_LIMIT_MID_STREAM',
-          resumable: true,
-        });
-        this.emit('rate-limited', { keyId: options._assignedKeyId });
-        break;
-      }
-
-      // 非 429 错误，直接抛出
-      throw error;
+  try {
+    await queryClaudeSDK(command, options, writer);
+  } catch (error) {
+    if (error._isRateLimit && error._rateLimitPhase === 'pre-stream') {
+      // Pre-stream 429: 通知上层换 Key 重试
+      this.emit('rate-limited', {
+        keyId: options._assignedKeyId,
+        phase: 'pre-stream',
+        command,
+        options,
+        connectionId,
+      });
+      // 不抛出错误，由上层处理重试
+      return;
     }
-  }
 
-  if (retryCount > maxRetries) {
-    writer.send({
-      type: 'claude-error',
-      error: '当前使用人数较多，所有通道繁忙，请稍后重试',
-      code: 'RATE_LIMIT_EXHAUSTED',
-    });
+    if (error._isRateLimit && error._rateLimitPhase === 'mid-stream') {
+      // Mid-stream 429: 不能透明重试，已有部分输出
+      writer.send({
+        type: 'claude-error',
+        error: '请求被限速中断，请点击继续恢复对话',
+        code: 'RATE_LIMIT_MID_STREAM',
+        resumable: true,
+      });
+      this.emit('rate-limited', {
+        keyId: options._assignedKeyId,
+        phase: 'mid-stream',
+      });
+      return;
+    }
+
+    // 非 429 错误，正常抛出由 provider 的 error 事件处理
+    throw error;
   }
 }
 ```
 
-- [ ] **Step 2: 在 index.js 中监听 rate-limited 事件**
+- [ ] **Step 2: index.js 中实现换 Key 重试逻辑**
 
-在 `startServer()` 内部，`processManager.startSession()` 之后的事件绑定区域添加：
+在 `startServer()` 内部，`router:startSession` 监听器后添加：
 
 ```javascript
-// 监听 provider 的 rate-limited 事件，标记 Key 冷却
-processManager.on('process:output', ({ sessionId, data }) => {
-  // 如果 provider 发出了 rate-limited 事件，会通过 processManager 传播
-  // 但更直接的方式是在 router:startSession 中绑定：
-});
+// 429 pre-stream 换 Key 重试逻辑
+// 在 router:startSession 监听器中，为每个 provider 绑定 rate-limited 事件
+// 修改现有的 router:startSession 监听器，在 processManager.startSession() 之后添加：
 
-// 更简洁：在 startSession 回调中为每个 provider 绑定
-// 修改现有的 router:startSession 监听器，在 processManager.startSession() 后添加：
 const provider = processManager.getProviderForSession(sessionId);
 if (provider) {
-  provider.on('rate-limited', ({ keyId }) => {
+  let retryCount = 0;
+  const maxRetries = 3;
+
+  provider.on('rate-limited', ({ keyId, phase, command: retryCommand, options: retryOptions, connectionId: retryConnId }) => {
+    // 标记当前 Key 冷却
     keyPoolManager.markCooling(keyId);
+
+    if (phase === 'mid-stream') {
+      // Mid-stream: 无法重试，Key 已标记冷却即可
+      return;
+    }
+
+    // Pre-stream: 尝试获取新 Key 重试
+    retryCount++;
+    if (retryCount > maxRetries) {
+      const conn = registry.get(retryConnId);
+      if (conn) {
+        transport.send(retryConnId, {
+          type: 'claude-error',
+          error: '当前使用人数较多，所有通道繁忙，请稍后重试',
+          code: 'RATE_LIMIT_EXHAUSTED',
+        });
+      }
+      return;
+    }
+
+    const newKey = keyPoolManager.acquire();
+    if (newKey) {
+      // 用新 Key 重启 session
+      console.log(`[429 Retry] retry ${retryCount}/${maxRetries}, old key=${keyId}, new key=${newKey.id}`);
+      const newOptions = { ...retryOptions, _assignedApiKey: newKey.apiKey, _assignedKeyId: newKey.id };
+      sessionKeyMap.set(sessionId, newKey.id);
+      // 重新启动 provider
+      processManager.startSession(sessionId, providerType, {
+        command: retryCommand || message.command,
+        options: newOptions,
+        writer: new WebSocketWriter(conn.ws),
+        transport,
+        connectionId: retryConnId,
+      });
+    } else {
+      // 无可用 Key，入队等待
+      requestQueue.requeue({
+        userId: conn.userId,
+        username: conn.username,
+        connectionId: retryConnId,
+        command: retryCommand || message.command,
+        options: retryOptions,
+        onDispatched: ({ assignedKey }) => {
+          const newOptions = { ...retryOptions, _assignedApiKey: assignedKey.apiKey, _assignedKeyId: assignedKey.id };
+          sessionKeyMap.set(sessionId, assignedKey.id);
+          processManager.startSession(sessionId, providerType, {
+            command: retryCommand || message.command,
+            options: newOptions,
+            writer: new WebSocketWriter(conn.ws),
+            transport,
+            connectionId: retryConnId,
+          });
+        },
+      });
+      // 通知前端进入排队
+      transport.send(retryConnId, {
+        type: 'queue-status',
+        data: { status: 'queued', position: 1, estimatedWaitSec: 10 },
+      });
+    }
   });
 }
 ```
@@ -1464,12 +1513,30 @@ processManager.on('process:error', ({ sessionId }) => {
 });
 ```
 
-- [ ] **Step 7: 验证服务器能正常启动**
+- [ ] **Step 7: 在 SIGTERM/SIGINT 处理中添加 cleanup**
+
+在 `startServer()` 内部，KeyPoolManager 和 RequestQueue 初始化之后，注册额外的优雅退出处理：
+
+```javascript
+// 注册额外的 cleanup（现有的 SIGTERM 处理在模块顶层，无法访问闭包内变量）
+process.on('SIGTERM', () => {
+  requestQueue.dispose();
+  keyPoolManager.dispose();
+});
+process.on('SIGINT', () => {
+  requestQueue.dispose();
+  keyPoolManager.dispose();
+});
+```
+
+注意：Node.js 允许多个 SIGTERM/SIGINT 监听器，现有的监听器（行 610-625）仍然有效。
+
+- [ ] **Step 8: 验证服务器能正常启动**
 
 Run: `node server/index.js`（手动检查控制台日志，确认 KeyPool 和 RequestQueue 初始化成功）
 Expected: `[KeyPool] Imported default key from ANTHROPIC_AUTH_TOKEN` 或 `[KeyPool] Loaded N keys from database`
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add server/index.js
