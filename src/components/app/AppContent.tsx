@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Sidebar from '../sidebar/view/Sidebar';
@@ -8,6 +8,7 @@ import { useDeviceSettings } from '../../hooks/useDeviceSettings';
 import { useSessionProtection } from '../../hooks/useSessionProtection';
 import { useProjectsState } from '../../hooks/useProjectsState';
 import MobileNav from './MobileNav';
+import BackgroundSessionToast from '../shared/BackgroundSessionToast';
 
 export default function AppContent() {
   const navigate = useNavigate();
@@ -49,6 +50,20 @@ export default function AppContent() {
     isMobile,
     activeSessions,
   });
+
+  const [toastCount, setToastCount] = useState(0);
+  const [showToast, setShowToast] = useState(false);
+  const prevSessionRef = useRef<string | null>(null);
+
+  // Detect session switch and trigger toast
+  useEffect(() => {
+    const currentId = selectedSession?.id || null;
+    if (prevSessionRef.current && currentId !== prevSessionRef.current && processingSessions.size > 0) {
+      setToastCount(processingSessions.size);
+      setShowToast(true);
+    }
+    prevSessionRef.current = currentId;
+  }, [selectedSession?.id, processingSessions.size]);
 
   useEffect(() => {
     window.refreshProjects = fetchProjects;
@@ -156,6 +171,11 @@ export default function AppContent() {
         />
       )}
 
+      <BackgroundSessionToast
+        count={toastCount}
+        visible={showToast}
+        onDismiss={() => setShowToast(false)}
+      />
     </div>
   );
 }
