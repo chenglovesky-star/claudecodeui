@@ -181,8 +181,22 @@ export const convertCursorSessionMessages = (blobs: CursorBlob[], projectPath: s
         if (Array.isArray(content.content)) {
           const textParts: string[] = [];
 
+          // Pre-scan: check if this content array contains any Agent/Task tool_use.
+          // If so, ALL long text blocks are considered internal prompt instructions
+          // and should be suppressed (they are the prompt sent to the subagent).
+          const SUBAGENT_TOOL_NAMES = new Set(['Task', 'Agent', 'Dispatch']);
+          const hasSubagentToolUse = content.content.some(
+            (p: any) => (p?.type === 'tool-call' || p?.type === 'tool_use') &&
+              SUBAGENT_TOOL_NAMES.has(p.toolName || p.name || '')
+          );
+          const SUBAGENT_TEXT_THRESHOLD = 150; // chars — short status text is kept
+
           for (const part of content.content) {
             if (part?.type === 'text' && part?.text) {
+              // In subagent context, suppress long text blocks (prompt instructions)
+              if (hasSubagentToolUse && part.text.length > SUBAGENT_TEXT_THRESHOLD) {
+                continue; // skip — this is prompt content, not user-facing text
+              }
               textParts.push(decodeHtmlEntities(part.text));
               continue;
             }
@@ -193,23 +207,16 @@ export const convertCursorSessionMessages = (blobs: CursorBlob[], projectPath: s
             }
 
             if (part?.type === 'tool-call' || part?.type === 'tool_use') {
-              const partToolName = part.toolName || part.name || 'Unknown Tool';
-              const isSubagentTool = partToolName === 'Task' || partToolName === 'Agent' || partToolName === 'Dispatch';
-
               if (textParts.length > 0 || reasoningText) {
-                // Hide preceding text for subagent/task tool calls — it contains
-                // the prompt instructions sent to the subagent, not user-facing content.
-                if (!isSubagentTool) {
-                  converted.push({
-                    type: role,
-                    content: textParts.join('\n'),
-                    reasoning: reasoningText ?? undefined,
-                    timestamp: new Date(Date.now() + blobIdx * 1000),
-                    blobId: blob.id,
-                    sequence: blob.sequence,
-                    rowid: blob.rowid,
-                  });
-                }
+                converted.push({
+                  type: role,
+                  content: textParts.join('\n'),
+                  reasoning: reasoningText ?? undefined,
+                  timestamp: new Date(Date.now() + blobIdx * 1000),
+                  blobId: blob.id,
+                  sequence: blob.sequence,
+                  rowid: blob.rowid,
+                });
                 textParts.length = 0;
                 reasoningText = null;
               }

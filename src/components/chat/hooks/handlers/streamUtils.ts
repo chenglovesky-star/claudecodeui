@@ -38,6 +38,9 @@ export function stripSystemTags(content: string): string {
   return cleaned;
 }
 
+// Tool names that indicate subagent dispatching
+const SUBAGENT_TOOL_NAMES = new Set(['Task', 'Agent', 'Dispatch']);
+
 export const appendStreamingChunk = (
   setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>,
   chunk: string,
@@ -51,6 +54,25 @@ export const appendStreamingChunk = (
   if (!chunk.trim()) return;
 
   setChatMessages((previous) => {
+    // Suppress long text that follows subagent tool_use messages.
+    // When Claude dispatches subagents, it may echo the prompt as streaming text.
+    // Check if the most recent messages are subagent tool calls.
+    const recentMessages = previous.slice(-5);
+    const hasRecentSubagent = recentMessages.some(
+      m => m.isToolUse && m.toolName && SUBAGENT_TOOL_NAMES.has(m.toolName)
+    );
+    if (hasRecentSubagent) {
+      // Check accumulated content: if the existing streaming text + this chunk
+      // would exceed the threshold, it's likely a prompt dump — suppress it.
+      const lastMsg = previous[previous.length - 1];
+      const existingLen = (lastMsg?.type === 'assistant' && lastMsg.isStreaming)
+        ? (lastMsg.content?.length || 0)
+        : 0;
+      if (existingLen + chunk.length > 150) {
+        return previous; // suppress — this is subagent prompt content
+      }
+    }
+
     const updated = [...previous];
     const lastIndex = updated.length - 1;
     const last = updated[lastIndex];
@@ -60,7 +82,6 @@ export const appendStreamingChunk = (
           ? `${last.content}\n${chunk}`
           : chunk
         : `${last.content || ''}${chunk}`;
-      // Clone the message instead of mutating in place so React can reliably detect state updates.
       updated[lastIndex] = { ...last, content: nextContent };
     } else {
       updated.push({ type: 'assistant', content: chunk, timestamp: new Date(), isStreaming: true });
