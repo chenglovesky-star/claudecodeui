@@ -29,18 +29,24 @@ const fs = require('fs');
 const settings = JSON.parse(fs.readFileSync('$SETTINGS_FILE', 'utf8'));
 if (!settings.env) settings.env = {};
 
-const envMap = {
+// 直接映射：环境变量名 → settings.env 键名
+const directMap = {
     'ANTHROPIC_BASE_URL': process.env.ANTHROPIC_BASE_URL,
     'ANTHROPIC_AUTH_TOKEN': process.env.ANTHROPIC_AUTH_TOKEN,
     'API_TIMEOUT_MS': process.env.API_TIMEOUT_MS,
     'ANTHROPIC_MODEL': process.env.ANTHROPIC_MODEL,
-    'ANTHROPIC_SMALL_FAST_MODEL': process.env.ANTHROPIC_MODEL,
-    'ANTHROPIC_DEFAULT_SONNET_MODEL': process.env.ANTHROPIC_MODEL,
-    'ANTHROPIC_DEFAULT_OPUS_MODEL': process.env.ANTHROPIC_MODEL,
-    'ANTHROPIC_DEFAULT_HAIKU_MODEL': process.env.ANTHROPIC_MODEL,
 };
 
-for (const [key, val] of Object.entries(envMap)) {
+// 模型变量：各自独立配置，不设则 fallback 到 ANTHROPIC_MODEL
+const defaultModel = process.env.ANTHROPIC_MODEL;
+const modelMap = {
+    'ANTHROPIC_SMALL_FAST_MODEL': process.env.ANTHROPIC_SMALL_FAST_MODEL || defaultModel,
+    'ANTHROPIC_DEFAULT_SONNET_MODEL': process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || defaultModel,
+    'ANTHROPIC_DEFAULT_OPUS_MODEL': process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || defaultModel,
+    'ANTHROPIC_DEFAULT_HAIKU_MODEL': process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL || defaultModel,
+};
+
+for (const [key, val] of Object.entries({...directMap, ...modelMap})) {
     if (val) settings.env[key] = val;
 }
 
