@@ -30,16 +30,17 @@
 | 文件 | 改动 |
 |------|------|
 | `server/config/constants.js` | 新增队列和 Key 池常量 |
-| `server/database/db.js` | 新增 `api_key_pool` 建表 + 导出 `anthropicKeyPoolDb` |
+| `server/database/db.js` | 新增 `api_key_pool` 建表（不再导出 anthropicKeyPoolDb，使用方直接 import） |
 | `server/claude-sdk.js:150-244` | `mapCliOptionsToSDK()` 支持 `_assignedApiKey` 覆盖环境变量 |
 | `server/claude-sdk.js:489-720` | `queryClaudeSDK()` 捕获 429 错误，区分 pre-stream/mid-stream |
 | `server/message/MessageRouter.js:11-25` | 构造函数注入 `requestQueue` |
 | `server/message/MessageRouter.js:86-106` | `#handleProviderCommand()` 在 `sessionManager.create()` 前插入队列 |
 | `server/routes/settings.js` | 新增 `/key-pool` 子路由 |
-| `server/index.js:284-302` | 初始化 KeyPoolManager、RequestQueue，注入 MessageRouter |
-| `server/index.js:308-379` | `router:startSession` 监听器传入 assignedKey |
+| `server/index.js:564-607` | 在 `startServer()` 异步函数内初始化 KeyPoolManager、RequestQueue，通过 setter 注入 MessageRouter |
+| `server/index.js:308-379` | `router:startSession` 监听器传入 assignedKey；新增 `process:complete/error` 的 key release 监听（与现有监听器并存，仅负责 release） |
+| `server/providers/claude-sdk.js` | ClaudeSDKProvider 中捕获 429 错误，pre-stream 重试 / mid-stream 报错 |
 | `src/contexts/WebSocketContext.tsx` | 处理 `queue-status` 消息 |
-| 前端消息展示组件 | 排队状态 UI |
+| `src/components/chat/view/subcomponents/AssistantThinkingIndicator.tsx` | 排队状态 UI |
 
 ---
 
@@ -94,22 +95,20 @@ git commit -m "feat: add queue and key pool constants"
 
 ```javascript
 // Migration: api_key_pool table for multi-key rotation
-try {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS api_key_pool (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      api_key TEXT NOT NULL,
-      enabled INTEGER DEFAULT 1,
-      rpm_limit INTEGER DEFAULT 50,
-      total_requests INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-} catch (e) {
-  // Table already exists, ignore
-}
+db.exec(`
+  CREATE TABLE IF NOT EXISTS api_key_pool (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    api_key TEXT NOT NULL,
+    enabled INTEGER DEFAULT 1,
+    rpm_limit INTEGER DEFAULT 50,
+    total_requests INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
 ```
+
+注意：`CREATE TABLE IF NOT EXISTS` 在表已存在时不会报错，无需 try-catch 包裹（与现有 `session_names` 表建表风格一致）。
 
 - [ ] **Step 2: 创建 `server/database/anthropicKeyPoolDb.js`**
 
@@ -170,24 +169,12 @@ const anthropicKeyPoolDb = {
 export { anthropicKeyPoolDb };
 ```
 
-- [ ] **Step 3: 在 db.js 导出中添加 anthropicKeyPoolDb**
+- [ ] **Step 3: 不修改 db.js 的导出**
 
-在 `server/database/db.js` 的 `export { ... }` 中添加 `anthropicKeyPoolDb` 的导入和导出：
-
-在文件顶部（其他 import 附近）添加：
+`anthropicKeyPoolDb` 不需要在 db.js 中导出。使用方直接 import：
 ```javascript
-// 延迟导入以避免循环依赖——anthropicKeyPoolDb 依赖 db
-let _anthropicKeyPoolDb = null;
-function getAnthropicKeyPoolDb() {
-  if (!_anthropicKeyPoolDb) {
-    // dynamic import at first use, after db is initialized
-    _anthropicKeyPoolDb = import('./anthropicKeyPoolDb.js').then(m => m.anthropicKeyPoolDb);
-  }
-  return _anthropicKeyPoolDb;
-}
+import { anthropicKeyPoolDb } from './database/anthropicKeyPoolDb.js';
 ```
-
-实际上更简单的做法：直接在使用方导入 `anthropicKeyPoolDb`，不在 db.js 中再导出。使用方直接 `import { anthropicKeyPoolDb } from './database/anthropicKeyPoolDb.js'`。
 
 - [ ] **Step 4: 验证建表和 CRUD**
 
@@ -430,15 +417,18 @@ export class KeyPoolManager extends EventEmitter {
 
     // Record this request
     bestKey.requestTimestamps.push(now);
-    bestKey.consecutiveErrors = 0;
+    // Note: do NOT reset consecutiveErrors here. acquire() only means a key was
+    // assigned, not that the request succeeded. Reset happens in release().
 
     return { id: bestKey.id, name: bestKey.name, apiKey: bestKey.apiKey };
   }
 
   /**
-   * Called when a request using this key completes.
+   * Called when a request using this key completes successfully.
    */
   release(keyId) {
+    const key = this.#keys.get(keyId);
+    if (key) key.consecutiveErrors = 0; // Reset on successful completion
     this.emit('key:released', { keyId });
   }
 
@@ -511,6 +501,14 @@ export class KeyPoolManager extends EventEmitter {
       key.consecutiveErrors = 0;
       this.emit('key:available', { keyId });
     }
+  }
+
+  /**
+   * Update RPM limit for a key at runtime.
+   */
+  updateKeyRpmLimit(keyId, rpmLimit) {
+    const key = this.#keys.get(keyId);
+    if (key) key.rpmLimit = rpmLimit;
   }
 
   /**
@@ -1017,6 +1015,110 @@ git commit -m "feat: support key pool injection and 429 error detection in claud
 
 ---
 
+### Task 5b: ClaudeSDKProvider 429 重试逻辑
+
+**Files:**
+- Modify: `server/providers/claude-sdk.js`
+
+这是设计文档第四部分的核心功能。Task 5 在 `queryClaudeSDK()` 中标记了 `_isRateLimit` 和 `_rateLimitPhase`，本 Task 在 `ClaudeSDKProvider` 中消费这些标记实现重试。
+
+- [ ] **Step 1: 在 ClaudeSDKProvider.start() 中添加 429 捕获和重试**
+
+修改 `server/providers/claude-sdk.js` 的 `start(config)` 方法。在 `await queryClaudeSDK(command, options, writer)` 调用处包裹 try-catch：
+
+```javascript
+async start(config) {
+  const { command, options, writer, transport, connectionId } = config;
+  this.isRunning = true;
+  this.#writer = writer;
+
+  // Proxy writer.send()（现有代码不变）...
+
+  let retryCount = 0;
+  const maxRetries = 3; // MAX_429_RETRIES from constants
+
+  while (retryCount <= maxRetries) {
+    try {
+      await queryClaudeSDK(command, options, writer);
+      break; // 成功，退出循环
+    } catch (error) {
+      if (error._isRateLimit && error._rateLimitPhase === 'pre-stream' && retryCount < maxRetries) {
+        // Pre-stream 429: 可以安全重试
+        retryCount++;
+        console.log(`[Provider] 429 pre-stream, retry ${retryCount}/${maxRetries}, key=${options._assignedKeyId}`);
+
+        // 通知 KeyPoolManager 标记当前 Key 为 cooling
+        // 通过事件通知（provider 不直接依赖 keyPoolManager）
+        this.emit('rate-limited', { keyId: options._assignedKeyId });
+
+        // 等待短暂延迟后重试（使用相同 key，因为 provider 层无法切换 key）
+        // 实际的 Key 切换由上层（index.js 的 rate-limited 事件监听）处理
+        await new Promise(resolve => setTimeout(resolve, 2000 * retryCount));
+        continue;
+      }
+
+      if (error._isRateLimit && error._rateLimitPhase === 'mid-stream') {
+        // Mid-stream 429: 不能透明重试，已有部分输出
+        writer.send({
+          type: 'claude-error',
+          error: '请求被限速中断，请点击继续恢复对话',
+          code: 'RATE_LIMIT_MID_STREAM',
+          resumable: true,
+        });
+        this.emit('rate-limited', { keyId: options._assignedKeyId });
+        break;
+      }
+
+      // 非 429 错误，直接抛出
+      throw error;
+    }
+  }
+
+  if (retryCount > maxRetries) {
+    writer.send({
+      type: 'claude-error',
+      error: '当前使用人数较多，所有通道繁忙，请稍后重试',
+      code: 'RATE_LIMIT_EXHAUSTED',
+    });
+  }
+}
+```
+
+- [ ] **Step 2: 在 index.js 中监听 rate-limited 事件**
+
+在 `startServer()` 内部，`processManager.startSession()` 之后的事件绑定区域添加：
+
+```javascript
+// 监听 provider 的 rate-limited 事件，标记 Key 冷却
+processManager.on('process:output', ({ sessionId, data }) => {
+  // 如果 provider 发出了 rate-limited 事件，会通过 processManager 传播
+  // 但更直接的方式是在 router:startSession 中绑定：
+});
+
+// 更简洁：在 startSession 回调中为每个 provider 绑定
+// 修改现有的 router:startSession 监听器，在 processManager.startSession() 后添加：
+const provider = processManager.getProviderForSession(sessionId);
+if (provider) {
+  provider.on('rate-limited', ({ keyId }) => {
+    keyPoolManager.markCooling(keyId);
+  });
+}
+```
+
+- [ ] **Step 3: 验证 import 无报错**
+
+Run: `node -e "import('./server/providers/claude-sdk.js').then(() => console.log('import OK'))"`
+Expected: import OK
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add server/providers/claude-sdk.js
+git commit -m "feat: add 429 retry logic in ClaudeSDKProvider (pre-stream/mid-stream)"
+```
+
+---
+
 ### Task 6: MessageRouter 集成队列
 
 **Files:**
@@ -1134,20 +1236,27 @@ git commit -m "feat: integrate request queue into MessageRouter"
 **Files:**
 - Modify: `server/routes/settings.js`
 
-- [ ] **Step 1: 在 settings.js 中添加 key-pool 路由**
+- [ ] **Step 1: 在 settings.js 顶部添加 import**
 
-在 `server/routes/settings.js` 文件末尾（`export default router` 之前）添加：
+在 `server/routes/settings.js` 文件顶部（其他 import 语句旁）添加：
 
 ```javascript
 import { anthropicKeyPoolDb } from '../database/anthropicKeyPoolDb.js';
+```
 
+- [ ] **Step 2: 在 settings.js 文件末尾添加 key-pool 路由**
+
+在 `export default router` 之前添加：
+
+```javascript
 // ========== Anthropic Key Pool Management ==========
 
 // GET /key-pool — list all keys (masked) + runtime stats
 router.get('/key-pool', (req, res) => {
   try {
-    const keys = anthropicKeyPoolDb.getMasked();
-    res.json({ success: true, data: keys });
+    const dbKeys = anthropicKeyPoolDb.getMasked();
+    const runtimeStats = req.app.locals.keyPoolManager?.getStats() || null;
+    res.json({ success: true, data: { keys: dbKeys, runtime: runtimeStats } });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -1162,7 +1271,7 @@ router.post('/key-pool', (req, res) => {
     }
     const result = anthropicKeyPoolDb.add(name, apiKey, rpmLimit || 50);
 
-    // If keyPoolManager is available on app, add to runtime pool
+    // Add to runtime pool
     if (req.app.locals.keyPoolManager) {
       req.app.locals.keyPoolManager.addKey({
         id: result.id, name, api_key: apiKey, rpm_limit: rpmLimit || 50, enabled: 1,
@@ -1201,10 +1310,12 @@ router.patch('/key-pool/:id', (req, res) => {
 
     anthropicKeyPoolDb.update(id, fields);
 
-    // Update runtime pool
-    if (req.app.locals.keyPoolManager) {
-      if (enabled === false) req.app.locals.keyPoolManager.disableKey(id);
-      else if (enabled === true) req.app.locals.keyPoolManager.enableKey(id);
+    // Sync runtime pool state
+    const kpm = req.app.locals.keyPoolManager;
+    if (kpm) {
+      if (enabled === false) kpm.disableKey(id);
+      else if (enabled === true) kpm.enableKey(id);
+      if (rpmLimit !== undefined) kpm.updateKeyRpmLimit(id, rpmLimit);
     }
 
     res.json({ success: true });
@@ -1243,16 +1354,28 @@ import { RequestQueue } from './queue/RequestQueue.js';
 import { anthropicKeyPoolDb } from './database/anthropicKeyPoolDb.js';
 ```
 
-- [ ] **Step 2: 初始化 KeyPoolManager 和 RequestQueue**
+- [ ] **Step 2: 在 MessageRouter 中添加 setter 方法**
 
-在 `initializeDatabase()` 调用之后（数据库就绪后），在创建 `MessageRouter` 之前，添加：
+由于 `MessageRouter` 在模块顶层创建（行 301），而数据库在 `startServer()` 异步函数中初始化（行 567），Key 池依赖数据库，因此不能在构造函数中注入。改用 setter：
+
+在 `MessageRouter` 构造函数注入 `requestQueue` 的基础上（Task 6 已完成），确保 `requestQueue` 参数是可选的（默认 `null`），并添加 setter 方法：
 
 ```javascript
-// Initialize Key Pool
+// 在 MessageRouter 类中添加
+setRequestQueue(queue) {
+  this.#requestQueue = queue;
+}
+```
+
+- [ ] **Step 3: 在 startServer() 内初始化 KeyPoolManager 和 RequestQueue**
+
+在 `server/index.js` 的 `startServer()` 函数中，`await initializeDatabase()` 之后（约行 567 后）添加：
+
+```javascript
+// Initialize Key Pool (must be after DB init)
 const keyPoolManager = new KeyPoolManager();
 const dbKeys = anthropicKeyPoolDb.getEnabled();
 if (dbKeys.length === 0 && process.env.ANTHROPIC_AUTH_TOKEN) {
-  // Auto-import default key from env
   const defaultKey = anthropicKeyPoolDb.add('default', process.env.ANTHROPIC_AUTH_TOKEN, 50);
   keyPoolManager.loadKeys([{ ...defaultKey, api_key: process.env.ANTHROPIC_AUTH_TOKEN, enabled: 1 }]);
   console.log('[KeyPool] Imported default key from ANTHROPIC_AUTH_TOKEN');
@@ -1264,18 +1387,15 @@ if (dbKeys.length === 0 && process.env.ANTHROPIC_AUTH_TOKEN) {
 // Initialize Request Queue
 const requestQueue = new RequestQueue(keyPoolManager);
 
-// Expose to Express app for route handlers
+// Inject into router (created at module top level, line 301)
+router.setRequestQueue(requestQueue);
+
+// Expose to Express app for route handlers (settings.js uses app.locals)
 app.locals.keyPoolManager = keyPoolManager;
 app.locals.requestQueue = requestQueue;
 ```
 
-- [ ] **Step 3: 将 requestQueue 注入 MessageRouter**
-
-找到 `new MessageRouter(...)` 的调用，在参数对象中添加 `requestQueue`：
-
-```javascript
-const router = new MessageRouter({ transport, sessionManager, processManager, messageBuffer, registry, requestQueue });
-```
+注意：`router` 在模块顶层创建时 `requestQueue` 为 `null`，队列行为在 `startServer()` 完成后才激活。这确保了数据库先初始化。
 
 - [ ] **Step 4: 监听 ConnectionRegistry 断连事件清理队列**
 
@@ -1311,19 +1431,23 @@ setInterval(() => {
 
 在 `router.on('router:startSession', ...)` 回调中，从 `message.options` 中提取 `_assignedKeyId`，并在 `process:complete` 和 `process:error` 事件中调用 `keyPoolManager.release()`：
 
-找到现有的 `process:complete` 和 `process:error` 事件监听，添加 release 逻辑。由于这些事件在 `router.bindEvents()` 中已绑定，最简单的方式是在 `router:startSession` 回调中记录 sessionId → keyId 的映射，然后在 complete/error 时 release。
+注意：`process:complete` 和 `process:error` 事件在 `router.bindEvents()` 中已有监听器（负责 SessionManager 状态转换和消息缓冲清理）。下面新增的监听器是 **额外的**，仅负责 Key 释放，与现有监听器并存不冲突（EventEmitter 允许多个监听器）。这些监听器也应放在 `startServer()` 内部（`keyPoolManager` 的作用域内）。
 
 ```javascript
-// 在 router:startSession 监听器外部维护映射
+// 在 startServer() 内，requestQueue 初始化之后添加：
+
 const sessionKeyMap = new Map();
 
-// 在 router:startSession 回调内部（processManager.startSession 之后）添加：
-const assignedKeyId = message.options?._assignedKeyId;
-if (assignedKeyId) {
-  sessionKeyMap.set(sessionId, assignedKeyId);
-}
+// 扩展 router:startSession 监听：记录 sessionId → keyId 映射
+// 注意：这是额外监听器，原有的 router:startSession 监听器（行 308）仍然有效
+router.on('router:startSession', ({ sessionId, message }) => {
+  const assignedKeyId = message.options?._assignedKeyId;
+  if (assignedKeyId) {
+    sessionKeyMap.set(sessionId, assignedKeyId);
+  }
+});
 
-// 添加 process:complete 和 process:error 的 key release 逻辑
+// Key release 监听器（仅负责释放 Key，不影响现有 session 管理逻辑）
 processManager.on('process:complete', ({ sessionId }) => {
   const keyId = sessionKeyMap.get(sessionId);
   if (keyId) {
@@ -1405,11 +1529,11 @@ git commit -m "feat: handle queue-status messages in WebSocketContext"
 ### Task 10: 前端 — 排队状态 UI 展示
 
 **Files:**
-- Modify: 消息展示组件（需要确认具体文件路径，可能是 `src/components/ChatMessage.tsx` 或类似文件）
+- Modify: `src/components/chat/view/subcomponents/AssistantThinkingIndicator.tsx`（行 59 显示"正在思考中"）
 
-- [ ] **Step 1: 找到"思考中"状态的展示位置**
+- [ ] **Step 1: 从 WebSocketContext 消费 queueStatus**
 
-在前端组件中找到显示 AI 思考状态（如 "thinking..."、"思考中..."）的代码位置。
+在 `AssistantThinkingIndicator.tsx` 中导入 `useWebSocket` 并获取 `queueStatus`。
 
 - [ ] **Step 2: 添加排队状态展示**
 
