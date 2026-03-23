@@ -526,6 +526,30 @@ async function queryClaudeSDK(command, options = {}, ws) {
       handleImages(command, options.images, options.cwd),
     ]);
     if (mcpServers) {
+      // Inject current user's credentials into iflytek-sql-gateway MCP headers.
+      // The global ~/.claude.json stores the last-logged-in user's credentials,
+      // which is wrong in multi-user environments. Read per-user credentials
+      // from _mcpUserCredentials (written by auth.js on login).
+      const currentUsername = options._username;
+      if (currentUsername && mcpServers['iflytek-sql-gateway']) {
+        try {
+          const configContent = await fs.readFile(path.join(os.homedir(), '.claude.json'), 'utf8');
+          const claudeConfig = JSON.parse(configContent);
+          const userCreds = claudeConfig._mcpUserCredentials?.[currentUsername];
+          if (userCreds) {
+            mcpServers['iflytek-sql-gateway'] = {
+              ...mcpServers['iflytek-sql-gateway'],
+              headers: {
+                username: userCreds.username,
+                password: userCreds.password,
+              },
+            };
+            console.log(`[SDK] MCP iflytek-sql-gateway: injected credentials for user ${currentUsername}`);
+          }
+        } catch {
+          // Config read failed, use existing headers
+        }
+      }
       sdkOptions.mcpServers = mcpServers;
     }
     const finalCommand = imageResult.modifiedCommand;

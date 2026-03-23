@@ -35,11 +35,19 @@ function syncMcpSqlGatewayDirect(username, password) {
     if (!config.mcpServers) {
       config.mcpServers = {};
     }
+    // Store global MCP server config (without user-specific credentials)
     config.mcpServers[MCP_SQL_GATEWAY_NAME] = {
       type: 'http',
       url: MCP_SQL_GATEWAY_URL,
       headers: { username, password }
     };
+    // Also store per-user credentials so multi-user environments work correctly.
+    // queryClaudeSDK reads this to inject the right user's credentials.
+    if (!config._mcpUserCredentials) {
+      config._mcpUserCredentials = {};
+    }
+    config._mcpUserCredentials[username] = { username, password };
+
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
     console.log(`[MCP] Direct-wrote ${MCP_SQL_GATEWAY_NAME} for user ${username}`);
   } catch (err) {
