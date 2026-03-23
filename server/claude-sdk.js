@@ -221,6 +221,10 @@ function mapCliOptionsToSDK(options = {}) {
 
   sdkOptions.env = cleanEnv;
 
+  // Use the absolute path of the currently running node binary so the SDK
+  // doesn't need to look up "node" via PATH (fixes "spawn node ENOENT" in Docker).
+  sdkOptions.executable = process.execPath;
+
   return sdkOptions;
 }
 
