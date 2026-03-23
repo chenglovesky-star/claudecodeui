@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS api_key_pool (
 **核心方法**：
 
 - `acquire()` — 返回最优 Key，或 `null`（全部满载）；成功时自动记录时间戳
-- `release(keyId)` — 请求完成后的回调（更新统计，触发 `key:released` 事件）
+- `release(keyId)` — 请求完成后的回调（更新统计，触发 `key:released` 事件）。由 `ProcessManager` 监听 `process:complete` 和 `process:error` 事件后调用
 - `markCooling(keyId)` — 收到 429 时标记冷却 60 秒，冷却结束触发 `key:available` 事件
 - `markError(keyId)` — 非 429 错误计数，连续 3 次进入 error 状态
 - `getStats()` — 返回所有 Key 的状态摘要（apiKey 脱敏）
@@ -141,18 +141,20 @@ CREATE TABLE IF NOT EXISTS api_key_pool (
 
 ### 管理 API
 
-作为现有 `settingsRoutes` 的子路由实现（复用认证中间件链），路径：`/api/settings/api-keys`
+作为现有 `settingsRoutes` 的子路由实现（复用认证中间件链），路径：`/api/settings/key-pool`
+
+注意：现有 `/api/settings/api-keys` 已用于用户个人 API Key（Agent API 认证），此处使用 `/key-pool` 避免冲突。
 
 | 方法 | 路径 | 功能 |
 |------|------|------|
-| GET | `/` | 列出所有 Key（api_key 脱敏显示） |
+| GET | `/` | 列出所有 Key（api_key 脱敏显示）+ 运行时统计 |
 | POST | `/` | 添加 Key |
 | DELETE | `/:id` | 删除 Key |
 | PATCH | `/:id` | 启用/禁用、修改 rpm_limit |
 
 ### 数据库操作层
 
-文件：`/server/database/apiKeyPoolDb.js`
+文件：`/server/database/anthropicKeyPoolDb.js`
 
 提供 `api_key_pool` 表的 CRUD 封装（仅静态配置字段）。
 
@@ -329,15 +331,15 @@ estimatedWaitSec = position * (avgCompletionTime / activeKeyCount)
 |------|------|
 | `/server/queue/RequestQueue.js` | 请求队列（入队、出队、超时淘汰、事件驱动调度） |
 | `/server/queue/KeyPoolManager.js` | Key 池管理（选择、熔断、冷却、滑动窗口计数） |
-| `/server/database/apiKeyPoolDb.js` | Key 池数据库操作（静态配置 CRUD） |
+| `/server/database/anthropicKeyPoolDb.js` | Key 池数据库操作（静态配置 CRUD） |
 
 ### 修改文件
 
 | 文件 | 改动 |
 |------|------|
-| `server/claude-sdk.js` | `queryClaudeSDK()` 接收外部传入的 Key 参数（`ANTHROPIC_AUTH_TOKEN` 覆盖）；429 重试逻辑区分 pre-stream / mid-stream |
+| `server/claude-sdk.js` | `queryClaudeSDK()` 通过 `options._assignedApiKey` 接收 Key，在 `mapCliOptionsToSDK()` 中设置 `cleanEnv.ANTHROPIC_AUTH_TOKEN = options._assignedApiKey`（不改变函数签名）；429 重试逻辑区分 pre-stream / mid-stream |
 | `server/index.js` | 初始化 KeyPoolManager 和 RequestQueue；注册 Key 管理子路由 |
-| `server/routes/settings.js` | 新增 `/api-keys` 子路由（CRUD） |
+| `server/routes/settings.js` | 新增 `/key-pool` 子路由（CRUD） |
 | `server/database/db.js` | 新增 `api_key_pool` 建表语句 |
 | `server/config/constants.js` | 新增队列和 Key 池相关常量 |
 | `server/message/MessageRouter.js` | `#handleProviderCommand()` 中在 `SessionManager.create()` 前插入队列逻辑 |
