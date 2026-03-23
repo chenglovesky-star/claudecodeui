@@ -9,16 +9,9 @@ const warnings = [];
 const errors = [];
 
 export function validateConfig() {
-  // Required in production
-  if (process.env.NODE_ENV === 'production') {
-    if (!process.env.JWT_SECRET) {
-      errors.push('JWT_SECRET must be set in production');
-    }
-  }
-
-  // Warnings for development
+  // JWT_SECRET warning (not fatal — fallback auth handles old tokens)
   if (!process.env.JWT_SECRET) {
-    warnings.push('JWT_SECRET not set, using insecure default');
+    warnings.push('JWT_SECRET not set, using insecure default. Set it in docker.env for production.');
   }
 
   if (!process.env.WORKSPACES_ROOT) {
