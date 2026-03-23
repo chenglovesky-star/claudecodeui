@@ -62,7 +62,35 @@ export class ClaudeSDKProvider extends BaseProvider {
         this.isRunning = false;
       }
     } catch (error) {
-      this.emitError(error);
+      if (error._isRateLimit && error._rateLimitPhase === 'pre-stream') {
+        // Pre-stream 429: notify upper layer to switch key and retry
+        this.emit('rate-limited', {
+          keyId: options._assignedKeyId,
+          phase: 'pre-stream',
+          command,
+          options,
+          connectionId,
+        });
+        return;
+      }
+
+      if (error._isRateLimit && error._rateLimitPhase === 'mid-stream') {
+        // Mid-stream 429: cannot transparently retry, notify user
+        writer.send({
+          type: 'claude-error',
+          error: '请求被限速中断，请点击继续恢复对话',
+          code: 'RATE_LIMIT_MID_STREAM',
+          resumable: true,
+        });
+        this.emit('rate-limited', {
+          keyId: options._assignedKeyId,
+          phase: 'mid-stream',
+        });
+        return;
+      }
+
+      // Non-429 error: re-throw for normal error handling
+      throw error;
     }
   }
 
