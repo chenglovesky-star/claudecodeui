@@ -209,6 +209,16 @@ function mapCliOptionsToSDK(options = {}) {
   // The server may itself be running inside Claude Code, inheriting CLAUDECODE=1.
   const cleanEnv = { ...process.env };
   delete cleanEnv.CLAUDECODE;
+
+  // Ensure PATH includes common node installation directories so the SDK can
+  // spawn "node" successfully (especially inside Docker where su may strip PATH).
+  const extraPaths = ['/usr/local/bin', '/usr/bin', '/bin'];
+  const currentPath = cleanEnv.PATH || '';
+  const missingPaths = extraPaths.filter(p => !currentPath.split(':').includes(p));
+  if (missingPaths.length > 0) {
+    cleanEnv.PATH = currentPath ? `${currentPath}:${missingPaths.join(':')}` : missingPaths.join(':');
+  }
+
   sdkOptions.env = cleanEnv;
 
   return sdkOptions;

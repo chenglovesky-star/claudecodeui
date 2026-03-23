@@ -173,6 +173,15 @@ async function spawnClaudeCLI(command, options = {}, ws) {
     const childEnv = { ...process.env, HTTPS_PROXY: process.env.HTTPS_PROXY || '' };
     delete childEnv.CLAUDECODE;
 
+    // Ensure PATH includes common node/CLI installation directories
+    // (Docker su may strip PATH, causing "spawn node ENOENT")
+    const extraPaths = ['/usr/local/bin', '/usr/bin', '/bin'];
+    const currentPath = childEnv.PATH || '';
+    const missingPaths = extraPaths.filter(p => !currentPath.split(':').includes(p));
+    if (missingPaths.length > 0) {
+      childEnv.PATH = currentPath ? `${currentPath}:${missingPaths.join(':')}` : missingPaths.join(':');
+    }
+
     // Inject sandbox directory hint for CLI mode
     if (workingDir) {
       childEnv.CLAUDE_SANDBOX_DIR = workingDir;

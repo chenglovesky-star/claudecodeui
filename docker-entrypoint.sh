@@ -50,5 +50,8 @@ fs.writeFileSync('$SETTINGS_FILE', JSON.stringify(settings, null, 2));
     echo "Settings.json 已从环境变量注入敏感配置"
 fi
 
-# 以 claude 用户身份启动应用
-exec su claude -c "node server/index.js"
+# 导出完整 PATH，确保 claude 用户的子进程能找到 node、claude 等全局命令
+export PATH
+
+# 以 claude 用户身份启动应用（通过 -w PATH 保留 PATH 环境变量）
+exec su -w PATH claude -c "exec node server/index.js"
