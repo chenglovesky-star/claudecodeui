@@ -13,12 +13,22 @@
  */
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { createRequire } from 'module';
 import crypto from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { CLAUDE_MODELS } from '../shared/modelConstants.js';
 import { enforceSandbox } from './utils/pathSandbox.js';
+
+// Resolve the absolute path to the SDK's bundled cli.js once at startup.
+// The SDK's internal resolution uses path.join(dirname, "..") which can
+// point to the wrong directory in scoped packages (@anthropic-ai/).
+const __require = createRequire(import.meta.url);
+const CLAUDE_CODE_CLI_PATH = path.join(
+  path.dirname(__require.resolve('@anthropic-ai/claude-agent-sdk/sdk.mjs')),
+  'cli.js'
+);
 
 const activeSessions = new Map();
 const pendingToolApprovals = new Map();
@@ -224,6 +234,11 @@ function mapCliOptionsToSDK(options = {}) {
   // Use the absolute path of the currently running node binary so the SDK
   // doesn't need to look up "node" via PATH (fixes "spawn node ENOENT" in Docker).
   sdkOptions.executable = process.execPath;
+
+  // Explicitly set the path to the SDK's bundled CLI entry point.
+  // The SDK's default resolution (dirname + "..") resolves incorrectly for
+  // scoped packages under node_modules/@anthropic-ai/.
+  sdkOptions.pathToClaudeCodeExecutable = CLAUDE_CODE_CLI_PATH;
 
   return sdkOptions;
 }
@@ -494,6 +509,13 @@ async function queryClaudeSDK(command, options = {}, ws) {
 
     // Map CLI options to SDK format
     const sdkOptions = mapCliOptionsToSDK(options);
+
+    // Ensure cwd exists (spawn fails with ENOENT if it doesn't)
+    if (sdkOptions.cwd) {
+      await fs.mkdir(sdkOptions.cwd, { recursive: true }).catch(() => {});
+    }
+
+    console.log(`[SDK] executable=${sdkOptions.executable}, cli=${sdkOptions.pathToClaudeCodeExecutable}, cwd=${sdkOptions.cwd}`);
 
     // Notify frontend: loading configuration
     ws.send({ type: 'claude-phase', phase: 'configuring', sessionId: sessionId || null });
