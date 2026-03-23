@@ -5,7 +5,7 @@ const { PlainTcpAuthentication } = hive.auth;
 const { TcpConnection } = hive.connections;
 
 // 配置
-const HIVE_HOST = process.env.HIVE_HOST || '10.100.108.90';
+const HIVE_HOST = process.env.HIVE_HOST || '10.100.106.17';
 const HIVE_PORT = parseInt(process.env.HIVE_PORT || '10010', 10);
 const HIVE_USER = process.env.HIVE_USER || 'sr';
 const HIVE_PASSWORD = process.env.HIVE_PASSWORD || 'iflytek';

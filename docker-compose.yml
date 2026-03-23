@@ -9,6 +9,7 @@ services:
       - "3001:3001"
     env_file:
       - docker.env
+      - .env
     volumes:
       # SQLite 数据库持久化（使用宿主机目录，与旧部署保持一致）
       - /data/claude-code-ui/db:/data/db
