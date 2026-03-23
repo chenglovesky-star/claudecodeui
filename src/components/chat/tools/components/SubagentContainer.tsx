@@ -63,11 +63,16 @@ export const SubagentContainer: React.FC<SubagentContainerProps> = ({
         toolName="Task"
         open={false}
       >
-        {/* Prompt/request to the subagent */}
+        {/* Prompt/request to the subagent (hidden by default, shown in details) */}
         {prompt && (
-          <div className="mb-2 line-clamp-4 whitespace-pre-wrap break-words text-xs text-gray-600 dark:text-gray-400">
-            {prompt}
-          </div>
+          <details className="mb-2">
+            <summary className="cursor-pointer text-[11px] text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300">
+              查看 Prompt
+            </summary>
+            <div className="mt-1 line-clamp-10 whitespace-pre-wrap break-words text-xs text-gray-600 dark:text-gray-400">
+              {prompt}
+            </div>
+          </details>
         )}
 
         {/* Current tool indicator (while running) */}

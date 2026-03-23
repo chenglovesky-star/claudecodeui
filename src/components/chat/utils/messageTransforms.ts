@@ -193,16 +193,23 @@ export const convertCursorSessionMessages = (blobs: CursorBlob[], projectPath: s
             }
 
             if (part?.type === 'tool-call' || part?.type === 'tool_use') {
+              const partToolName = part.toolName || part.name || 'Unknown Tool';
+              const isSubagentTool = partToolName === 'Task' || partToolName === 'Agent' || partToolName === 'Dispatch';
+
               if (textParts.length > 0 || reasoningText) {
-                converted.push({
-                  type: role,
-                  content: textParts.join('\n'),
-                  reasoning: reasoningText ?? undefined,
-                  timestamp: new Date(Date.now() + blobIdx * 1000),
-                  blobId: blob.id,
-                  sequence: blob.sequence,
-                  rowid: blob.rowid,
-                });
+                // Hide preceding text for subagent/task tool calls — it contains
+                // the prompt instructions sent to the subagent, not user-facing content.
+                if (!isSubagentTool) {
+                  converted.push({
+                    type: role,
+                    content: textParts.join('\n'),
+                    reasoning: reasoningText ?? undefined,
+                    timestamp: new Date(Date.now() + blobIdx * 1000),
+                    blobId: blob.id,
+                    sequence: blob.sequence,
+                    rowid: blob.rowid,
+                  });
+                }
                 textParts.length = 0;
                 reasoningText = null;
               }
