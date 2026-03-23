@@ -33,6 +33,7 @@ const HEARTBEAT_MAX_MISSED = 2;            // Disconnect after 2 consecutive mis
 const RECONNECT_BASE_MS = 1000;      // Initial reconnect delay
 const RECONNECT_MAX_MS = 30000;      // Max reconnect delay
 const MESSAGE_QUEUE_MAX = 50;        // Max queued messages to prevent memory issues
+const AUTH_FAILURE_MAX = 3;          // Auto-logout after N consecutive auth failures
 
 const useWebSocketProviderState = (): WebSocketContextType => {
   const wsRef = useRef<WebSocket | null>(null);
@@ -48,7 +49,8 @@ const useWebSocketProviderState = (): WebSocketContextType => {
   const missedCountRef = useRef(0);
   const lastSeqIdRef = useRef<number>(0);
   const activeSessionIdRef = useRef<string | null>(null);
-  const { token } = useAuth();
+  const authFailureCountRef = useRef(0);
+  const { token, logout } = useAuth();
 
   // ─── Heartbeat ───
   const clearPongTimeout = useCallback(() => {
@@ -133,6 +135,7 @@ const useWebSocketProviderState = (): WebSocketContextType => {
         setIsConnected(true);
         wsRef.current = websocket;
         reconnectAttemptRef.current = 0;
+        authFailureCountRef.current = 0; // Connection succeeded, reset auth failure count
         startHeartbeat(websocket);
         flushMessageQueue(websocket);
 
@@ -227,6 +230,17 @@ const useWebSocketProviderState = (): WebSocketContextType => {
 
         if (unmountedRef.current) return;
 
+        // WebSocket upgrade rejected (auth failure) → code is typically 1006
+        // If connection never opened (onopen never fired), it's likely an auth rejection
+        if (reconnectAttemptRef.current > 0 && !event.wasClean) {
+          authFailureCountRef.current += 1;
+          if (authFailureCountRef.current >= AUTH_FAILURE_MAX) {
+            console.warn('[WS] Too many consecutive auth failures, clearing session');
+            logout();
+            return;
+          }
+        }
+
         // Exponential backoff: 1s, 2s, 4s, 8s, ... max 30s
         const delay = Math.min(
           RECONNECT_BASE_MS * Math.pow(2, reconnectAttemptRef.current),
@@ -249,7 +263,7 @@ const useWebSocketProviderState = (): WebSocketContextType => {
       isConnectingRef.current = false;
       console.error('Error creating WebSocket connection:', error);
     }
-  }, [token, startHeartbeat, stopHeartbeat, flushMessageQueue, clearPongTimeout]);
+  }, [token, startHeartbeat, stopHeartbeat, flushMessageQueue, clearPongTimeout, logout]);
 
   // ─── Lifecycle ───
   useEffect(() => {

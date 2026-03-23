@@ -1,7 +1,7 @@
 import { IS_PLATFORM } from "../constants/config";
 
 // Utility function for authenticated API calls
-export const authenticatedFetch = (url, options = {}) => {
+export const authenticatedFetch = async (url, options = {}) => {
   const token = localStorage.getItem('auth-token');
 
   const defaultHeaders = {};
@@ -15,13 +15,25 @@ export const authenticatedFetch = (url, options = {}) => {
     defaultHeaders['Authorization'] = `Bearer ${token}`;
   }
 
-  return fetch(url, {
+  const response = await fetch(url, {
     ...options,
     headers: {
       ...defaultHeaders,
       ...options.headers,
     },
   });
+
+  // Token invalid/expired → clear session and reload to login page
+  if (response.status === 401 || response.status === 403) {
+    const skipAutoLogout = options._skipAutoLogout;
+    if (!skipAutoLogout && token) {
+      console.warn('[Auth] Token rejected (HTTP', response.status, '), clearing session');
+      localStorage.removeItem('auth-token');
+      window.location.reload();
+    }
+  }
+
+  return response;
 };
 
 // API endpoints
