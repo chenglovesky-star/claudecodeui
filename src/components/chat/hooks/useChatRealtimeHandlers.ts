@@ -172,6 +172,9 @@ export function useChatRealtimeHandlers({
       'gemini-error',
       'claude-cli-error',
       'error',
+      'session-completed',
+      'session-error',
+      'session-timeout',
     ]);
 
     const isClaudeSystemInit =
@@ -208,7 +211,8 @@ export function useChatRealtimeHandlers({
         latestMessage.type === 'cursor-error' ||
         latestMessage.type === 'codex-error' ||
         latestMessage.type === 'gemini-error' ||
-        latestMessage.type === 'claude-cli-error');
+        latestMessage.type === 'claude-cli-error' ||
+        latestMessage.type === 'error');
 
     const bufferBackgroundMessage = (sessionId: string, message: any) => {
       if (!sessionId) return;
