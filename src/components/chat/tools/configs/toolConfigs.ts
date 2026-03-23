@@ -575,14 +575,15 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
 
   ToolSearch: {
     input: {
-      type: 'collapsible',
-      title: (input) => `ToolSearch / ${input?.query || ''}`,
-      defaultOpen: false,
-      contentType: 'text',
-      getContentProps: (input) => ({
-        content: input?.query || '',
-        format: 'plain'
-      })
+      type: 'one-line',
+      label: 'ToolSearch',
+      getValue: (input) => input?.query || '',
+      action: 'none',
+      colorScheme: {
+        primary: 'text-gray-700 dark:text-gray-300',
+        border: 'border-gray-400 dark:border-gray-500',
+        icon: 'text-gray-500 dark:text-gray-400'
+      }
     },
     result: {
       hidden: true,
@@ -591,14 +592,16 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
 
   SendMessage: {
     input: {
-      type: 'collapsible',
-      title: (input) => `SendMessage → ${input?.to || 'agent'}`,
-      defaultOpen: false,
-      contentType: 'text',
-      getContentProps: (input) => ({
-        content: input?.text || input?.message || '',
-        format: 'plain'
-      })
+      type: 'one-line',
+      label: 'SendMessage',
+      getValue: (input) => `→ ${input?.to || 'agent'}`,
+      getSecondary: (input) => (input?.text || input?.message || '').slice(0, 60) || undefined,
+      action: 'none',
+      colorScheme: {
+        primary: 'text-gray-700 dark:text-gray-300',
+        border: 'border-gray-400 dark:border-gray-500',
+        icon: 'text-gray-500 dark:text-gray-400'
+      }
     },
     result: {
       hideOnSuccess: true,
@@ -707,20 +710,28 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
 
   Default: {
     input: {
-      type: 'collapsible',
-      title: 'Parameters',
-      defaultOpen: false,
-      contentType: 'text',
-      getContentProps: (input) => ({
-        content: typeof input === 'string' ? input : JSON.stringify(input, null, 2),
-        format: 'code'
-      })
+      type: 'one-line',
+      label: 'Tool',
+      getValue: (input) => {
+        if (typeof input === 'object' && input !== null) {
+          const meaningful = input.command || input.query || input.file_path || input.pattern || input.url || input.description || '';
+          if (meaningful) return String(meaningful).slice(0, 60);
+        }
+        return 'Parameters';
+      },
+      action: 'none',
+      colorScheme: {
+        primary: 'text-gray-700 dark:text-gray-300',
+        border: 'border-gray-400 dark:border-gray-500',
+        icon: 'text-gray-500 dark:text-gray-400'
+      }
     },
     result: {
       type: 'collapsible',
       contentType: 'text',
+      defaultOpen: false,
       getContentProps: (result) => ({
-        content: String(result?.content || ''),
+        content: String(result?.content || '').slice(0, 500),
         format: 'plain'
       })
     }

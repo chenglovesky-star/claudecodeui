@@ -35,7 +35,7 @@ type UiPreferencesAction =
 const DEFAULTS: UiPreferences = {
   autoExpandTools: false,
   showRawParameters: false,
-  showThinking: true,
+  showThinking: false,
   autoScrollToBottom: true,
   sendByCtrlEnter: false,
   sidebarVisible: true,

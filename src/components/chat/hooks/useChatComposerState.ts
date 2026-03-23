@@ -690,6 +690,30 @@ export function useChatComposerState({
         });
       }
 
+      // Auto-name session from first message (fire-and-forget)
+      if (!effectiveSessionId || isTemporarySessionId(effectiveSessionId)) {
+        const autoTitle = currentInput.slice(0, 50).replace(/\n/g, ' ').trim();
+        if (autoTitle) {
+          // Wait briefly for the session to be created, then rename
+          const resolvedProvider = typeof provider === 'string' ? provider : 'claude';
+          const validProvider = ['claude', 'codex', 'cursor', 'gemini'].includes(resolvedProvider) ? resolvedProvider : 'claude';
+          const tryRename = (retries: number) => {
+            const pendingId = typeof window !== 'undefined' ? sessionStorage.getItem('pendingSessionId') : null;
+            const targetId = pendingId || sessionToActivate;
+            if (targetId && !isTemporarySessionId(targetId)) {
+              authenticatedFetch(`/api/sessions/${targetId}/rename`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ summary: autoTitle, provider: validProvider }),
+              }).catch(() => {});
+            } else if (retries > 0) {
+              setTimeout(() => tryRename(retries - 1), 1500);
+            }
+          };
+          setTimeout(() => tryRename(3), 2000);
+        }
+      }
+
       setInput('');
       inputValueRef.current = '';
       resetCommandMenuState();

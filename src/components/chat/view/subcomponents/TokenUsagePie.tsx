@@ -9,6 +9,12 @@ export default function TokenUsagePie({ used, total }: TokenUsagePieProps) {
   if (used == null || total == null || total <= 0) return null;
 
   const percentage = Math.min(100, (used / total) * 100);
+
+  const formatTokenCount = (n: number) => {
+    if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
+    return String(n);
+  };
+
   const radius = 10;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (percentage / 100) * circumference;
@@ -47,7 +53,7 @@ export default function TokenUsagePie({ used, total }: TokenUsagePieProps) {
         />
       </svg>
       <span title={`${used.toLocaleString()} / ${total.toLocaleString()} tokens`}>
-        {percentage.toFixed(1)}%
+        {percentage.toFixed(1)}% ({formatTokenCount(used)}/{formatTokenCount(total)})
       </span>
     </div>
   );

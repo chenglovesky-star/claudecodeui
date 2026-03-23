@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import type { ChatMessage } from '../../types/types';
 import type { Project, ProjectSession, SessionProvider } from '../../../../types/app';
@@ -106,6 +106,8 @@ export default function ChatMessagesPane({
   selectedProjectPath,
 }: ChatMessagesPaneProps) {
   const { t } = useTranslation('chat');
+  const MESSAGE_DISPLAY_LIMIT = 50;
+  const [showAllLocal, setShowAllLocal] = useState(false);
   const messageKeyMapRef = useRef<WeakMap<ChatMessage, string>>(new WeakMap());
   const allocatedKeysRef = useRef<Set<string>>(new Set());
   const generatedMessageKeyCounterRef = useRef(0);
@@ -249,25 +251,43 @@ export default function ChatMessagesPane({
             </div>
           )}
 
-          {visibleMessages.map((message, index) => {
-            const prevMessage = index > 0 ? visibleMessages[index - 1] : null;
+          {(() => {
+            const displayMessages = showAllLocal
+              ? visibleMessages
+              : visibleMessages.slice(-MESSAGE_DISPLAY_LIMIT);
+            const hasHiddenMessages = !showAllLocal && visibleMessages.length > MESSAGE_DISPLAY_LIMIT;
             return (
-              <MessageComponent
-                key={getMessageKey(message)}
-                message={message}
-                prevMessage={prevMessage}
-                createDiff={createDiff}
-                onFileOpen={onFileOpen}
-                onShowSettings={onShowSettings}
-                onGrantToolPermission={onGrantToolPermission}
-                autoExpandTools={autoExpandTools}
-                showRawParameters={showRawParameters}
-                showThinking={showThinking}
-                selectedProject={selectedProject}
-                provider={provider}
-              />
+              <>
+                {hasHiddenMessages && (
+                  <button
+                    className="mx-auto mb-4 flex items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors"
+                    onClick={() => setShowAllLocal(true)}
+                  >
+                    显示更早的 {visibleMessages.length - MESSAGE_DISPLAY_LIMIT} 条消息
+                  </button>
+                )}
+                {displayMessages.map((message, index) => {
+                  const prevMessage = index > 0 ? displayMessages[index - 1] : null;
+                  return (
+                    <MessageComponent
+                      key={getMessageKey(message)}
+                      message={message}
+                      prevMessage={prevMessage}
+                      createDiff={createDiff}
+                      onFileOpen={onFileOpen}
+                      onShowSettings={onShowSettings}
+                      onGrantToolPermission={onGrantToolPermission}
+                      autoExpandTools={autoExpandTools}
+                      showRawParameters={showRawParameters}
+                      showThinking={showThinking}
+                      selectedProject={selectedProject}
+                      provider={provider}
+                    />
+                  );
+                })}
+              </>
             );
-          })}
+          })()}
         </>
       )}
 
