@@ -14,6 +14,14 @@ const SYSTEM_TAG_PATTERNS = [
   /<custom-command-content[^>]*>[\s\S]*?<\/custom-command-content>/g,
 ];
 
+// Lines/blocks produced by skill loading that should be stripped from output
+const SKILL_INTERNAL_PATTERNS = [
+  /^Base directory for this skill:.*$/gm,
+  /^Launching skill:.*$/gm,
+  /^Tell your human partner that this command is deprecated.*$/gm,
+  /^---\nname:[\s\S]*?^---$/gm, // YAML frontmatter from skill files
+];
+
 /**
  * Strip system/internal tags from content before displaying to users.
  * These tags are Claude Code internals that leak into assistant messages.
@@ -22,6 +30,9 @@ export function stripSystemTags(content: string): string {
   if (!content) return content;
   let cleaned = content;
   for (const pattern of SYSTEM_TAG_PATTERNS) {
+    cleaned = cleaned.replace(pattern, '');
+  }
+  for (const pattern of SKILL_INTERNAL_PATTERNS) {
     cleaned = cleaned.replace(pattern, '');
   }
   return cleaned;

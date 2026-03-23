@@ -413,7 +413,10 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
         content.startsWith('<system-reminder>') ||
         content.startsWith('Caveat:') ||
         content.startsWith('This session is being continued from a previous') ||
-        content.startsWith('[Request interrupted');
+        content.startsWith('[Request interrupted') ||
+        content.startsWith('Base directory for this skill:') ||
+        content.startsWith('Launching skill:') ||
+        content.startsWith('Tell your human partner that this command is deprecated');
 
       if (!shouldSkip) {
         // Parse <task-notification> blocks into compact system messages
