@@ -101,6 +101,14 @@ export function useChatRealtimeHandlers({
 }: UseChatRealtimeHandlersArgs) {
   const lastProcessedMessageRef = useRef<LatestChatMessage | null>(null);
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backgroundBuffersRef = useRef<Map<string, {
+    messages: any[];
+    status: 'processing' | 'completed' | 'error' | 'timeout';
+    completedAt?: number;
+  }>>(new Map());
+
+  const BACKGROUND_BUFFER_MAX_MESSAGES = 500;
+  const BACKGROUND_BUFFER_TTL_MS = 5 * 60 * 1000; // 5 minutes after completion
 
   const clearFallbackTimer = useCallback(() => {
     if (fallbackTimerRef.current) {
@@ -202,6 +210,42 @@ export function useChatRealtimeHandlers({
         latestMessage.type === 'gemini-error' ||
         latestMessage.type === 'claude-cli-error');
 
+    const bufferBackgroundMessage = (sessionId: string, message: any) => {
+      if (!sessionId) return;
+
+      let buffer = backgroundBuffersRef.current.get(sessionId);
+      if (!buffer) {
+        buffer = { messages: [], status: 'processing' };
+        backgroundBuffersRef.current.set(sessionId, buffer);
+      }
+
+      // Memory protection: drop oldest when exceeding limit
+      if (buffer.messages.length >= BACKGROUND_BUFFER_MAX_MESSAGES) {
+        buffer.messages.shift();
+      }
+
+      buffer.messages.push(message);
+
+      // Update status on lifecycle events
+      const lifecycleStatuses: Record<string, 'completed' | 'error' | 'timeout'> = {
+        'claude-complete': 'completed',
+        'session-completed': 'completed',
+        'claude-error': 'error',
+        'session-error': 'error',
+        'session-timeout': 'timeout',
+      };
+      const newStatus = lifecycleStatuses[message.type];
+      if (newStatus) {
+        buffer.status = newStatus;
+        buffer.completedAt = Date.now();
+
+        // Auto-cleanup after TTL
+        setTimeout(() => {
+          backgroundBuffersRef.current.delete(sessionId);
+        }, BACKGROUND_BUFFER_TTL_MS);
+      }
+    };
+
     const handleBackgroundLifecycle = (sessionId?: string) => {
       if (!sessionId) {
         return;
@@ -290,6 +334,10 @@ export function useChatRealtimeHandlers({
           isLifecycleMessage;
 
         if (!shouldTreatAsPendingViewLifecycle) {
+          // Buffer ALL messages from background sessions (not just lifecycle)
+          if (latestMessage.sessionId) {
+            bufferBackgroundMessage(latestMessage.sessionId, latestMessage);
+          }
           if (latestMessage.sessionId && isLifecycleMessage) {
             handleBackgroundLifecycle(latestMessage.sessionId);
           }
@@ -621,4 +669,8 @@ export function useChatRealtimeHandlers({
       clearFallbackTimer();
     };
   }, [clearFallbackTimer]);
+
+  return {
+    backgroundBuffersRef,
+  };
 }
