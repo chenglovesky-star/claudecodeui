@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { spawn } from 'child_process';
-import { userDb, userProjectsDb } from '../database/db.js';
+import { userDb, userProjectsDb, userMcpDb } from '../database/db.js';
 import { verifyUser } from '../database/hive.js';
 import { generateToken, authenticateToken } from '../middleware/auth.js';
 import { WORKSPACES_ROOT } from './projects.js';
@@ -17,9 +17,22 @@ const MCP_SQL_GATEWAY_URL = process.env.MCP_SQL_GATEWAY_URL || 'http://ime-data-
  * Auto-configure iflytek-sql-gateway MCP server with the user's login credentials.
  * Runs in the background (non-blocking, non-fatal).
  */
-function syncMcpSqlGateway(username, password) {
-  // Always use direct file write — avoids "already exists" error from CLI
+function syncMcpSqlGateway(username, password, userId) {
+  // Write to ~/.claude.json for system-level compatibility
   syncMcpSqlGatewayDirect(username, password);
+
+  // Write to per-user DB for user-isolated MCP loading
+  if (userId) {
+    try {
+      userMcpDb.upsert(userId, MCP_SQL_GATEWAY_NAME, 'http', {
+        url: MCP_SQL_GATEWAY_URL,
+        headers: { username, password },
+      });
+      console.log(`[MCP] DB: saved ${MCP_SQL_GATEWAY_NAME} for user ${username} (id=${userId})`);
+    } catch (err) {
+      console.error(`[MCP] DB: failed to save ${MCP_SQL_GATEWAY_NAME}:`, err.message);
+    }
+  }
 }
 
 /**
@@ -35,18 +48,13 @@ function syncMcpSqlGatewayDirect(username, password) {
     if (!config.mcpServers) {
       config.mcpServers = {};
     }
-    // Store global MCP server config (without user-specific credentials)
+    // Store global MCP server config (system-level fallback)
     config.mcpServers[MCP_SQL_GATEWAY_NAME] = {
       type: 'http',
       url: MCP_SQL_GATEWAY_URL,
       headers: { username, password }
     };
-    // Also store per-user credentials so multi-user environments work correctly.
-    // queryClaudeSDK reads this to inject the right user's credentials.
-    if (!config._mcpUserCredentials) {
-      config._mcpUserCredentials = {};
-    }
-    config._mcpUserCredentials[username] = { username, password };
+    // _mcpUserCredentials removed — per-user credentials now stored in DB
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
     console.log(`[MCP] Direct-wrote ${MCP_SQL_GATEWAY_NAME} for user ${username}`);
@@ -112,7 +120,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Auto-configure iflytek-sql-gateway MCP server with login credentials
-    syncMcpSqlGateway(username, password);
+    syncMcpSqlGateway(username, password, localUser.id);
 
     // Generate token
     const token = generateToken(localUser);

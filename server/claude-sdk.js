@@ -20,6 +20,7 @@ import path from 'path';
 import os from 'os';
 import { CLAUDE_MODELS } from '../shared/modelConstants.js';
 import { enforceSandbox } from './utils/pathSandbox.js';
+import { userMcpDb } from './database/db.js';
 
 // Resolve the absolute path to the SDK's bundled cli.js once at startup.
 // The SDK's internal resolution uses path.join(dirname, "..") which can
@@ -430,52 +431,41 @@ async function cleanupTempFiles(tempImagePaths, tempDir) {
 }
 
 /**
- * Loads MCP server configurations from ~/.claude.json
+ * Loads MCP server configurations from ~/.claude.json and per-user database
  * @param {string} cwd - Current working directory for project-specific configs
+ * @param {number} userId - Current user's database ID
  * @returns {Object|null} MCP servers object or null if none found
  */
-async function loadMcpConfig(cwd) {
+async function loadMcpConfig(cwd, userId) {
   try {
-    const claudeConfigPath = path.join(os.homedir(), '.claude.json');
-
-    // Check if config file exists
-    try {
-      await fs.access(claudeConfigPath);
-    } catch (error) {
-      // File doesn't exist, return null
-      console.log('No ~/.claude.json found, proceeding without MCP servers');
-      return null;
-    }
-
-    // Read and parse config file
-    let claudeConfig;
-    try {
-      const configContent = await fs.readFile(claudeConfigPath, 'utf8');
-      claudeConfig = JSON.parse(configContent);
-    } catch (error) {
-      console.error('Failed to parse ~/.claude.json:', error.message);
-      return null;
-    }
-
-    // Extract MCP servers (merge global and project-specific)
     let mcpServers = {};
 
-    // Add global MCP servers
-    if (claudeConfig.mcpServers && typeof claudeConfig.mcpServers === 'object') {
-      mcpServers = { ...claudeConfig.mcpServers };
-      console.log(`Loaded ${Object.keys(mcpServers).length} global MCP servers`);
+    // 1. Load system-level MCP servers from ~/.claude.json (iflytek-sql-gateway etc.)
+    try {
+      const claudeConfigPath = path.join(os.homedir(), '.claude.json');
+      const configContent = await fs.readFile(claudeConfigPath, 'utf8');
+      const claudeConfig = JSON.parse(configContent);
+
+      if (claudeConfig.mcpServers && typeof claudeConfig.mcpServers === 'object') {
+        mcpServers = { ...claudeConfig.mcpServers };
+        console.log(`Loaded ${Object.keys(mcpServers).length} system MCP servers from ~/.claude.json`);
+      }
+    } catch {
+      // No system config or parse error — proceed with DB-only
     }
 
-    // Add/override with project-specific MCP servers
-    if (claudeConfig.claudeProjects && cwd) {
-      const projectConfig = claudeConfig.claudeProjects[cwd];
-      if (projectConfig && projectConfig.mcpServers && typeof projectConfig.mcpServers === 'object') {
-        mcpServers = { ...mcpServers, ...projectConfig.mcpServers };
-        console.log(`Loaded ${Object.keys(projectConfig.mcpServers).length} project-specific MCP servers`);
+    // 2. Load per-user MCP servers from database (overrides system servers on name conflict)
+    if (userId) {
+      try {
+        const rows = userMcpDb.getAll(userId);
+        const userServers = userMcpDb.toSdkFormat(rows);
+        mcpServers = { ...mcpServers, ...userServers };
+        console.log(`Loaded ${Object.keys(userServers).length} user MCP servers from DB (userId=${userId})`);
+      } catch (err) {
+        console.error('Failed to load user MCP servers from DB:', err.message);
       }
     }
 
-    // Return null if no servers found
     if (Object.keys(mcpServers).length === 0) {
       console.log('No MCP servers configured');
       return null;
@@ -522,34 +512,10 @@ async function queryClaudeSDK(command, options = {}, ws) {
 
     // Load MCP configuration and handle images in parallel
     const [mcpServers, imageResult] = await Promise.all([
-      loadMcpConfig(options.cwd),
+      loadMcpConfig(options.cwd, options._userId),
       handleImages(command, options.images, options.cwd),
     ]);
     if (mcpServers) {
-      // Inject current user's credentials into iflytek-sql-gateway MCP headers.
-      // The global ~/.claude.json stores the last-logged-in user's credentials,
-      // which is wrong in multi-user environments. Read per-user credentials
-      // from _mcpUserCredentials (written by auth.js on login).
-      const currentUsername = options._username;
-      if (currentUsername && mcpServers['iflytek-sql-gateway']) {
-        try {
-          const configContent = await fs.readFile(path.join(os.homedir(), '.claude.json'), 'utf8');
-          const claudeConfig = JSON.parse(configContent);
-          const userCreds = claudeConfig._mcpUserCredentials?.[currentUsername];
-          if (userCreds) {
-            mcpServers['iflytek-sql-gateway'] = {
-              ...mcpServers['iflytek-sql-gateway'],
-              headers: {
-                username: userCreds.username,
-                password: userCreds.password,
-              },
-            };
-            console.log(`[SDK] MCP iflytek-sql-gateway: injected credentials for user ${currentUsername}`);
-          }
-        } catch {
-          // Config read failed, use existing headers
-        }
-      }
       sdkOptions.mcpServers = mcpServers;
     }
     const finalCommand = imageResult.modifiedCommand;
