@@ -48,11 +48,10 @@ function syncMcpSqlGatewayDirect(username, password) {
     if (!config.mcpServers) {
       config.mcpServers = {};
     }
-    // Store global MCP server config (system-level fallback)
+    // Store global MCP server config (system-level, no credentials — per-user creds in DB)
     config.mcpServers[MCP_SQL_GATEWAY_NAME] = {
       type: 'http',
       url: MCP_SQL_GATEWAY_URL,
-      headers: { username, password }
     };
     // _mcpUserCredentials removed — per-user credentials now stored in DB
 

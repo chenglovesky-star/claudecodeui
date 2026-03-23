@@ -167,6 +167,9 @@ router.get('/config/read', async (req, res) => {
         server.config.headers = config.headers || {};
       }
 
+      server.created = row.created_at;
+      server.updated = row.updated_at;
+
       return server;
     });
 
