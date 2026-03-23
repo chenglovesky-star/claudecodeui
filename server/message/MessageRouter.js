@@ -118,6 +118,22 @@ export class MessageRouter extends EventEmitter {
     const { sessionId, lastSeqId } = message;
     const session = this.#sessionManager.getSession(sessionId);
     const currentState = session ? session.state : 'completed';
+
+    // Rebind session to the new connection so subsequent output/complete/error
+    // events are delivered to the reconnected client instead of the stale one.
+    if (session && session.connectionId !== connectionId) {
+      this.#sessionManager.rebindConnection(sessionId, connectionId);
+
+      // Also reconnect the SDK writer to the new WebSocket
+      const conn = this.#registry?.get(connectionId);
+      if (conn?.ws) {
+        const provider = this.#processManager.getProviderForSession?.(sessionId);
+        if (provider?.reconnectWriter) {
+          provider.reconnectWriter({ ws: conn.ws });
+        }
+      }
+    }
+
     const resumeData = this.#messageBuffer.getResumeData(sessionId, lastSeqId, currentState);
     this.#transport.send(connectionId, { type: 'resume-response', ...resumeData });
   }

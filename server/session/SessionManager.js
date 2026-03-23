@@ -157,6 +157,21 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Rebind a session to a new connection (after WebSocket reconnect).
+   * @param {string} sessionId
+   * @param {string} newConnectionId
+   * @returns {boolean} true if session was found and rebound
+   */
+  rebindConnection(sessionId, newConnectionId) {
+    const session = this._sessions.get(sessionId);
+    if (!session) return false;
+    const oldConnectionId = session.connectionId;
+    session.connectionId = newConnectionId;
+    log.info(`Rebound ${sessionId} from ${oldConnectionId} to ${newConnectionId}`);
+    return true;
+  }
+
+  /**
    * @param {string} sessionId
    * @returns {string|undefined}
    */

@@ -126,6 +126,15 @@ export class ProcessManager extends EventEmitter {
   }
 
   /**
+   * Get the provider instance for a session (for reconnection etc.)
+   * @param {string} sessionId
+   * @returns {object|undefined}
+   */
+  getProviderForSession(sessionId) {
+    return this.#activeProviders.get(sessionId)?.provider;
+  }
+
+  /**
    * @returns {{ sessionId: string, providerType: string, startedAt: number }[]}
    */
   getActive() {
