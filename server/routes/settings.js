@@ -1,5 +1,6 @@
 import express from 'express';
 import { apiKeysDb, credentialsDb } from '../database/db.js';
+import { anthropicKeyPoolDb } from '../database/anthropicKeyPoolDb.js';
 
 const router = express.Router();
 
@@ -172,6 +173,70 @@ router.patch('/credentials/:credentialId/toggle', async (req, res) => {
   } catch (error) {
     console.error('Error toggling credential:', error);
     res.status(500).json({ error: 'Failed to toggle credential' });
+  }
+});
+
+// ========== Anthropic Key Pool Management ==========
+
+router.get('/key-pool', (req, res) => {
+  try {
+    const dbKeys = anthropicKeyPoolDb.getMasked();
+    const runtimeStats = req.app.locals.keyPoolManager?.getStats() || null;
+    res.json({ success: true, data: { keys: dbKeys, runtime: runtimeStats } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/key-pool', (req, res) => {
+  try {
+    const { name, apiKey, rpmLimit } = req.body;
+    if (!name || !apiKey) {
+      return res.status(400).json({ success: false, error: 'name and apiKey are required' });
+    }
+    const result = anthropicKeyPoolDb.add(name, apiKey, rpmLimit || 50);
+    if (req.app.locals.keyPoolManager) {
+      req.app.locals.keyPoolManager.addKey({
+        id: result.id, name, api_key: apiKey, rpm_limit: rpmLimit || 50, enabled: 1,
+      });
+    }
+    res.json({ success: true, data: { id: result.id, name, rpm_limit: rpmLimit || 50 } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.delete('/key-pool/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    anthropicKeyPoolDb.remove(id);
+    if (req.app.locals.keyPoolManager) {
+      req.app.locals.keyPoolManager.removeKey(id);
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.patch('/key-pool/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { enabled, rpmLimit, name } = req.body;
+    const fields = {};
+    if (enabled !== undefined) fields.enabled = enabled ? 1 : 0;
+    if (rpmLimit !== undefined) fields.rpm_limit = rpmLimit;
+    if (name !== undefined) fields.name = name;
+    anthropicKeyPoolDb.update(id, fields);
+    const kpm = req.app.locals.keyPoolManager;
+    if (kpm) {
+      if (enabled === false) kpm.disableKey(id);
+      else if (enabled === true) kpm.enableKey(id);
+      if (rpmLimit !== undefined) kpm.updateKeyRpmLimit(id, rpmLimit);
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
