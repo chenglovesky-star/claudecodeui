@@ -136,32 +136,24 @@ export function useShellTerminal({
         return false;
       }
 
-      if (
-        event.type === 'keydown' &&
-        (event.ctrlKey || event.metaKey) &&
-        event.key?.toLowerCase() === 'v'
-      ) {
-        // Block native paste so data is only injected after clipboard-read resolves.
-        event.preventDefault();
-        event.stopPropagation();
-
-        if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
-          navigator.clipboard
-            .readText()
-            .then((text) => {
-              sendSocketMessage(wsRef.current, {
-                type: 'input',
-                data: text,
-              });
-            })
-            .catch(() => {});
-        }
-
-        return false;
-      }
-
       return true;
     });
+
+    // Handle paste via the native paste event – works reliably across browsers
+    // without requiring the async clipboard-read permission.
+    const handlePaste = (e: ClipboardEvent) => {
+      const text = e.clipboardData?.getData('text');
+      if (text) {
+        e.preventDefault();
+        sendSocketMessage(wsRef.current, {
+          type: 'input',
+          data: text,
+        });
+      }
+    };
+
+    const container = terminalContainerRef.current;
+    container.addEventListener('paste', handlePaste);
 
     window.setTimeout(() => {
       const currentFitAddon = fitAddonRef.current;
@@ -211,6 +203,7 @@ export function useShellTerminal({
     resizeObserver.observe(terminalContainerRef.current);
 
     return () => {
+      container.removeEventListener('paste', handlePaste);
       resizeObserver.disconnect();
       if (resizeTimeoutRef.current !== null) {
         window.clearTimeout(resizeTimeoutRef.current);
