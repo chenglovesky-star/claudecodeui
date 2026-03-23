@@ -130,6 +130,19 @@ const runMigrations = () => {
     )`);
     db.exec('CREATE INDEX IF NOT EXISTS idx_user_mcp_servers_user_id ON user_mcp_servers(user_id)');
 
+    // Migration: api_key_pool table for multi-key rotation
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS api_key_pool (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        api_key TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        rpm_limit INTEGER DEFAULT 50,
+        total_requests INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     console.log('Database migrations completed successfully');
   } catch (error) {
     console.error('Error running migrations:', error.message);
