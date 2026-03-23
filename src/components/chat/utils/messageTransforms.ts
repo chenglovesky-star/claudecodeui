@@ -181,20 +181,24 @@ export const convertCursorSessionMessages = (blobs: CursorBlob[], projectPath: s
         if (Array.isArray(content.content)) {
           const textParts: string[] = [];
 
-          // Pre-scan: check if this content array contains any Agent/Task tool_use.
-          // If so, ALL long text blocks are considered internal prompt instructions
-          // and should be suppressed (they are the prompt sent to the subagent).
-          const SUBAGENT_TOOL_NAMES = new Set(['Task', 'Agent', 'Dispatch']);
-          const hasSubagentToolUse = content.content.some(
+          // Pre-scan: check if this content array contains any tool_use that produces
+          // internal content (prompts, skill content, dispatch instructions).
+          // If so, ALL long text blocks are considered internal and suppressed.
+          const INTERNAL_CONTENT_TOOLS = new Set([
+            'Task', 'Agent', 'Dispatch',  // subagent dispatching
+            'Skill',                        // skill loading (SKILL.md content)
+            'ToolSearch',                   // deferred tool loading
+          ]);
+          const hasInternalToolUse = content.content.some(
             (p: any) => (p?.type === 'tool-call' || p?.type === 'tool_use') &&
-              SUBAGENT_TOOL_NAMES.has(p.toolName || p.name || '')
+              INTERNAL_CONTENT_TOOLS.has(p.toolName || p.name || '')
           );
-          const SUBAGENT_TEXT_THRESHOLD = 150; // chars — short status text is kept
+          const INTERNAL_TEXT_THRESHOLD = 150; // chars — short status text is kept
 
           for (const part of content.content) {
             if (part?.type === 'text' && part?.text) {
-              // In subagent context, suppress long text blocks (prompt instructions)
-              if (hasSubagentToolUse && part.text.length > SUBAGENT_TEXT_THRESHOLD) {
+              // In internal-tool context, suppress long text blocks (prompt/skill content)
+              if (hasInternalToolUse && part.text.length > INTERNAL_TEXT_THRESHOLD) {
                 continue; // skip — this is prompt content, not user-facing text
               }
               textParts.push(decodeHtmlEntities(part.text));

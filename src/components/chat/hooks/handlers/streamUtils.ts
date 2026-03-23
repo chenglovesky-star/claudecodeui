@@ -38,8 +38,16 @@ export function stripSystemTags(content: string): string {
   return cleaned;
 }
 
-// Tool names that indicate subagent dispatching
-const SUBAGENT_TOOL_NAMES = new Set(['Task', 'Agent', 'Dispatch']);
+// Tools whose output text is internal (prompts, skill content, dispatch instructions).
+// Text following these tool_use blocks is suppressed when it exceeds the threshold.
+const INTERNAL_CONTENT_TOOLS = new Set([
+  'Task', 'Agent', 'Dispatch',   // subagent dispatching
+  'Skill',                         // skill loading (outputs full SKILL.md)
+  'ToolSearch',                    // deferred tool loading
+]);
+
+// Threshold: text blocks shorter than this are considered user-facing status messages.
+const INTERNAL_TEXT_THRESHOLD = 150;
 
 export const appendStreamingChunk = (
   setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>,
@@ -54,22 +62,31 @@ export const appendStreamingChunk = (
   if (!chunk.trim()) return;
 
   setChatMessages((previous) => {
-    // Suppress long text that follows subagent tool_use messages.
-    // When Claude dispatches subagents, it may echo the prompt as streaming text.
-    // Check if the most recent messages are subagent tool calls.
+    // ── Internal content suppression ──
+    // When the most recent messages are tool_use calls (no user-facing text in between),
+    // large text blocks that follow are almost always internal content: subagent prompts,
+    // skill file dumps, tool dispatch instructions. Suppress them.
+    //
+    // Architecture: instead of matching specific tool names only, we check two conditions:
+    // 1. Specific tools known to dump internal content (INTERNAL_CONTENT_TOOLS)
+    // 2. General heuristic: if the last N messages are ALL tool_use with no text between
+    //    them, the next large text block is likely internal content too.
     const recentMessages = previous.slice(-5);
-    const hasRecentSubagent = recentMessages.some(
-      m => m.isToolUse && m.toolName && SUBAGENT_TOOL_NAMES.has(m.toolName)
+    const lastNonStreamingMsg = recentMessages.filter(m => !m.isStreaming).slice(-1)[0];
+    const hasInternalTool = recentMessages.some(
+      m => m.isToolUse && m.toolName && INTERNAL_CONTENT_TOOLS.has(m.toolName)
     );
-    if (hasRecentSubagent) {
-      // Check accumulated content: if the existing streaming text + this chunk
-      // would exceed the threshold, it's likely a prompt dump — suppress it.
+    // Heuristic: if the last non-streaming message is a tool_use, text following it
+    // is likely internal (prompt content, skill content, etc.)
+    const lastIsToolUse = lastNonStreamingMsg?.isToolUse === true;
+
+    if (hasInternalTool || lastIsToolUse) {
       const lastMsg = previous[previous.length - 1];
       const existingLen = (lastMsg?.type === 'assistant' && lastMsg.isStreaming)
         ? (lastMsg.content?.length || 0)
         : 0;
-      if (existingLen + chunk.length > 150) {
-        return previous; // suppress — this is subagent prompt content
+      if (existingLen + chunk.length > INTERNAL_TEXT_THRESHOLD) {
+        return previous; // suppress — internal content dump
       }
     }
 
