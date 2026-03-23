@@ -10,23 +10,15 @@ services:
     env_file:
       - docker.env
     volumes:
-      # SQLite 数据库持久化
-      - claude-data:/data/db
+      # SQLite 数据库持久化（使用宿主机目录，与旧部署保持一致）
+      - /data/claude-code-ui/db:/data/db
       # 工作空间目录（团队共享的项目文件）
-      - claude-workspace:/workspace
+      - /data/claude-code-ui/workspace:/workspace
       # Claude CLI 配置和凭证持久化（容器内登录后凭证不丢失）
-      - claude-cli:/home/claude/.claude
+      - /data/claude-code-ui/.claude:/home/claude/.claude
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
       interval: 30s
       timeout: 5s
       start_period: 10s
       retries: 3
-
-volumes:
-  claude-data:
-    driver: local
-  claude-workspace:
-    driver: local
-  claude-cli:
-    driver: local
