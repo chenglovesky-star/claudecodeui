@@ -27,6 +27,8 @@ import TerminalSearchBar from './subcomponents/TerminalSearchBar';
 import TerminalSettings from './subcomponents/TerminalSettings';
 import type { TerminalSettingsValues } from './subcomponents/TerminalSettings';
 import TerminalShortcutsPanel from './subcomponents/TerminalShortcutsPanel';
+import SplitPaneManager from './subcomponents/SplitPaneManager';
+import type { SplitLayout } from './subcomponents/SplitPaneManager';
 
 type CliPromptOption = { number: string; label: string };
 
@@ -154,6 +156,118 @@ export default function Shell({
     },
     [],
   );
+
+  // ── Split pane state ────────────────────────────────────────────────────────
+  const [splitLayout, setSplitLayout] = useState<SplitLayout>({
+    type: 'single',
+    sessionId: activeSessionId ?? '',
+  });
+
+  // Keep single layout in sync with active session
+  useEffect(() => {
+    if (splitLayout.type === 'single' && activeSessionId) {
+      setSplitLayout({ type: 'single', sessionId: activeSessionId });
+    }
+  }, [activeSessionId, splitLayout.type]);
+
+  // Check if we can split (not grid-4 and screen wide enough)
+  const canSplit = splitLayout.type !== 'grid-4' && (typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
+
+  // Get next session id that is not the active one
+  const getNextSessionId = useCallback(() => {
+    const others = tabOrder.filter((id) => id !== activeSessionId);
+    return others.length > 0 ? others[0] : null;
+  }, [tabOrder, activeSessionId]);
+
+  const handleSplitHorizontal = useCallback(() => {
+    if (!activeSessionId) return;
+    const other = getNextSessionId();
+    if (!other) return;
+
+    if (splitLayout.type === 'single') {
+      setSplitLayout({ type: 'horizontal-2', left: activeSessionId, right: other, ratio: 0.5 });
+    } else if (splitLayout.type === 'horizontal-2') {
+      // Upgrade to grid-4
+      const otherIds = tabOrder.filter((id) => id !== splitLayout.left && id !== splitLayout.right);
+      const third = otherIds[0] ?? splitLayout.right;
+      const fourth = otherIds[1] ?? splitLayout.left;
+      setSplitLayout({
+        type: 'grid-4',
+        topLeft: splitLayout.left,
+        topRight: splitLayout.right,
+        bottomLeft: third,
+        bottomRight: fourth,
+        hRatio: splitLayout.ratio,
+        vRatio: 0.5,
+      });
+    } else if (splitLayout.type === 'vertical-2') {
+      // Upgrade to grid-4
+      const otherIds = tabOrder.filter((id) => id !== splitLayout.top && id !== splitLayout.bottom);
+      const third = otherIds[0] ?? splitLayout.bottom;
+      const fourth = otherIds[1] ?? splitLayout.top;
+      setSplitLayout({
+        type: 'grid-4',
+        topLeft: splitLayout.top,
+        topRight: third,
+        bottomLeft: splitLayout.bottom,
+        bottomRight: fourth,
+        hRatio: 0.5,
+        vRatio: splitLayout.ratio,
+      });
+    }
+  }, [activeSessionId, getNextSessionId, splitLayout, tabOrder]);
+
+  const handleSplitVertical = useCallback(() => {
+    if (!activeSessionId) return;
+    const other = getNextSessionId();
+    if (!other) return;
+
+    if (splitLayout.type === 'single') {
+      setSplitLayout({ type: 'vertical-2', top: activeSessionId, bottom: other, ratio: 0.5 });
+    } else if (splitLayout.type === 'vertical-2') {
+      // Upgrade to grid-4
+      const otherIds = tabOrder.filter((id) => id !== splitLayout.top && id !== splitLayout.bottom);
+      const third = otherIds[0] ?? splitLayout.bottom;
+      const fourth = otherIds[1] ?? splitLayout.top;
+      setSplitLayout({
+        type: 'grid-4',
+        topLeft: splitLayout.top,
+        topRight: third,
+        bottomLeft: splitLayout.bottom,
+        bottomRight: fourth,
+        hRatio: 0.5,
+        vRatio: splitLayout.ratio,
+      });
+    } else if (splitLayout.type === 'horizontal-2') {
+      // Upgrade to grid-4
+      const otherIds = tabOrder.filter((id) => id !== splitLayout.left && id !== splitLayout.right);
+      const third = otherIds[0] ?? splitLayout.right;
+      const fourth = otherIds[1] ?? splitLayout.left;
+      setSplitLayout({
+        type: 'grid-4',
+        topLeft: splitLayout.left,
+        topRight: splitLayout.right,
+        bottomLeft: third,
+        bottomRight: fourth,
+        hRatio: splitLayout.ratio,
+        vRatio: 0.5,
+      });
+    }
+  }, [activeSessionId, getNextSessionId, splitLayout, tabOrder]);
+
+  // Collect all session IDs referenced by the current split layout
+  const splitSessionIds = useMemo(() => {
+    switch (splitLayout.type) {
+      case 'single':
+        return [splitLayout.sessionId];
+      case 'horizontal-2':
+        return [splitLayout.left, splitLayout.right];
+      case 'vertical-2':
+        return [splitLayout.top, splitLayout.bottom];
+      case 'grid-4':
+        return [splitLayout.topLeft, splitLayout.topRight, splitLayout.bottomLeft, splitLayout.bottomRight];
+    }
+  }, [splitLayout]);
 
   // ── Multi-session: auto-switch to current session when it changes ──────────
   useEffect(() => {
@@ -299,6 +413,18 @@ export default function Shell({
 
   // ── Multi-session render path ───────────────────────────────────────────────
   if (isMultiSessionMode) {
+    const renderSplitPane = (sessionId: string, _isActive: boolean) => (
+      <ShellSessionInstance
+        key={sessionId}
+        sessionId={sessionId}
+        selectedProject={selectedProject!}
+        selectedSession={selectedSession}
+        isVisible={true}
+        onStatusChange={updateStatus}
+        onRuntimeReady={sessionId === activeSessionId ? handleRuntimeReady : undefined}
+      />
+    );
+
     return (
       <div className="flex h-full w-full flex-col bg-gray-900">
         <SessionTabBar
@@ -311,6 +437,9 @@ export default function Shell({
           onReorder={reorderSessions}
           showSettings={showSettings}
           onToggleSettings={handleToggleSettings}
+          onSplitHorizontal={handleSplitHorizontal}
+          onSplitVertical={handleSplitVertical}
+          canSplit={canSplit}
         />
         <TerminalSettings
           isOpen={showSettings}
@@ -324,17 +453,44 @@ export default function Shell({
               onClose={() => setShowSearch(false)}
             />
           )}
-          {tabOrder.map((sid) => (
-            <ShellSessionInstance
-              key={sid}
-              sessionId={sid}
-              selectedProject={selectedProject}
-              selectedSession={selectedSession}
-              isVisible={sid === activeSessionId}
-              onStatusChange={updateStatus}
-              onRuntimeReady={sid === activeSessionId ? handleRuntimeReady : undefined}
-            />
-          ))}
+          {splitLayout.type === 'single' ? (
+            <>
+              {tabOrder.map((sid) => (
+                <ShellSessionInstance
+                  key={sid}
+                  sessionId={sid}
+                  selectedProject={selectedProject!}
+                  selectedSession={selectedSession}
+                  isVisible={sid === activeSessionId}
+                  onStatusChange={updateStatus}
+                  onRuntimeReady={sid === activeSessionId ? handleRuntimeReady : undefined}
+                />
+              ))}
+            </>
+          ) : (
+            <>
+              {/* Render hidden sessions not in split view */}
+              {tabOrder
+                .filter((sid) => !splitSessionIds.includes(sid))
+                .map((sid) => (
+                  <ShellSessionInstance
+                    key={sid}
+                    sessionId={sid}
+                    selectedProject={selectedProject!}
+                    selectedSession={selectedSession}
+                    isVisible={false}
+                    onStatusChange={updateStatus}
+                  />
+                ))}
+              <SplitPaneManager
+                layout={splitLayout}
+                onLayoutChange={setSplitLayout}
+                renderPane={renderSplitPane}
+                activeSessionId={activeSessionId}
+                onPaneClick={switchSession}
+              />
+            </>
+          )}
           <TerminalShortcutsPanel
             wsRef={{ current: activeWsRef.current } as React.MutableRefObject<WebSocket | null>}
             terminalRef={{ current: activeTerminalRef.current } as React.MutableRefObject<Terminal | null>}

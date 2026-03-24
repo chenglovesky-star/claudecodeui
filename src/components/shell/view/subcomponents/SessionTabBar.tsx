@@ -12,6 +12,9 @@ type SessionTabBarProps = {
   onReorder: (from: number, to: number) => void;
   showSettings?: boolean;
   onToggleSettings?: () => void;
+  onSplitHorizontal?: () => void;
+  onSplitVertical?: () => void;
+  canSplit?: boolean;
 };
 
 const STATUS_DOT_CLASS: Record<SessionEntry['status'], string> = {
@@ -30,6 +33,9 @@ export default function SessionTabBar({
   onReorder,
   showSettings,
   onToggleSettings,
+  onSplitHorizontal,
+  onSplitVertical,
+  canSplit = true,
 }: SessionTabBarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -208,6 +214,28 @@ export default function SessionTabBar({
       >
         <Plus className="h-4 w-4" />
       </button>
+
+      {/* Split pane buttons */}
+      {canSplit && onSplitHorizontal && (
+        <button
+          className="flex shrink-0 items-center justify-center rounded p-1 text-gray-500 hover:bg-gray-700 hover:text-gray-300"
+          onClick={onSplitHorizontal}
+          aria-label="Split horizontal"
+          title="横分"
+        >
+          <span className="text-xs">⊟</span>
+        </button>
+      )}
+      {canSplit && onSplitVertical && (
+        <button
+          className="flex shrink-0 items-center justify-center rounded p-1 text-gray-500 hover:bg-gray-700 hover:text-gray-300"
+          onClick={onSplitVertical}
+          aria-label="Split vertical"
+          title="竖分"
+        >
+          <span className="text-xs">⊞</span>
+        </button>
+      )}
 
       {/* Settings gear icon */}
       <div className="relative ml-auto flex-shrink-0">
