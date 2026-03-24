@@ -6,6 +6,28 @@ import { copyTextToClipboard } from '../../../utils/clipboard';
 import { useShellConnection } from './useShellConnection';
 import { useShellTerminal } from './useShellTerminal';
 
+interface PersistedShellState {
+  activeId: string;
+  sessions: string[]; // Reserved for P2 multi-session
+}
+
+function getPersistedState(projectPath: string): PersistedShellState | null {
+  try {
+    const raw = sessionStorage.getItem(`shell-sessions-${projectPath}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setPersistedState(projectPath: string, state: PersistedShellState): void {
+  try {
+    sessionStorage.setItem(`shell-sessions-${projectPath}`, JSON.stringify(state));
+  } catch {
+    // sessionStorage full or disabled — silently ignore
+  }
+}
+
 export function useShellRuntime({
   selectedProject,
   selectedSession,
@@ -133,6 +155,14 @@ export function useShellRuntime({
   });
 
   useEffect(() => {
+    const projectPath = selectedProject?.fullPath || selectedProject?.path || '';
+    const sessionId = selectedSession?.id;
+    if (isConnected && projectPath && sessionId) {
+      setPersistedState(projectPath, { activeId: sessionId, sessions: [sessionId] });
+    }
+  }, [isConnected, selectedProject, selectedSession]);
+
+  useEffect(() => {
     if (!isRestarting) {
       return;
     }
@@ -179,3 +209,5 @@ export function useShellRuntime({
     cancelReconnect,
   };
 }
+
+export { getPersistedState };
