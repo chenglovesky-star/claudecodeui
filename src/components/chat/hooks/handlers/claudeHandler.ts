@@ -213,6 +213,11 @@ export function handleClaudeResponse(ctx: HandlerContext, latestMessage: LatestC
 
   if (structuredMessageData && Array.isArray(structuredMessageData.content)) {
     const parentToolUseId = rawStructuredData?.parentToolUseId;
+    // Track whether the most recent tool_use in THIS content array is internal.
+    // Text following internal tools in the same array is suppressed directly
+    // (without consuming the one-shot), preserving the one-shot for echoed
+    // prompt content that arrives in the NEXT assistant turn.
+    let lastToolWasInternal = false;
 
     structuredMessageData.content.forEach((part: any) => {
       if (part.type === 'tool_use') {
@@ -222,8 +227,10 @@ export function handleClaudeResponse(ctx: HandlerContext, latestMessage: LatestC
         const INTERNAL_TOOLS = new Set(['Skill', 'Task', 'Agent', 'Dispatch', 'ToolSearch']);
         if (INTERNAL_TOOLS.has(part.name)) {
           activateInternalSuppression();
+          lastToolWasInternal = true;
         } else {
           deactivateInternalSuppression();
+          lastToolWasInternal = false;
         }
         const toolInput = part.input ? JSON.stringify(part.input, null, 2) : '';
 
@@ -293,9 +300,15 @@ export function handleClaudeResponse(ctx: HandlerContext, latestMessage: LatestC
       }
 
       if (part.type === 'text' && part.text?.trim()) {
-        // Check suppression state: internal tool prompt content should be hidden
+        // Suppress text following internal tools in the SAME content array.
+        // This does NOT consume the one-shot — preserving it for the next turn's
+        // echoed prompt content (which arrives after tool_result boundary).
+        if (lastToolWasInternal) {
+          return; // suppress inline — one-shot preserved for next turn
+        }
+        // Check one-shot suppression for text in a NEW turn (echoed prompt from previous internal tool)
         if (shouldSuppressTextBlock()) {
-          return; // skip — internal content following Skill/Agent/Task tool_use
+          return; // skip — echoed internal content from previous turn
         }
         let content = decodeHtmlEntities(part.text);
         content = formatUsageLimitText(content);
