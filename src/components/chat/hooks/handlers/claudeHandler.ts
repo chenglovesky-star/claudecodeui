@@ -27,7 +27,11 @@ export function handleClaudePhase(ctx: HandlerContext, latestMessage: LatestChat
     ctx.setRecoveryStatus(null);
   }
   if (latestMessage.phase === 'acknowledged') {
-    resetInternalSuppression(); // New turn: reset suppression from previous skill calls
+    // NOTE: Do NOT reset suppression here. After an internal tool (Skill/Agent),
+    // the 'acknowledged' phase fires for the inner turn (processing tool_result)
+    // BEFORE the echoed prompt content arrives. Resetting here would clear the
+    // suppression prematurely, causing skill prompts to leak into the UI.
+    // Suppression is safely reset in handleClaudeComplete (session boundary).
     ctx.startFallbackTimer();
   }
 }
@@ -303,13 +307,18 @@ export function handleClaudeResponse(ctx: HandlerContext, latestMessage: LatestC
       }
     });
   } else if (structuredMessageData && typeof structuredMessageData.content === 'string' && structuredMessageData.content.trim()) {
-    let content = decodeHtmlEntities(structuredMessageData.content);
-    content = formatUsageLimitText(content);
-    ctx.setClaudeStatus(null);
-    ctx.setChatMessages((previous) => [
-      ...previous,
-      { type: 'assistant', content, timestamp: new Date() },
-    ]);
+    // Check suppression: skill/agent prompt content can arrive as string content too
+    if (shouldSuppressTextBlock()) {
+      // skip — internal content following Skill/Agent/Task tool_use
+    } else {
+      let content = decodeHtmlEntities(structuredMessageData.content);
+      content = formatUsageLimitText(content);
+      ctx.setClaudeStatus(null);
+      ctx.setChatMessages((previous) => [
+        ...previous,
+        { type: 'assistant', content, timestamp: new Date() },
+      ]);
+    }
   }
 
   if (structuredMessageData?.role === 'user' && Array.isArray(structuredMessageData.content)) {
