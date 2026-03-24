@@ -102,6 +102,8 @@ export class ShellHandler {
         let ptySessionKey = null;
         let urlDetectionBuffer = '';
         const announcedAuthUrls = new Set();
+        let currentCols = 80;
+        let currentRows = 24;
 
         ws.on('message', async (message) => {
             try {
@@ -311,13 +313,17 @@ export class ShellHandler {
 
                         log.info(`Shell process started with PTY, PID: ${shellProcess.pid}`);
 
+                        currentCols = termCols;
+                        currentRows = termRows;
+
                         this.ptySessionsMap.set(ptySessionKey, {
                             pty: shellProcess,
                             ws: ws,
                             buffer: [],
                             timeoutId: null,
                             projectPath,
-                            sessionId
+                            sessionId,
+                            presetBaseUrl: ''
                         });
 
                         // Handle data output
@@ -425,6 +431,8 @@ export class ShellHandler {
                     if (shellProcess && shellProcess.resize) {
                         log.info(`Terminal resize requested: ${data.cols} x ${data.rows}`);
                         shellProcess.resize(data.cols, data.rows);
+                        currentCols = data.cols;
+                        currentRows = data.rows;
                     }
                 } else if (data.type === 'paste-image') {
                     // Handle image paste: save to temp file, copy to system clipboard,
@@ -483,6 +491,114 @@ export class ShellHandler {
                             }));
                         }
                     }
+                } else if (data.type === 'switch-preset') {
+                    try {
+                        const session = this.ptySessionsMap.get(ptySessionKey);
+                        const projectPath = session?.projectPath;
+                        if (!projectPath) {
+                            ws.send(JSON.stringify({
+                                type: 'output',
+                                data: '\r\n\x1b[31m[切换失败：无活跃会话]\x1b[0m\r\n'
+                            }));
+                            return;
+                        }
+
+                        const preset = await this.#readPreset(projectPath, data.presetId);
+                        if (!preset) {
+                            ws.send(JSON.stringify({
+                                type: 'output',
+                                data: `\r\n\x1b[31m[切换失败：未找到配置 ${data.presetId}]\x1b[0m\r\n`
+                            }));
+                            return;
+                        }
+
+                        const oldSessionId = session.sessionId;
+                        const oldBaseUrl = session.presetBaseUrl || '';
+                        if (shellProcess && shellProcess.kill) {
+                            shellProcess.kill();
+                        }
+                        if (session.timeoutId) clearTimeout(session.timeoutId);
+                        this.ptySessionsMap.delete(ptySessionKey);
+
+                        const samePlatform = oldBaseUrl === preset.baseUrl && oldSessionId;
+                        const shellCmd = samePlatform
+                            ? `cd "${projectPath}" && claude --resume ${oldSessionId} || claude`
+                            : `cd "${projectPath}" && claude`;
+
+                        const shellBin = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
+                        const shellArgs = os.platform() === 'win32' ? ['-Command', shellCmd] : ['-c', shellCmd];
+
+                        ws.send(JSON.stringify({
+                            type: 'output',
+                            data: `\r\n\x1b[36m[正在切换到 ${preset.label} (${preset.model})...]\x1b[0m\r\n`
+                        }));
+
+                        shellProcess = pty.spawn(shellBin, shellArgs, {
+                            name: 'xterm-256color',
+                            cols: currentCols,
+                            rows: currentRows,
+                            cwd: os.homedir(),
+                            env: this.#buildPresetEnv(preset),
+                        });
+
+                        ptySessionKey = `${projectPath}_preset_${preset.id}`;
+                        urlDetectionBuffer = '';
+                        announcedAuthUrls.clear();
+
+                        this.ptySessionsMap.set(ptySessionKey, {
+                            pty: shellProcess,
+                            ws: ws,
+                            buffer: [],
+                            timeoutId: null,
+                            projectPath,
+                            sessionId: oldSessionId,
+                            presetBaseUrl: preset.baseUrl,
+                        });
+
+                        shellProcess.onData((outputData) => {
+                            const s = this.ptySessionsMap.get(ptySessionKey);
+                            if (!s) return;
+                            if (s.buffer.length < 5000) {
+                                s.buffer.push(outputData);
+                            } else {
+                                s.buffer.shift();
+                                s.buffer.push(outputData);
+                            }
+                            if (s.ws && s.ws.readyState === WebSocket.OPEN) {
+                                s.ws.send(JSON.stringify({ type: 'output', data: outputData }));
+                            }
+                        });
+
+                        shellProcess.onExit((exitCode) => {
+                            log.info(`Switched shell exited: ${exitCode.exitCode}`);
+                            const s = this.ptySessionsMap.get(ptySessionKey);
+                            if (s?.ws?.readyState === WebSocket.OPEN) {
+                                s.ws.send(JSON.stringify({
+                                    type: 'output',
+                                    data: `\r\n\x1b[33mProcess exited with code ${exitCode.exitCode}\x1b[0m\r\n`
+                                }));
+                            }
+                            if (s?.timeoutId) clearTimeout(s.timeoutId);
+                            this.ptySessionsMap.delete(ptySessionKey);
+                            shellProcess = null;
+                        });
+
+                        ws.send(JSON.stringify({
+                            type: 'preset-switched',
+                            presetId: preset.id,
+                            label: preset.label,
+                        }));
+
+                        log.info(`Switched to preset: ${preset.label} (${preset.model})`);
+                    } catch (switchErr) {
+                        log.error({ err: switchErr }, 'Error switching preset');
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'output',
+                                data: `\r\n\x1b[31m[切换失败: ${switchErr.message}]\x1b[0m\r\n`
+                            }));
+                        }
+                    }
                 }
             } catch (error) {
                 log.error({ err: error }, 'WebSocket message error');
@@ -519,6 +635,31 @@ export class ShellHandler {
         ws.on('error', (error) => {
             log.error({ err: error }, 'WebSocket error');
         });
+    }
+
+    async #readPreset(projectPath, presetId) {
+        const presetsPath = path.join(projectPath, 'shell-presets.json');
+        const raw = await fs.readFile(presetsPath, 'utf-8');
+        const presets = JSON.parse(raw);
+        return presets.find(p => p.id === presetId) || null;
+    }
+
+    #buildPresetEnv(preset) {
+        const env = {
+            ...process.env,
+            TERM: 'xterm-256color',
+            COLORTERM: 'truecolor',
+            FORCE_COLOR: '3',
+        };
+        if (preset) {
+            env.ANTHROPIC_BASE_URL = preset.baseUrl;
+            env.ANTHROPIC_API_KEY = preset.apiKey;
+            env.ANTHROPIC_MODEL = preset.model;
+            env.ANTHROPIC_SMALL_FAST_MODEL = preset.smallFastModel;
+            env.ANTHROPIC_DEFAULT_SONNET_MODEL = preset.defaultSonnetModel;
+            env.ANTHROPIC_DEFAULT_OPUS_MODEL = preset.defaultOpusModel;
+        }
+        return env;
     }
 
     /**
