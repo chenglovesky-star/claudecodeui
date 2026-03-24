@@ -66,6 +66,11 @@ export default function Shell({
     disconnectFromShell,
     openAuthUrlInBrowser,
     copyAuthUrlToClipboard,
+    isReconnecting,
+    reconnectAttempt,
+    reconnectCountdown,
+    connectionError,
+    cancelReconnect,
   } = useShellRuntime({
     selectedProject,
     selectedSession,
@@ -226,7 +231,17 @@ export default function Shell({
       })
     : t('shell.startCli', { projectName: selectedProject.displayName });
 
-  const overlayMode = !isInitialized ? 'loading' : isConnecting ? 'connecting' : !isConnected ? 'connect' : null;
+  const overlayMode = !isInitialized
+    ? 'loading'
+    : isConnecting
+      ? 'connecting'
+      : isReconnecting
+        ? 'reconnecting'
+        : connectionError
+          ? 'error'
+          : !isConnected
+            ? 'connect'
+            : null;
   const overlayDescription = overlayMode === 'connecting' ? connectingDescription : readyDescription;
 
   return (
@@ -265,6 +280,12 @@ export default function Shell({
             connectTitle={t('shell.actions.connectTitle')}
             connectingLabel={t('shell.connecting')}
             onConnect={connectToShell}
+            reconnectAttempt={reconnectAttempt}
+            reconnectMaxAttempts={5}
+            reconnectCountdown={reconnectCountdown}
+            connectionError={connectionError}
+            onCancelReconnect={cancelReconnect}
+            onRetry={connectToShell}
           />
         )}
 

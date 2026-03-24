@@ -91,4 +91,9 @@ export type UseShellRuntimeResult = {
   disconnectFromShell: () => void;
   openAuthUrlInBrowser: (url?: string) => boolean;
   copyAuthUrlToClipboard: (url?: string) => Promise<boolean>;
+  isReconnecting: boolean;
+  reconnectAttempt: number;
+  reconnectCountdown: number;
+  connectionError: string | null;
+  cancelReconnect: () => void;
 };
