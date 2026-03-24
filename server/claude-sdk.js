@@ -32,6 +32,8 @@ const CLAUDE_CODE_CLI_PATH = path.join(
 );
 
 const activeSessions = new Map();
+// Maps SessionManager IDs to SDK session IDs (for abort lookup)
+const managerToSdkSessionMap = new Map();
 const pendingToolApprovals = new Map();
 
 const TOOL_APPROVAL_TIMEOUT_MS = parseInt(process.env.CLAUDE_TOOL_APPROVAL_TIMEOUT_MS, 10) || 55000;
@@ -257,15 +259,20 @@ function mapCliOptionsToSDK(options = {}) {
  * @param {Array<string>} tempImagePaths - Temp image file paths for cleanup
  * @param {string} tempDir - Temp directory for cleanup
  */
-function addSession(sessionId, queryInstance, tempImagePaths = [], tempDir = null, writer = null) {
+function addSession(sessionId, queryInstance, tempImagePaths = [], tempDir = null, writer = null, managerSessionId = null) {
   activeSessions.set(sessionId, {
     instance: queryInstance,
     startTime: Date.now(),
     status: 'active',
     tempImagePaths,
     tempDir,
-    writer
+    writer,
+    managerSessionId
   });
+  // Maintain reverse mapping: managerSessionId → SDK sessionId
+  if (managerSessionId && managerSessionId !== sessionId) {
+    managerToSdkSessionMap.set(managerSessionId, sessionId);
+  }
 }
 
 /**
@@ -273,6 +280,12 @@ function addSession(sessionId, queryInstance, tempImagePaths = [], tempDir = nul
  * @param {string} sessionId - Session identifier
  */
 function removeSession(sessionId) {
+  const session = activeSessions.get(sessionId);
+  if (session?.managerSessionId) {
+    managerToSdkSessionMap.delete(session.managerSessionId);
+  }
+  // Also clean up if sessionId itself is a managerSessionId key
+  managerToSdkSessionMap.delete(sessionId);
   activeSessions.delete(sessionId);
 }
 
@@ -282,7 +295,13 @@ function removeSession(sessionId) {
  * @returns {Object|undefined} Session data or undefined
  */
 function getSession(sessionId) {
-  return activeSessions.get(sessionId);
+  // Try direct lookup first
+  const direct = activeSessions.get(sessionId);
+  if (direct) return direct;
+  // Try reverse mapping: sessionId might be a SessionManager ID
+  const sdkId = managerToSdkSessionMap.get(sessionId);
+  if (sdkId) return activeSessions.get(sdkId);
+  return undefined;
 }
 
 /**
@@ -493,9 +512,10 @@ async function loadMcpConfig(cwd, userId) {
  * @returns {Promise<void>}
  */
 async function queryClaudeSDK(command, options = {}, ws) {
-  const { sessionId } = options;
+  const { sessionId, _managerSessionId } = options;
   let capturedSessionId = sessionId;
   let sessionCreatedSent = false;
+  let streamingPhaseSent = false;
   let tempImagePaths = [];
   let tempDir = null;
 
@@ -624,8 +644,10 @@ async function queryClaudeSDK(command, options = {}, ws) {
     }
 
     // Track the query instance for abort capability
-    if (capturedSessionId) {
-      addSession(capturedSessionId, queryInstance, tempImagePaths, tempDir, ws);
+    // Register early with managerSessionId so abort works before SDK returns session_id
+    const earlyRegId = capturedSessionId || _managerSessionId;
+    if (earlyRegId) {
+      addSession(earlyRegId, queryInstance, tempImagePaths, tempDir, ws, _managerSessionId);
     }
 
     // Notify frontend: querying Claude API
@@ -638,7 +660,11 @@ async function queryClaudeSDK(command, options = {}, ws) {
       if (message.session_id && !capturedSessionId) {
 
         capturedSessionId = message.session_id;
-        addSession(capturedSessionId, queryInstance, tempImagePaths, tempDir, ws);
+        // Remove early registration (by managerSessionId) and re-register with SDK's session_id
+        if (_managerSessionId && _managerSessionId !== capturedSessionId) {
+          activeSessions.delete(_managerSessionId);
+        }
+        addSession(capturedSessionId, queryInstance, tempImagePaths, tempDir, ws, _managerSessionId);
 
         // Set session ID on writer
         if (ws.setSessionId && typeof ws.setSessionId === 'function') {
@@ -657,6 +683,12 @@ async function queryClaudeSDK(command, options = {}, ws) {
         }
       } else {
         // Session ID already captured — normal flow, no logging needed
+      }
+
+      // Send streaming phase on first content_block_start
+      if (!streamingPhaseSent && message.type === 'content_block_start') {
+        streamingPhaseSent = true;
+        ws.send({ type: 'claude-phase', phase: 'streaming', sessionId: capturedSessionId || sessionId || null });
       }
 
       // Transform and send message to WebSocket
@@ -725,11 +757,25 @@ async function queryClaudeSDK(command, options = {}, ws) {
     // Clean up temporary image files on error
     await cleanupTempFiles(tempImagePaths, tempDir);
 
+    // Detect error type and assign errorCode
+    let errorCode = 'sdk-crash';
+    let errorMeta = { exitCode: error.code };
+    if (is429) {
+      const phase429 = sessionCreatedSent ? 'mid-stream' : 'pre-stream';
+      errorCode = phase429 === 'pre-stream' ? 'rate-limit-retry' : 'rate-limit-mid';
+      errorMeta = { partialContent: sessionCreatedSent };
+    } else if (error.message?.includes('authentication') || error.message?.includes('invalid api key')) {
+      errorCode = 'auth-failed';
+      errorMeta = {};
+    }
+
     // Send error to WebSocket
     ws.send({
       type: 'claude-error',
+      errorCode,
       error: error.message,
-      sessionId: capturedSessionId || sessionId || null
+      sessionId: capturedSessionId || sessionId || null,
+      meta: errorMeta,
     });
 
     throw error;
@@ -742,10 +788,10 @@ async function queryClaudeSDK(command, options = {}, ws) {
  * @returns {boolean} True if session was aborted, false if not found
  */
 async function abortClaudeSDKSession(sessionId) {
-  const session = getSession(sessionId);
+  const session = getSession(sessionId); // Supports lookup by SDK ID or manager ID
 
   if (!session) {
-    console.log(`Session ${sessionId} not found`);
+    console.log(`Session ${sessionId} not found in activeSessions (may have already completed)`);
     return false;
   }
 
