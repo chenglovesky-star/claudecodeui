@@ -169,7 +169,7 @@ export default function SessionTabBar({
             onDrop={(e) => handleDrop(e, index)}
             onDragEnd={handleDragEnd}
             onClick={() => onSwitch(session.sessionId)}
-            className={`group flex cursor-pointer items-center gap-1.5 rounded-t px-3 py-1.5 text-xs select-none ${
+            className={`group flex cursor-pointer items-center gap-1.5 rounded-t px-2 md:px-3 py-1.5 text-xs select-none ${
               isActive
                 ? 'border-l border-r border-t border-gray-600 bg-[#1e1e1e] text-gray-200'
                 : 'text-gray-500 hover:text-gray-300'
@@ -185,7 +185,7 @@ export default function SessionTabBar({
 
             {/* Keyboard shortcut hint */}
             {index < 9 && (
-              <span className="ml-1 text-[10px] text-gray-600">
+              <span className="ml-1 hidden text-[10px] text-gray-600 md:inline">
                 {'\u2318'}
                 {index + 1}
               </span>
@@ -215,27 +215,29 @@ export default function SessionTabBar({
         <Plus className="h-4 w-4" />
       </button>
 
-      {/* Split pane buttons */}
-      {canSplit && onSplitHorizontal && (
-        <button
-          className="flex shrink-0 items-center justify-center rounded p-1 text-gray-500 hover:bg-gray-700 hover:text-gray-300"
-          onClick={onSplitHorizontal}
-          aria-label="Split horizontal"
-          title="横分"
-        >
-          <span className="text-xs">⊟</span>
-        </button>
-      )}
-      {canSplit && onSplitVertical && (
-        <button
-          className="flex shrink-0 items-center justify-center rounded p-1 text-gray-500 hover:bg-gray-700 hover:text-gray-300"
-          onClick={onSplitVertical}
-          aria-label="Split vertical"
-          title="竖分"
-        >
-          <span className="text-xs">⊞</span>
-        </button>
-      )}
+      {/* Split pane buttons (hidden on mobile) */}
+      <div className="hidden md:flex items-center gap-0.5">
+        {canSplit && onSplitHorizontal && (
+          <button
+            className="flex shrink-0 items-center justify-center rounded p-1 text-gray-500 hover:bg-gray-700 hover:text-gray-300"
+            onClick={onSplitHorizontal}
+            aria-label="Split horizontal"
+            title="横分"
+          >
+            <span className="text-xs">⊟</span>
+          </button>
+        )}
+        {canSplit && onSplitVertical && (
+          <button
+            className="flex shrink-0 items-center justify-center rounded p-1 text-gray-500 hover:bg-gray-700 hover:text-gray-300"
+            onClick={onSplitVertical}
+            aria-label="Split vertical"
+            title="竖分"
+          >
+            <span className="text-xs">⊞</span>
+          </button>
+        )}
+      </div>
 
       {/* Settings gear icon */}
       <div className="relative ml-auto flex-shrink-0">

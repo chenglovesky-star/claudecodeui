@@ -27,6 +27,7 @@ import TerminalSearchBar from './subcomponents/TerminalSearchBar';
 import TerminalSettings from './subcomponents/TerminalSettings';
 import type { TerminalSettingsValues } from './subcomponents/TerminalSettings';
 import TerminalShortcutsPanel from './subcomponents/TerminalShortcutsPanel';
+import MobileToolbar from './subcomponents/MobileToolbar';
 import SplitPaneManager from './subcomponents/SplitPaneManager';
 import type { SplitLayout } from './subcomponents/SplitPaneManager';
 
@@ -491,12 +492,19 @@ export default function Shell({
               />
             </>
           )}
-          <TerminalShortcutsPanel
-            wsRef={{ current: activeWsRef.current } as React.MutableRefObject<WebSocket | null>}
-            terminalRef={{ current: activeTerminalRef.current } as React.MutableRefObject<Terminal | null>}
-            isConnected={sessions.some((s) => s.sessionId === activeSessionId && s.status === 'running')}
-          />
+          <div className="hidden md:flex">
+            <TerminalShortcutsPanel
+              wsRef={{ current: activeWsRef.current } as React.MutableRefObject<WebSocket | null>}
+              terminalRef={{ current: activeTerminalRef.current } as React.MutableRefObject<Terminal | null>}
+              isConnected={sessions.some((s) => s.sessionId === activeSessionId && s.status === 'running')}
+            />
+          </div>
         </div>
+        <MobileToolbar
+          wsRef={{ current: activeWsRef.current } as React.MutableRefObject<WebSocket | null>}
+          terminalRef={{ current: activeTerminalRef.current } as React.MutableRefObject<Terminal | null>}
+          isConnected={sessions.some((s) => s.sessionId === activeSessionId && s.status === 'running')}
+        />
       </div>
     );
   }
@@ -629,12 +637,19 @@ export default function Shell({
           </div>
         )}
 
-        <TerminalShortcutsPanel
-          wsRef={wsRef}
-          terminalRef={terminalRef}
-          isConnected={isConnected}
-        />
+        <div className="hidden md:flex">
+          <TerminalShortcutsPanel
+            wsRef={wsRef}
+            terminalRef={terminalRef}
+            isConnected={isConnected}
+          />
+        </div>
       </div>
+      <MobileToolbar
+        wsRef={wsRef}
+        terminalRef={terminalRef}
+        isConnected={isConnected}
+      />
     </div>
   );
 }
