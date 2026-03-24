@@ -5,6 +5,7 @@ import type { Project, ProjectSession } from '../../../../types/app';
 import { useShellRuntime } from '../../hooks/useShellRuntime';
 import { sendSocketMessage } from '../../utils/socket';
 import ShellConnectionOverlay from './ShellConnectionOverlay';
+import TerminalSearchBar from './TerminalSearchBar';
 import {
   PROMPT_BUFFER_SCAN_LINES,
   PROMPT_DEBOUNCE_MS,
@@ -58,6 +59,7 @@ export default function ShellSessionInstance({
     reconnectCountdown,
     connectionError,
     cancelReconnect,
+    searchAddonRef,
   } = useShellRuntime({
     selectedProject,
     selectedSession,
@@ -68,6 +70,21 @@ export default function ShellSessionInstance({
     isRestarting: false,
     onOutputRef,
   });
+
+  const [showSearch, setShowSearch] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        if (isVisible) {
+          e.preventDefault();
+          setShowSearch(true);
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isVisible]);
 
   // --- Notify parent of status changes ---
   useEffect(() => {
@@ -215,6 +232,13 @@ export default function ShellSessionInstance({
         className="h-full w-full focus:outline-none"
         style={{ outline: 'none' }}
       />
+
+      {showSearch && (
+        <TerminalSearchBar
+          searchAddon={searchAddonRef.current}
+          onClose={() => setShowSearch(false)}
+        />
+      )}
 
       {overlayMode && (
         <ShellConnectionOverlay

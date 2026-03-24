@@ -112,7 +112,7 @@ export function useShellRuntime({
     return copyTextToClipboard(url);
   }, []);
 
-  const { isInitialized, clearTerminalScreen, disposeTerminal } = useShellTerminal({
+  const { isInitialized, clearTerminalScreen, disposeTerminal, searchAddonRef } = useShellTerminal({
     terminalContainerRef,
     terminalRef,
     fitAddonRef,
@@ -207,6 +207,7 @@ export function useShellRuntime({
     reconnectCountdown,
     connectionError,
     cancelReconnect,
+    searchAddonRef,
   };
 }
 

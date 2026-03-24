@@ -21,6 +21,7 @@ import ShellHeader from './subcomponents/ShellHeader';
 import ShellMinimalView from './subcomponents/ShellMinimalView';
 import ShellSessionInstance from './subcomponents/ShellSessionInstance';
 import SessionTabBar from './subcomponents/SessionTabBar';
+import TerminalSearchBar from './subcomponents/TerminalSearchBar';
 import TerminalShortcutsPanel from './subcomponents/TerminalShortcutsPanel';
 
 type CliPromptOption = { number: string; label: string };
@@ -57,6 +58,19 @@ export default function Shell({
   // Keep the public API stable for existing callers that still pass `isActive`.
   void isActive;
 
+  const [showSearch, setShowSearch] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        setShowSearch(true);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // ── Mode detection ──────────────────────────────────────────────────────────
   const isMultiSessionMode = !isPlainShell && !minimal;
 
@@ -90,6 +104,7 @@ export default function Shell({
     reconnectCountdown,
     connectionError,
     cancelReconnect,
+    searchAddonRef,
   } = useShellRuntime({
     selectedProject,
     selectedSession,
@@ -270,6 +285,12 @@ export default function Shell({
           onReorder={reorderSessions}
         />
         <div className="relative flex-1 overflow-hidden">
+          {showSearch && (
+            <TerminalSearchBar
+              searchAddon={searchAddonRef.current}
+              onClose={() => setShowSearch(false)}
+            />
+          )}
           {tabOrder.map((sid) => (
             <ShellSessionInstance
               key={sid}
@@ -348,6 +369,13 @@ export default function Shell({
           className="h-full w-full focus:outline-none"
           style={{ outline: 'none' }}
         />
+
+        {showSearch && (
+          <TerminalSearchBar
+            searchAddon={searchAddonRef.current}
+            onClose={() => setShowSearch(false)}
+          />
+        )}
 
         {overlayMode && (
           <ShellConnectionOverlay

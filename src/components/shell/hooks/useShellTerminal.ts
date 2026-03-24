@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MutableRefObject, RefObject } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal } from '@xterm/xterm';
@@ -34,6 +35,7 @@ type UseShellTerminalResult = {
   isInitialized: boolean;
   clearTerminalScreen: () => void;
   disposeTerminal: () => void;
+  searchAddonRef: React.MutableRefObject<SearchAddon | null>;
 };
 
 export function useShellTerminal({
@@ -52,6 +54,7 @@ export function useShellTerminal({
 }: UseShellTerminalOptions): UseShellTerminalResult {
   const [isInitialized, setIsInitialized] = useState(false);
   const resizeTimeoutRef = useRef<number | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
   const selectedProjectKey = selectedProject?.fullPath || selectedProject?.path || '';
   const hasSelectedProject = Boolean(selectedProject);
 
@@ -100,6 +103,10 @@ export function useShellTerminal({
     } catch {
       console.warn('[Shell] WebGL renderer unavailable, using Canvas fallback');
     }
+
+    const nextSearchAddon = new SearchAddon();
+    nextTerminal.loadAddon(nextSearchAddon);
+    searchAddonRef.current = nextSearchAddon;
 
     nextTerminal.open(terminalContainerRef.current);
 
@@ -264,5 +271,6 @@ export function useShellTerminal({
     isInitialized,
     clearTerminalScreen,
     disposeTerminal,
+    searchAddonRef,
   };
 }
