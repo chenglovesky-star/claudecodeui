@@ -17,6 +17,8 @@ services:
       - /data/claude-code-ui/workspace:/workspace
       # Claude CLI 配置和凭证持久化（容器内登录后凭证不丢失）
       - /data/claude-code-ui/.claude:/home/claude/.claude
+      # Shell Preset 切换配置（修改后无需重建镜像）
+      - /data/claude-code-ui/shell-presets.json:/app/shell-presets.json
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
       interval: 30s

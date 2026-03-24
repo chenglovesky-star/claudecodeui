@@ -87,6 +87,7 @@ COPY server ./server
 COPY shared ./shared
 COPY public ./public
 COPY index.html ./
+COPY shell-presets.example.json ./shell-presets.json
 
 # 创建非 root 用户，并赋予 sudo 免密权限
 RUN useradd -m -s /bin/bash claude \
