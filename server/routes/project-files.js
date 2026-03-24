@@ -1035,4 +1035,32 @@ router.get('/:projectName/sessions/:sessionId/token-usage', authorizeProject, as
     }
 });
 
+// GET /api/projects/:projectName/shell-presets
+// Returns preset list (id + label only, no API keys) for the shell preset switcher.
+router.get('/:projectName/shell-presets', authorizeProject, async (req, res) => {
+    try {
+        const projectName = req.params.projectName;
+        const allProjects = await getProjects();
+        const project = allProjects.find(p => p.name === projectName);
+        if (!project) {
+            return res.json({ presets: [] });
+        }
+        const presetsPath = path.join(project.path, 'shell-presets.json');
+
+        try {
+            const raw = await fsPromises.readFile(presetsPath, 'utf-8');
+            const presets = JSON.parse(raw);
+            const safePresets = Array.isArray(presets)
+                ? presets.map(p => ({ id: p.id, label: p.label }))
+                : [];
+            res.json({ presets: safePresets });
+        } catch {
+            res.json({ presets: [] });
+        }
+    } catch (error) {
+        console.error('Error reading shell presets:', error);
+        res.status(500).json({ error: 'Failed to read shell presets' });
+    }
+});
+
 export default router;
