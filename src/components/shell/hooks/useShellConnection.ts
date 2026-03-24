@@ -64,6 +64,8 @@ export function useShellConnection({
 }: UseShellConnectionOptions): UseShellConnectionResult {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const isConnectedRef = useRef(false);
+  const isConnectingRef = useRef(false);
   const connectingRef = useRef(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [reconnectCountdown, setReconnectCountdown] = useState(0);
@@ -187,7 +189,7 @@ export function useShellConnection({
 
   const connectWebSocket = useCallback(
     (isConnectionLocked = false) => {
-      if ((connectingRef.current && !isConnectionLocked) || isConnecting || isConnected) {
+      if ((connectingRef.current && !isConnectionLocked) || isConnectingRef.current || isConnectedRef.current) {
         return;
       }
 
@@ -201,6 +203,7 @@ export function useShellConnection({
         const wsUrl = getShellWebSocketUrl();
         if (!wsUrl) {
           connectingRef.current = false;
+          isConnectingRef.current = false;
           setIsConnecting(false);
           return;
         }
@@ -211,6 +214,8 @@ export function useShellConnection({
         wsRef.current = socket;
 
         socket.onopen = () => {
+          isConnectedRef.current = true;
+          isConnectingRef.current = false;
           setIsConnected(true);
           setIsConnecting(false);
           connectingRef.current = false;
@@ -251,6 +256,8 @@ export function useShellConnection({
         };
 
         socket.onclose = () => {
+          isConnectedRef.current = false;
+          isConnectingRef.current = false;
           setIsConnected(false);
           setIsConnecting(false);
           connectingRef.current = false;
@@ -267,6 +274,8 @@ export function useShellConnection({
         };
 
         socket.onerror = () => {
+          isConnectedRef.current = false;
+          isConnectingRef.current = false;
           setIsConnected(false);
           setIsConnecting(false);
           connectingRef.current = false;
@@ -275,6 +284,8 @@ export function useShellConnection({
           }
         };
       } catch {
+        isConnectedRef.current = false;
+        isConnectingRef.current = false;
         setIsConnected(false);
         setIsConnecting(false);
         connectingRef.current = false;
@@ -286,8 +297,6 @@ export function useShellConnection({
       fitAddonRef,
       handleSocketMessage,
       initialCommandRef,
-      isConnected,
-      isConnecting,
       isPlainShellRef,
       selectedProjectRef,
       selectedSessionRef,
@@ -346,20 +355,23 @@ export function useShellConnection({
   }, [clearReconnectTimers]);
 
   const connectToShell = useCallback(() => {
-    if (!isInitialized || isConnected || isConnecting || connectingRef.current) {
+    if (!isInitialized || isConnectedRef.current || isConnectingRef.current || connectingRef.current) {
       return;
     }
 
     connectingRef.current = true;
+    isConnectingRef.current = true;
     setIsConnecting(true);
     connectWebSocket(true);
-  }, [connectWebSocket, isConnected, isConnecting, isInitialized]);
+  }, [connectWebSocket, isInitialized]);
 
   const disconnectFromShell = useCallback(() => {
     intentionalDisconnectRef.current = true;
     clearReconnectTimers();
     closeSocket();
     clearTerminalScreen();
+    isConnectedRef.current = false;
+    isConnectingRef.current = false;
     setIsConnected(false);
     setIsConnecting(false);
     connectingRef.current = false;
