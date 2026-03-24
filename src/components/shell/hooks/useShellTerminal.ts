@@ -233,17 +233,19 @@ export function useShellTerminal({
       }
 
       resizeTimeoutRef.current = window.setTimeout(() => {
-        const currentFitAddon = fitAddonRef.current;
-        const currentTerminal = terminalRef.current;
-        if (!currentFitAddon || !currentTerminal) {
-          return;
-        }
+        requestAnimationFrame(() => {
+          const currentFitAddon = fitAddonRef.current;
+          const currentTerminal = terminalRef.current;
+          if (!currentFitAddon || !currentTerminal) {
+            return;
+          }
 
-        currentFitAddon.fit();
-        sendSocketMessage(wsRef.current, {
-          type: 'resize',
-          cols: currentTerminal.cols,
-          rows: currentTerminal.rows,
+          currentFitAddon.fit();
+          sendSocketMessage(wsRef.current, {
+            type: 'resize',
+            cols: currentTerminal.cols,
+            rows: currentTerminal.rows,
+          });
         });
       }, TERMINAL_RESIZE_DELAY_MS);
     });
