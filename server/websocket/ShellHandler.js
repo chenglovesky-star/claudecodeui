@@ -427,8 +427,8 @@ export class ShellHandler {
                         shellProcess.resize(data.cols, data.rows);
                     }
                 } else if (data.type === 'paste-image') {
-                    // Handle image paste: save to temp file and copy to system clipboard
-                    // so Claude Code CLI can read it when the user submits their prompt.
+                    // Handle image paste: save to temp file, copy to system clipboard,
+                    // and write the file path into the PTY stdin so Claude Code can reference it.
                     try {
                         const base64Data = data.data;
                         const mimeType = data.mimeType || 'image/png';
@@ -443,35 +443,36 @@ export class ShellHandler {
                         await fs.writeFile(tmpFile, Buffer.from(base64Data, 'base64'));
                         log.info(`Image saved to temp file: ${tmpFile}`);
 
-                        // Copy image to system clipboard so Claude Code CLI can detect it
-                        if (os.platform() === 'darwin') {
-                            // macOS: use osascript to set clipboard to image data
-                            const appleClass = mimeType === 'image/jpeg' ? '«class JPEG»'
-                                : mimeType === 'image/gif' ? '«class GIFf»'
-                                : '«class PNGf»';
-                            const script = `set the clipboard to (read (POSIX file "${tmpFile}") as ${appleClass})`;
-                            await new Promise((resolve, reject) => {
-                                execFile('osascript', ['-e', script], (err) => {
-                                    if (err) reject(err); else resolve();
+                        // Also copy to system clipboard (best-effort) so CLI can detect it
+                        try {
+                            if (os.platform() === 'darwin') {
+                                const appleClass = mimeType === 'image/jpeg' ? '«class JPEG»'
+                                    : mimeType === 'image/gif' ? '«class GIFf»'
+                                    : '«class PNGf»';
+                                const script = `set the clipboard to (read (POSIX file "${tmpFile}") as ${appleClass})`;
+                                await new Promise((resolve, reject) => {
+                                    execFile('osascript', ['-e', script], (err) => {
+                                        if (err) reject(err); else resolve();
+                                    });
                                 });
-                            });
-                            log.info('Image copied to system clipboard (macOS)');
-                        } else if (os.platform() === 'linux') {
-                            // Linux: use xclip
-                            await new Promise((resolve, reject) => {
-                                execFile('xclip', ['-selection', 'clipboard', '-t', mimeType, '-i', tmpFile], (err) => {
-                                    if (err) reject(err); else resolve();
+                                log.info('Image copied to system clipboard (macOS)');
+                            } else if (os.platform() === 'linux') {
+                                await new Promise((resolve, reject) => {
+                                    execFile('xclip', ['-selection', 'clipboard', '-t', mimeType, '-i', tmpFile], (err) => {
+                                        if (err) reject(err); else resolve();
+                                    });
                                 });
-                            });
-                            log.info('Image copied to system clipboard (Linux)');
+                                log.info('Image copied to system clipboard (Linux)');
+                            }
+                        } catch (clipErr) {
+                            log.warn({ err: clipErr }, 'Failed to copy image to system clipboard (non-fatal)');
                         }
-                        // Windows: not supported yet, but the temp file is still available
 
-                        if (ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({
-                                type: 'output',
-                                data: `\x1b[36m[Image pasted to clipboard: ${data.name || 'image'}]\x1b[0m`
-                            }));
+                        // Write the image file path into the PTY stdin so the user can
+                        // reference it in their Claude Code prompt (e.g. "analyze this image: /tmp/...")
+                        if (shellProcess && shellProcess.write) {
+                            shellProcess.write(tmpFile);
+                            log.info(`Image path written to PTY stdin: ${tmpFile}`);
                         }
                     } catch (imgErr) {
                         log.error({ err: imgErr }, 'Error handling paste-image');
