@@ -210,6 +210,7 @@ export function useShellRuntime({
     connectionError,
     cancelReconnect,
     searchAddonRef,
+    fitAddonRef,
   };
 }
 

@@ -21,6 +21,8 @@ import SessionTabBar from './subcomponents/SessionTabBar';
 import TerminalSearchBar from './subcomponents/TerminalSearchBar';
 import TerminalSettings from './subcomponents/TerminalSettings';
 import type { TerminalSettingsValues } from './subcomponents/TerminalSettings';
+import { loadTerminalSettings } from './subcomponents/TerminalSettings';
+import { TERMINAL_THEMES } from '../constants/themes';
 import TerminalShortcutsPanel from './subcomponents/TerminalShortcutsPanel';
 import MobileToolbar from './subcomponents/MobileToolbar';
 import SplitPaneManager from './subcomponents/SplitPaneManager';
@@ -74,20 +76,21 @@ export default function Shell({
     setShowSettings((prev) => !prev);
   }, []);
 
-  const handleSettingsChange = useCallback((_settings: TerminalSettingsValues) => {
-    // Settings are persisted to localStorage by the TerminalSettings component.
-    // Full terminal apply logic (theme, font, cursor, etc.) will be refined later.
-  }, []);
+  const shellContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const container = shellContainerRef.current;
+    if (!container) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault();
         setShowSearch(true);
       }
     };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+
+    container.addEventListener('keydown', handleKeyDown);
+    return () => container.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // ── Mode detection ──────────────────────────────────────────────────────────
@@ -124,6 +127,7 @@ export default function Shell({
     connectionError,
     cancelReconnect,
     searchAddonRef,
+    fitAddonRef,
   } = useShellRuntime({
     selectedProject,
     selectedSession,
@@ -157,6 +161,34 @@ export default function Shell({
     },
     [],
   );
+
+  const handleSettingsChange = useCallback((settings: TerminalSettingsValues) => {
+    // Apply to whichever terminal is available
+    const terminal = activeTerminalRef.current || terminalRef.current;
+    if (!terminal) return;
+
+    terminal.options.fontSize = settings.fontSize;
+    terminal.options.fontFamily = settings.fontFamily;
+    terminal.options.scrollback = settings.scrollback;
+    terminal.options.cursorStyle = settings.cursorStyle;
+    terminal.options.cursorBlink = settings.cursorBlink;
+
+    // Apply theme
+    const themePreset = TERMINAL_THEMES.find((t) => t.id === settings.themeId);
+    if (themePreset) {
+      terminal.options.theme = themePreset.theme;
+    }
+
+    // Re-fit after font change
+    fitAddonRef.current?.fit();
+  }, [activeTerminalRef, terminalRef, fitAddonRef]);
+
+  // Apply saved settings when terminal initializes
+  useEffect(() => {
+    if (!isInitialized) return;
+    const savedSettings = loadTerminalSettings();
+    handleSettingsChange(savedSettings);
+  }, [isInitialized, handleSettingsChange]);
 
   // ── Split pane state ────────────────────────────────────────────────────────
   const [splitLayout, setSplitLayout] = useState<SplitLayout>({
@@ -346,7 +378,7 @@ export default function Shell({
     );
 
     return (
-      <div className="flex h-full w-full flex-col bg-gray-900">
+      <div ref={shellContainerRef} className="flex h-full w-full flex-col bg-gray-900" tabIndex={-1}>
         <SessionTabBar
           sessions={sessions}
           activeSessionId={activeSessionId}
@@ -464,7 +496,7 @@ export default function Shell({
   const overlayDescription = overlayMode === 'connecting' ? connectingDescription : readyDescription;
 
   return (
-    <div className="flex h-full w-full flex-col bg-gray-900">
+    <div ref={shellContainerRef} className="flex h-full w-full flex-col bg-gray-900" tabIndex={-1}>
       <ShellHeader
         isConnected={isConnected}
         isInitialized={isInitialized}

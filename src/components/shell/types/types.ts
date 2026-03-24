@@ -101,4 +101,5 @@ export type UseShellRuntimeResult = {
   connectionError: string | null;
   cancelReconnect: () => void;
   searchAddonRef: MutableRefObject<SearchAddon | null>;
+  fitAddonRef: MutableRefObject<FitAddon | null>;
 };

@@ -77,19 +77,22 @@ export default function ShellSessionInstance({
   });
 
   const [showSearch, setShowSearch] = useState(false);
+  const sessionContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const container = sessionContainerRef.current;
+    if (!container) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
-        if (isVisible) {
-          e.preventDefault();
-          setShowSearch(true);
-        }
+        e.preventDefault();
+        setShowSearch(true);
       }
     };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isVisible]);
+
+    container.addEventListener('keydown', handleKeyDown);
+    return () => container.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // --- Notify parent of status changes ---
   useEffect(() => {
@@ -165,7 +168,7 @@ export default function ShellSessionInstance({
   const overlayDescription = overlayMode === 'connecting' ? connectingDescription : readyDescription;
 
   return (
-    <div className={`relative h-full w-full${isVisible ? '' : ' hidden'}`}>
+    <div ref={sessionContainerRef} className={`relative h-full w-full${isVisible ? '' : ' hidden'}`} tabIndex={-1}>
       <div
         ref={terminalContainerRef}
         className="h-full w-full focus:outline-none"
