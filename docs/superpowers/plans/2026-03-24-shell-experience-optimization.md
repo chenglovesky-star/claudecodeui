@@ -95,6 +95,8 @@ const [connectionError, setConnectionError] = useState<string | null>(null);
 const intentionalDisconnectRef = useRef(false);
 const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+// 用 ref 跟踪当前重连次数，避免 onclose 闭包中读到 stale state
+const reconnectAttemptRef = useRef(0);
 ```
 
 - [ ] **Step 3: 更新 UseShellConnectionResult 类型导出新状态**
@@ -167,6 +169,7 @@ const scheduleReconnect = useCallback(
     const delay = Math.round(baseDelay + jitter);
     const delaySec = Math.ceil(delay / 1000);
 
+    reconnectAttemptRef.current = attempt + 1;
     setReconnectAttempt(attempt + 1);
     setReconnectCountdown(delaySec);
     setConnectionError(null);
@@ -216,7 +219,8 @@ socket.onclose = () => {
     intentionalDisconnectRef.current = false;
   } else {
     // 被动断连：保留终端内容，触发自动重连
-    scheduleReconnect(reconnectAttempt);
+    // 使用 ref 而非 state 避免 stale closure
+    scheduleReconnect(reconnectAttemptRef.current);
   }
 };
 ```
@@ -498,7 +502,20 @@ const overlayMode = !isInitialized
 )}
 ```
 
-- [ ] **Step 3: 更新 useShellRuntime 透传新状态**
+- [ ] **Step 3: 更新 types.ts 中的 UseShellRuntimeResult 类型**
+
+在 `src/components/shell/types/types.ts` 中，找到 `UseShellRuntimeResult` 类型定义（约第 81 行），添加新字段：
+
+```typescript
+// 在 UseShellRuntimeResult 中追加：
+isReconnecting: boolean;
+reconnectAttempt: number;
+reconnectCountdown: number;
+connectionError: string | null;
+cancelReconnect: () => void;
+```
+
+- [ ] **Step 4: 更新 useShellRuntime 透传新状态**
 
 在 `useShellRuntime.ts` 中，从 `useShellConnection` 解构新字段并在 return 中透传：
 
@@ -632,7 +649,10 @@ type ShellSessionInstanceProps = {
   selectedProject: Project;
   selectedSession: ProjectSession | null;
   isVisible: boolean;
+  isPlainShell?: boolean;
+  initialCommand?: string | null;
   onStatusChange?: (sessionId: string, status: 'running' | 'idle' | 'disconnected') => void;
+  onRuntimeReady?: (wsRef: React.MutableRefObject<WebSocket | null>, terminalRef: React.MutableRefObject<import('@xterm/xterm').Terminal | null>) => void;
 };
 
 export default function ShellSessionInstance({
@@ -640,7 +660,10 @@ export default function ShellSessionInstance({
   selectedProject,
   selectedSession,
   isVisible,
+  isPlainShell = false,
+  initialCommand = null,
   onStatusChange,
+  onRuntimeReady,
 }: ShellSessionInstanceProps) {
   const [cliPromptOptions, setCliPromptOptions] = useState<CliPromptOption[] | null>(null);
   const promptCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -663,8 +686,8 @@ export default function ShellSessionInstance({
   } = useShellRuntime({
     selectedProject,
     selectedSession,
-    initialCommand: null,
-    isPlainShell: false,
+    initialCommand,
+    isPlainShell,
     minimal: false,
     autoConnect: isVisible, // 只在可见时自动连接
     isRestarting: false,
@@ -854,6 +877,7 @@ export function useSessionManager() {
 
   const getOrCreateSession = useCallback((sessionId: string): { isNew: boolean; evictedId: string | null } => {
     let evictedId: string | null = null;
+    let isNew = false;
 
     setSessions((prev) => {
       const existing = prev.find((s) => s.sessionId === sessionId);
@@ -862,6 +886,9 @@ export function useSessionManager() {
           s.sessionId === sessionId ? { ...s, lastActiveTime: Date.now() } : s,
         );
       }
+
+      // 标记为新会话（在 updater 内部设置，避免 stale state 读取）
+      isNew = true;
 
       // Need to create new session
       let next = [...prev, { sessionId, lastActiveTime: Date.now(), status: 'disconnected' as const }];
@@ -881,11 +908,8 @@ export function useSessionManager() {
       orderRef.current = [...orderRef.current, sessionId];
     }
 
-    return {
-      isNew: !sessions.find((s) => s.sessionId === sessionId),
-      evictedId,
-    };
-  }, [sessions]);
+    return { isNew, evictedId };
+  }, []);
 
   const switchSession = useCallback((sessionId: string) => {
     getOrCreateSession(sessionId);
@@ -1114,18 +1138,72 @@ export const PTY_MAX_GLOBAL_SESSIONS = 10;      // 全局最大 PTY 会话数
 
 - [ ] **Step 2: 在 ShellHandler.js 添加连接数检查**
 
-在 ShellHandler 的 `handleInit` 方法中（创建新 PTY 之前），添加检查：
+在 ShellHandler 的 WebSocket `message` 事件处理器中，`case 'init'` 分支的开头（`const existingSession = ...` 行之前，约第 147 行），添加 PTY 数量检查：
 
 ```javascript
+// 在文件顶部 import 中添加：
+import { PTY_MAX_GLOBAL_SESSIONS } from '../config/constants.js';
+
+// 在 case 'init' 分支开头：
 if (this.ptySessionsMap.size >= PTY_MAX_GLOBAL_SESSIONS) {
   ws.send(JSON.stringify({ type: 'error', message: '已达最大会话数限制，请关闭不需要的会话' }));
   return;
 }
 ```
 
-- [ ] **Step 3: 在 Shell.tsx 中集成 SessionManager + TabBar**
+- [ ] **Step 3a: Shell.tsx — 移除直接的 useShellRuntime 调用**
 
-这是一个较大的重构，将 Shell.tsx 中原有的单会话逻辑替换为 SessionManager 驱动的多会话模式。具体改动见 spec 2.1 节。核心变化是：Shell.tsx 不再直接调用 `useShellRuntime`，而是通过 `useSessionManager` 管理多个 `<ShellSessionInstance>` 实例。
+在 Shell.tsx 中，将 `useShellRuntime` 调用（第 69-79 行）替换为 `useSessionManager`。注意：当 `isPlainShell` 或 `minimal` 为 true 时，保留原有的单会话代码路径（直接使用 `useShellRuntime`），不走 SessionManager。
+
+```typescript
+import { useSessionManager } from '../hooks/useSessionManager';
+import ShellSessionInstance from './subcomponents/ShellSessionInstance';
+import SessionTabBar from './subcomponents/SessionTabBar';
+
+// 在 Shell 组件内部：
+const isMultiSessionMode = !isPlainShell && !minimal;
+const sessionManager = isMultiSessionMode ? useSessionManager() : null;
+```
+
+- [ ] **Step 3b: Shell.tsx — 替换终端容器为 ShellSessionInstance 映射渲染**
+
+替换原来的 `<div ref={terminalContainerRef}>` 和相关 overlay 代码为：
+
+```tsx
+{isMultiSessionMode && sessionManager && (
+  <>
+    <SessionTabBar
+      sessions={sessionManager.sessions}
+      activeSessionId={sessionManager.activeSessionId}
+      tabOrder={sessionManager.tabOrder}
+      onSwitch={sessionManager.switchSession}
+      onClose={sessionManager.closeSession}
+      onNewSession={() => { /* 通过侧边栏创建新会话后调用 switchSession */ }}
+      onReorder={sessionManager.reorderSessions}
+    />
+    <div className="relative flex-1 overflow-hidden">
+      {sessionManager.tabOrder.map((sid) => (
+        <ShellSessionInstance
+          key={sid}
+          sessionId={sid}
+          selectedProject={selectedProject!}
+          selectedSession={selectedSession}
+          isVisible={sid === sessionManager.activeSessionId}
+          onStatusChange={sessionManager.updateStatus}
+        />
+      ))}
+    </div>
+  </>
+)}
+```
+
+- [ ] **Step 3c: Shell.tsx — 保留 isPlainShell/minimal 的单会话回退路径**
+
+在 `isMultiSessionMode` 为 false 时，保留原有的完整渲染逻辑（useShellRuntime + 单个 terminalContainerRef + overlay + TerminalShortcutsPanel）。
+
+- [ ] **Step 3d: Shell.tsx — 将 TerminalShortcutsPanel 连接到活跃会话**
+
+在多会话模式下，TerminalShortcutsPanel 需要接收活跃会话的 `wsRef` 和 `terminalRef`。通过在 `ShellSessionInstance` 中暴露 ref 回调来获取。在 `ShellSessionInstance` props 中新增 `onRuntimeReady?: (wsRef, terminalRef) => void`，当 `isVisible` 为 true 时回调通知 Shell.tsx。
 
 - [ ] **Step 4: 验证编译通过**
 
