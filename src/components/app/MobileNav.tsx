@@ -1,4 +1,4 @@
-import { MessageSquare, Folder, Terminal, GitBranch, ClipboardCheck } from 'lucide-react';
+import { Folder, Terminal, GitBranch, ClipboardCheck } from 'lucide-react';
 import { Dispatch, SetStateAction } from 'react';
 import { useTasksSettings } from '../../contexts/TasksSettingsContext';
 import { AppTab } from '../../types/app';
@@ -14,12 +14,6 @@ export default function MobileNav({ activeTab, setActiveTab, isInputFocused }: M
   const shouldShowTasksTab = Boolean(tasksEnabled && isTaskMasterInstalled);
 
   const navItems = [
-    {
-      id: 'chat',
-      icon: MessageSquare,
-      label: 'Chat',
-      onClick: () => setActiveTab('chat')
-    },
     {
       id: 'shell',
       icon: Terminal,

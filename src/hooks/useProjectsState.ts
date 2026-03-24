@@ -117,7 +117,7 @@ const readPersistedTab = (): AppTab => {
   } catch {
     // localStorage unavailable
   }
-  return 'chat';
+  return 'shell';
 };
 
 export function useProjectsState({
