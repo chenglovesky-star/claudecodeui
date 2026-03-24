@@ -1,13 +1,55 @@
+import { useState, useEffect, useRef } from 'react';
 import { SessionProvider } from '../../../../types/app';
 import SessionProviderLogo from '../../../llm-logo-provider/SessionProviderLogo';
 import { useWebSocket } from '../../../../contexts/WebSocketContext';
 
 type AssistantThinkingIndicatorProps = {
   selectedProvider: SessionProvider;
+  currentPhase?: string;
+  phaseMeta?: Record<string, unknown>;
+  recoveryStatus?: { code: string; meta?: Record<string, unknown> } | null;
 }
 
-export default function AssistantThinkingIndicator({ selectedProvider }: AssistantThinkingIndicatorProps) {
+function getPhaseDisplay(currentPhase?: string, phaseMeta?: Record<string, unknown>) {
+  switch (currentPhase) {
+    case 'querying':
+      return { icon: '🧠', text: '正在思考...', isL1: false };
+    case 'streaming':
+      return { icon: '✍️', text: '正在输出...', isL1: false };
+    case 'auth-fallback':
+      return { icon: '🔄', text: '正在切换备用通道...', isL1: true };
+    case 'rate-limit-retry': {
+      const attempt = phaseMeta?.attempt ?? '';
+      const retrySec = phaseMeta?.retrySec ?? '';
+      const metaInfo = attempt || retrySec
+        ? `（第${attempt}次重试${retrySec ? `，${retrySec}s 后` : ''}）`
+        : '';
+      return { icon: '⚠️', text: `API 繁忙，自动重试中...${metaInfo}`, isL1: true };
+    }
+    // undefined / acknowledged / configuring and any other value
+    default:
+      return { icon: '⚙️', text: '正在准备...', isL1: false };
+  }
+}
+
+export default function AssistantThinkingIndicator({
+  selectedProvider,
+  currentPhase,
+  phaseMeta,
+  recoveryStatus,
+}: AssistantThinkingIndicatorProps) {
   const { queueStatus } = useWebSocket();
+  const [elapsed, setElapsed] = useState(0);
+  const startTimeRef = useRef(Date.now());
+
+  useEffect(() => {
+    startTimeRef.current = Date.now();
+    setElapsed(0);
+    const timer = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   if (queueStatus && queueStatus.status === 'queued') {
     return (
@@ -40,8 +82,18 @@ export default function AssistantThinkingIndicator({ selectedProvider }: Assista
     : selectedProvider === 'claude-cli' ? 'Claude CLI'
     : 'Claude';
 
+  const { icon, text, isL1 } = getPhaseDisplay(currentPhase, phaseMeta);
+
+  const textColorClass = isL1
+    ? 'text-yellow-700 dark:text-yellow-300'
+    : 'text-gray-500 dark:text-gray-400';
+
+  const bgClass = isL1
+    ? 'bg-yellow-50 dark:bg-yellow-950/20'
+    : '';
+
   return (
-    <div className="chat-message assistant">
+    <div className={`chat-message assistant ${bgClass}`}>
       <style>{`
         @keyframes thinking-bounce {
           0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
@@ -77,15 +129,22 @@ export default function AssistantThinkingIndicator({ selectedProvider }: Assista
             {providerName}
           </div>
         </div>
-        <div className="w-full pl-3 text-sm text-gray-500 dark:text-gray-400 sm:pl-0">
+        <div className={`w-full pl-3 text-sm ${textColorClass} sm:pl-0`}>
           <div className="flex items-center space-x-2">
+            <span>{icon}</span>
             <div className="flex items-center space-x-1">
               <span className="thinking-dot" style={{ animationDelay: '0s' }} />
               <span className="thinking-dot" style={{ animationDelay: '0.2s' }} />
               <span className="thinking-dot" style={{ animationDelay: '0.4s' }} />
             </div>
-            <span className="thinking-text">正在思考中</span>
+            <span className="thinking-text">{text}{elapsed > 0 ? `（${elapsed}s）` : ''}</span>
           </div>
+          {recoveryStatus && (
+            <div className="mt-1 text-xs text-yellow-600 dark:text-yellow-400">
+              恢复状态: {recoveryStatus.code}
+              {recoveryStatus.meta?.detail ? ` - ${String(recoveryStatus.meta.detail)}` : ''}
+            </div>
+          )}
         </div>
       </div>
     </div>
