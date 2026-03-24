@@ -2,9 +2,11 @@ import { useRef, useCallback, useEffect, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import type { Terminal } from '@xterm/xterm';
 import type { Project, ProjectSession } from '../../../../types/app';
+import type { PasteConfirmCallback } from '../../types/types';
 import { useShellRuntime } from '../../hooks/useShellRuntime';
 import { sendSocketMessage } from '../../utils/socket';
 import ShellConnectionOverlay from './ShellConnectionOverlay';
+import PasteConfirmDialog from './PasteConfirmDialog';
 import TerminalSearchBar from './TerminalSearchBar';
 import {
   PROMPT_BUFFER_SCAN_LINES,
@@ -45,6 +47,17 @@ export default function ShellSessionInstance({
   const [cliPromptOptions, setCliPromptOptions] = useState<CliPromptOption[] | null>(null);
   const promptCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onOutputRef = useRef<(() => void) | null>(null);
+  const [pendingPaste, setPendingPaste] = useState<{ text: string; onConfirm: () => void } | null>(null);
+  const onPasteConfirmNeeded = useRef<PasteConfirmCallback | null>(null);
+
+  useEffect(() => {
+    onPasteConfirmNeeded.current = (text: string, onConfirm: () => void) => {
+      setPendingPaste({ text, onConfirm });
+    };
+    return () => {
+      onPasteConfirmNeeded.current = null;
+    };
+  }, []);
 
   const {
     terminalContainerRef,
@@ -69,6 +82,7 @@ export default function ShellSessionInstance({
     autoConnect: isVisible,
     isRestarting: false,
     onOutputRef,
+    onPasteConfirmNeeded,
   });
 
   const [showSearch, setShowSearch] = useState(false);
@@ -237,6 +251,17 @@ export default function ShellSessionInstance({
         <TerminalSearchBar
           searchAddon={searchAddonRef.current}
           onClose={() => setShowSearch(false)}
+        />
+      )}
+
+      {pendingPaste && (
+        <PasteConfirmDialog
+          text={pendingPaste.text}
+          onConfirm={() => {
+            pendingPaste.onConfirm();
+            setPendingPaste(null);
+          }}
+          onCancel={() => setPendingPaste(null)}
         />
       )}
 

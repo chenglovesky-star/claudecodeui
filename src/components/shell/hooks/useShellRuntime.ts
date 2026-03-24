@@ -38,6 +38,7 @@ export function useShellRuntime({
   isRestarting,
   onProcessComplete,
   onOutputRef,
+  onPasteConfirmNeeded,
 }: UseShellRuntimeOptions): UseShellRuntimeResult {
   const terminalContainerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -125,6 +126,7 @@ export function useShellRuntime({
     authUrlRef,
     copyAuthUrlToClipboard,
     closeSocket,
+    onPasteConfirmNeeded,
   });
 
   const {

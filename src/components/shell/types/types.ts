@@ -4,6 +4,8 @@ import type { SearchAddon } from '@xterm/addon-search';
 import type { Terminal } from '@xterm/xterm';
 import type { Project, ProjectSession } from '../../../types/app';
 
+export type PasteConfirmCallback = (text: string, onConfirm: () => void) => void;
+
 export type AuthCopyStatus = 'idle' | 'copied' | 'failed';
 
 export type ShellInitMessage = {
@@ -65,6 +67,7 @@ export type UseShellRuntimeOptions = {
   isRestarting: boolean;
   onProcessComplete?: ((exitCode: number) => void) | null;
   onOutputRef?: MutableRefObject<(() => void) | null>;
+  onPasteConfirmNeeded?: MutableRefObject<PasteConfirmCallback | null>;
 };
 
 export type ShellSharedRefs = {

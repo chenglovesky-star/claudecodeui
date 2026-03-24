@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import '@xterm/xterm/css/xterm.css';
 import type { Terminal } from '@xterm/xterm';
 import type { Project, ProjectSession } from '../../../types/app';
+import type { PasteConfirmCallback } from '../types/types';
 import {
   PROMPT_BUFFER_SCAN_LINES,
   PROMPT_DEBOUNCE_MS,
@@ -20,6 +21,7 @@ import ShellEmptyState from './subcomponents/ShellEmptyState';
 import ShellHeader from './subcomponents/ShellHeader';
 import ShellMinimalView from './subcomponents/ShellMinimalView';
 import ShellSessionInstance from './subcomponents/ShellSessionInstance';
+import PasteConfirmDialog from './subcomponents/PasteConfirmDialog';
 import SessionTabBar from './subcomponents/SessionTabBar';
 import TerminalSearchBar from './subcomponents/TerminalSearchBar';
 import TerminalShortcutsPanel from './subcomponents/TerminalShortcutsPanel';
@@ -54,6 +56,17 @@ export default function Shell({
   const [cliPromptOptions, setCliPromptOptions] = useState<CliPromptOption[] | null>(null);
   const promptCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onOutputRef = useRef<(() => void) | null>(null);
+  const [pendingPaste, setPendingPaste] = useState<{ text: string; onConfirm: () => void } | null>(null);
+  const onPasteConfirmNeeded = useRef<PasteConfirmCallback | null>(null);
+
+  useEffect(() => {
+    onPasteConfirmNeeded.current = (text: string, onConfirm: () => void) => {
+      setPendingPaste({ text, onConfirm });
+    };
+    return () => {
+      onPasteConfirmNeeded.current = null;
+    };
+  }, []);
 
   // Keep the public API stable for existing callers that still pass `isActive`.
   void isActive;
@@ -115,6 +128,7 @@ export default function Shell({
     isRestarting,
     onProcessComplete,
     onOutputRef,
+    onPasteConfirmNeeded,
   });
 
   // ── Multi-session: track active session's runtime refs for TerminalShortcutsPanel ─
@@ -374,6 +388,17 @@ export default function Shell({
           <TerminalSearchBar
             searchAddon={searchAddonRef.current}
             onClose={() => setShowSearch(false)}
+          />
+        )}
+
+        {pendingPaste && (
+          <PasteConfirmDialog
+            text={pendingPaste.text}
+            onConfirm={() => {
+              pendingPaste.onConfirm();
+              setPendingPaste(null);
+            }}
+            onCancel={() => setPendingPaste(null)}
           />
         )}
 

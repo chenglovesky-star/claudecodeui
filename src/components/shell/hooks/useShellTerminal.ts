@@ -29,6 +29,7 @@ type UseShellTerminalOptions = {
   authUrlRef: MutableRefObject<string>;
   copyAuthUrlToClipboard: (url?: string) => Promise<boolean>;
   closeSocket: () => void;
+  onPasteConfirmNeeded?: React.MutableRefObject<((text: string, onConfirm: () => void) => void) | null>;
 };
 
 type UseShellTerminalResult = {
@@ -51,6 +52,7 @@ export function useShellTerminal({
   authUrlRef,
   copyAuthUrlToClipboard,
   closeSocket,
+  onPasteConfirmNeeded,
 }: UseShellTerminalOptions): UseShellTerminalResult {
   const [isInitialized, setIsInitialized] = useState(false);
   const resizeTimeoutRef = useRef<number | null>(null);
@@ -139,7 +141,13 @@ export function useShellTerminal({
       ) {
         event.preventDefault();
         event.stopPropagation();
-        document.execCommand('copy');
+        const selection = nextTerminal.getSelection();
+        if (navigator.clipboard?.writeText) {
+          void navigator.clipboard.writeText(selection);
+        } else {
+          document.execCommand('copy');
+        }
+        nextTerminal.clearSelection();
         return false;
       }
 
@@ -182,10 +190,13 @@ export function useShellTerminal({
       const text = e.clipboardData?.getData('text');
       if (text) {
         e.preventDefault();
-        sendSocketMessage(wsRef.current, {
-          type: 'input',
-          data: text,
-        });
+        if (text.includes('\n') && onPasteConfirmNeeded?.current) {
+          onPasteConfirmNeeded.current(text, () => {
+            sendSocketMessage(wsRef.current, { type: 'input', data: text });
+          });
+        } else {
+          sendSocketMessage(wsRef.current, { type: 'input', data: text });
+        }
       }
     };
 
@@ -262,6 +273,7 @@ export function useShellTerminal({
     minimal,
     hasSelectedProject,
     selectedProjectKey,
+    onPasteConfirmNeeded,
     terminalContainerRef,
     terminalRef,
     wsRef,
