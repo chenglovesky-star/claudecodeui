@@ -53,5 +53,6 @@ export interface HandlerContext {
   isSystemInitForView: boolean | string | null;
   // Phase & recovery state setters (optional for backward compat)
   setCurrentPhase?: (phase: string | undefined) => void;
+  setPhaseMeta?: (meta: Record<string, unknown> | undefined) => void;
   setRecoveryStatus?: (status: { code: string; meta?: Record<string, unknown> } | null) => void;
 }

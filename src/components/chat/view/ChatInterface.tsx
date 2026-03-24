@@ -201,7 +201,7 @@ function ChatInterface({
     setPendingPermissionRequests,
   });
 
-  const { currentPhase, recoveryStatus } = useChatRealtimeHandlers({
+  const { currentPhase, phaseMeta, recoveryStatus } = useChatRealtimeHandlers({
     latestMessage,
     provider,
     selectedProject,
@@ -366,6 +366,7 @@ function ChatInterface({
           onNewSession={handleNewSession}
           onContinueGeneration={handleContinueGeneration}
           currentPhase={currentPhase}
+          phaseMeta={phaseMeta}
           recoveryStatus={recoveryStatus}
         />
 

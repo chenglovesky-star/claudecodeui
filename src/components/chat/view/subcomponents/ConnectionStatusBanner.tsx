@@ -11,6 +11,7 @@ export default function ConnectionStatusBanner() {
     if (prevState !== 'connected' && connectionState === 'connected') {
       setShowRecovered(true);
       const timer = setTimeout(() => setShowRecovered(false), 3000);
+      setPrevState(connectionState); // Must update prevState here too
       return () => clearTimeout(timer);
     }
     setPrevState(connectionState);

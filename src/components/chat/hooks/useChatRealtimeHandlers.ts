@@ -100,6 +100,7 @@ export function useChatRealtimeHandlers({
   onNavigateToSession,
 }: UseChatRealtimeHandlersArgs) {
   const [currentPhase, setCurrentPhase] = useState<string | undefined>(undefined);
+  const [phaseMeta, setPhaseMeta] = useState<Record<string, unknown> | undefined>(undefined);
   const [recoveryStatus, setRecoveryStatus] = useState<{ code: string; meta?: Record<string, unknown> } | null>(null);
 
   const lastProcessedMessageRef = useRef<LatestChatMessage | null>(null);
@@ -137,6 +138,7 @@ export function useChatRealtimeHandlers({
       }]);
       setIsLoading(false);
       setCurrentPhase(undefined);
+      setPhaseMeta(undefined);
       setRecoveryStatus(null);
     }, timeout);
   }, [clearFallbackTimer, setChatMessages, setIsLoading]);
@@ -387,6 +389,7 @@ export function useChatRealtimeHandlers({
       clearLoadingIndicators,
       isSystemInitForView,
       setCurrentPhase,
+      setPhaseMeta,
       setRecoveryStatus,
     };
 
@@ -508,6 +511,7 @@ export function useChatRealtimeHandlers({
       case 'session-aborted': {
         clearFallbackTimer();
         setCurrentPhase(undefined);
+        setPhaseMeta(undefined);
         setRecoveryStatus(null);
         const pendingSessionId =
           typeof window !== 'undefined' ? sessionStorage.getItem('pendingSessionId') : null;
@@ -621,6 +625,7 @@ export function useChatRealtimeHandlers({
         // completion event was emitted). Treat it as terminal for current view lifecycle.
         clearFallbackTimer();
         setCurrentPhase(undefined);
+        setPhaseMeta(undefined);
         setRecoveryStatus(null);
         finalizeLifecycleForCurrentView(latestMessage.sessionId, currentSessionId, selectedSession?.id);
         if (latestMessage.error) {
@@ -636,6 +641,7 @@ export function useChatRealtimeHandlers({
         break;
 
       case 'session-timeout':
+        // Backward compat: backend now sends claude-error with errorCode, but keep for legacy messages
         handleSessionTimeout(ctx, latestMessage);
         break;
 
@@ -643,9 +649,24 @@ export function useChatRealtimeHandlers({
         handleSessionError(ctx, latestMessage);
         break;
 
-      case 'quota-exceeded':
-        handleQuotaExceeded(ctx, latestMessage);
+      case 'quota-exceeded': {
+        // Backward compat: backend now sends claude-error with errorCode='quota-exceeded'
+        // but keep this branch in case of legacy messages
+        clearFallbackTimer();
+        setCurrentPhase(undefined);
+        setPhaseMeta(undefined);
+        setRecoveryStatus(null);
+        setChatMessages(prev => [...prev, {
+          type: 'error' as const,
+          content: latestMessage.reason || '已达最大同时会话数，请等待现有会话完成。',
+          errorLevel: 3 as const,
+          errorCode: 'quota-exceeded',
+          errorActions: [] as string[],
+          timestamp: new Date(),
+        }]);
+        setIsLoading(false);
         break;
+      }
 
       case 'session-completed':
         handleSessionCompleted(ctx, latestMessage);
@@ -691,6 +712,7 @@ export function useChatRealtimeHandlers({
   return {
     backgroundBuffersRef,
     currentPhase,
+    phaseMeta,
     recoveryStatus,
   };
 }

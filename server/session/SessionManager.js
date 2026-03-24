@@ -224,8 +224,13 @@ export class SessionManager extends EventEmitter {
       this._clearTimeout(session.timers[timerKey]);
       session.timers[timerKey] = null;
     }
+    // Record timer metadata for pause/resume
+    if (!session._timerMeta) session._timerMeta = {};
+    session._timerMeta[timerKey] = { startedAt: Date.now(), duration: ms, timeoutType };
+
     session.timers[timerKey] = this._setTimeout(() => {
       session.timers[timerKey] = null;
+      delete session._timerMeta?.[timerKey];
       log.warn(`${session.sessionId} timeout: ${timeoutType}`);
       this.transition(session.sessionId, 'timeout');
       const errorCodeMap = {
@@ -290,15 +295,23 @@ export class SessionManager extends EventEmitter {
   pauseTimers(sessionId) {
     const session = this._sessions.get(sessionId);
     if (!session) return;
+    const now = Date.now();
     session._pausedTimers = {};
     for (const key of Object.keys(session.timers)) {
       if (session.timers[key] !== null) {
-        session._pausedTimers[key] = true;
+        const meta = session._timerMeta?.[key];
+        if (meta) {
+          const elapsed = now - meta.startedAt;
+          const remaining = Math.max(meta.duration - elapsed, 1000); // at least 1s
+          session._pausedTimers[key] = { remaining, timeoutType: meta.timeoutType };
+        } else {
+          session._pausedTimers[key] = { remaining: null };
+        }
         this._clearTimeout(session.timers[key]);
         session.timers[key] = null;
       }
     }
-    session._pausedAt = Date.now();
+    session._pausedAt = now;
     log.info(`Paused timers for ${sessionId}`);
   }
 
@@ -311,10 +324,15 @@ export class SessionManager extends EventEmitter {
       delete session._pausedAt;
       return;
     }
-    this._manageTimers(session, null, state);
+    // Re-start each paused timer with remaining time
+    for (const [key, info] of Object.entries(session._pausedTimers)) {
+      if (info.remaining && info.timeoutType) {
+        this._startTimer(session, key, info.remaining, info.timeoutType);
+      }
+    }
     delete session._pausedTimers;
     delete session._pausedAt;
-    log.info(`Resumed timers for ${sessionId}`);
+    log.info(`Resumed timers for ${sessionId} with remaining durations`);
   }
 
   /** Refresh activity timeout without full state transition (for streaming self-loop). */

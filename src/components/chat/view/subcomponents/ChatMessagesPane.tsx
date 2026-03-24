@@ -59,6 +59,7 @@ interface ChatMessagesPaneProps {
   onNewSession?: () => void;
   onContinueGeneration?: () => void;
   currentPhase?: string;
+  phaseMeta?: Record<string, unknown>;
   recoveryStatus?: { code: string; meta?: Record<string, unknown> } | null;
 }
 
@@ -113,6 +114,7 @@ export default function ChatMessagesPane({
   onNewSession,
   onContinueGeneration,
   currentPhase,
+  phaseMeta,
   recoveryStatus,
 }: ChatMessagesPaneProps) {
   const { t } = useTranslation('chat');
@@ -319,7 +321,7 @@ export default function ChatMessagesPane({
             </div>
           );
         }
-        return <AssistantThinkingIndicator selectedProvider={provider} currentPhase={currentPhase} recoveryStatus={recoveryStatus} />;
+        return <AssistantThinkingIndicator selectedProvider={provider} currentPhase={currentPhase} phaseMeta={phaseMeta} recoveryStatus={recoveryStatus} />;
       })()}
     </div>
   );

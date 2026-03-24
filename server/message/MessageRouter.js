@@ -232,7 +232,13 @@ export class MessageRouter extends EventEmitter {
     this.#processManager.on('process:phase', ({ sessionId, data }) => {
       const session = this.#sessionManager.getSession(sessionId);
       if (!session) return;
-      // Just send to client, no state transition
+      // Forward phase messages to client without triggering state machine
+      // (phase events like auth-fallback, rate-limit-retry are also sent directly
+      // via transport.send in ClaudeSDKProvider, but this ensures any phase
+      // sent via emitPhase() also reaches the client)
+      if (data && data.type) {
+        this.#transport.send(session.connectionId, data);
+      }
     });
 
     this.#processManager.on('process:complete', ({ sessionId, result }) => {

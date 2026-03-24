@@ -31,6 +31,8 @@ export function handleSessionTimeout(ctx: HandlerContext, latestMessage: LatestC
   }]);
   ctx.setIsLoading(false);
   ctx.setCanAbortSession(false);
+  if (ctx.setCurrentPhase) ctx.setCurrentPhase(undefined);
+  if (ctx.setRecoveryStatus) ctx.setRecoveryStatus(null);
 }
 
 export function handleSessionError(ctx: HandlerContext, latestMessage: LatestChatMessage) {

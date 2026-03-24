@@ -17,6 +17,15 @@ export function handleClaudePhase(ctx: HandlerContext, latestMessage: LatestChat
   if (ctx.setCurrentPhase) {
     ctx.setCurrentPhase(latestMessage.phase as string);
   }
+  if (ctx.setPhaseMeta) {
+    const { phase, type, ...meta } = latestMessage as any;
+    ctx.setPhaseMeta(Object.keys(meta).length > 0 ? meta : undefined);
+  }
+  // Clear recovery status when transitioning away from L1 recovery phases
+  const l1Phases = new Set(['auth-fallback', 'rate-limit-retry']);
+  if (ctx.setRecoveryStatus && !l1Phases.has(latestMessage.phase as string)) {
+    ctx.setRecoveryStatus(null);
+  }
   if (latestMessage.phase === 'acknowledged') {
     ctx.startFallbackTimer();
   }
