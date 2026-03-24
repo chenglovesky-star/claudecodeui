@@ -313,10 +313,10 @@ export function handleClaudeResponse(ctx: HandlerContext, latestMessage: LatestC
   }
 
   if (structuredMessageData?.role === 'user' && Array.isArray(structuredMessageData.content)) {
-    // tool_result marks the boundary between the previous assistant turn
-    // (which may have had internal tools) and the upcoming assistant turn.
-    // Reset suppression so the next response's text blocks are displayed.
-    deactivateInternalSuppression();
+    // NOTE: Do NOT deactivate suppression here. After an internal tool (Skill/Agent),
+    // the echoed prompt content arrives in the NEXT assistant turn (after this tool_result).
+    // Suppression must persist through the tool_result boundary and be consumed by
+    // shouldSuppressTextBlock() when the first text block of the next turn arrives.
 
     const parentToolUseId = rawStructuredData?.parentToolUseId;
 

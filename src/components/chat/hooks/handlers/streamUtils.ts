@@ -38,34 +38,41 @@ export function stripSystemTags(content: string): string {
   return cleaned;
 }
 
-// ── Internal content suppression state machine ──
-// States:
-//   NORMAL      – text blocks are displayed normally
-//   SUPPRESSING  – an internal tool was just invoked; suppress ALL subsequent
-//                  text blocks until a user-visible tool or new assistant turn
-//                  switches back to NORMAL.
+// ── Internal content suppression ──
+// After an internal tool (Skill, Agent, Task, etc.) is invoked, the SDK echoes
+// the tool's prompt/instructions as the first text block of the NEXT assistant
+// turn. This content is internal and should not be shown to the user.
 //
-// Transitions:
+// Mechanism: "one-shot" suppression that persists across turn boundaries.
 //   NORMAL      → SUPPRESSING   via activateInternalSuppression()  (internal tool_use)
-//   SUPPRESSING → NORMAL        via deactivateInternalSuppression() (user-visible tool_use / turn end)
-//   any         → NORMAL        via resetInternalSuppression()      (session boundary)
+//   SUPPRESSING → NORMAL        automatically when shouldSuppressTextBlock() consumes one block
+//   SUPPRESSING → NORMAL        via deactivateInternalSuppression() (user-visible tool_use)
+//   any         → NORMAL        via resetInternalSuppression()      (session boundary / acknowledged)
 
 type SuppressionState = 'NORMAL' | 'SUPPRESSING';
 let _suppressionState: SuppressionState = 'NORMAL';
 
-/** Enter SUPPRESSING state: all text blocks are dropped until deactivated. */
+/** Enter SUPPRESSING state: the next text block will be suppressed. */
 export function activateInternalSuppression() {
   _suppressionState = 'SUPPRESSING';
 }
 
-/** Return to NORMAL state: text blocks are displayed again. */
+/** Immediately return to NORMAL state (e.g. when a user-visible tool is encountered). */
 export function deactivateInternalSuppression() {
   _suppressionState = 'NORMAL';
 }
 
-/** Check whether the current text block should be suppressed (consumes nothing — state-based). */
+/**
+ * Check whether the current text block should be suppressed.
+ * Auto-transitions to NORMAL after consuming one block ("one-shot" semantics).
+ * This ensures only the echoed prompt content is hidden, not subsequent real responses.
+ */
 export function shouldSuppressTextBlock(): boolean {
-  return _suppressionState === 'SUPPRESSING';
+  if (_suppressionState === 'SUPPRESSING') {
+    _suppressionState = 'NORMAL'; // consumed — next text block will display normally
+    return true;
+  }
+  return false;
 }
 
 // Whether the current streaming content block is being suppressed
