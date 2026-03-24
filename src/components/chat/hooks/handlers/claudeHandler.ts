@@ -1,7 +1,7 @@
 import { decodeHtmlEntities, formatUsageLimitText } from '../../utils/chatFormatting';
 import { safeLocalStorage } from '../../utils/chatStorage';
 import { getErrorMapping, getErrorDescription } from '../../utils/errorMessages';
-import { appendStreamingChunk, finalizeStreamingMessage, resetInternalSuppression, activateInternalSuppression, shouldSuppressTextBlock, setCurrentBlockSuppressed } from './streamUtils';
+import { appendStreamingChunk, finalizeStreamingMessage, resetInternalSuppression, activateInternalSuppression, deactivateInternalSuppression, shouldSuppressTextBlock, setCurrentBlockSuppressed } from './streamUtils';
 import type { HandlerContext, LatestChatMessage } from './types';
 
 export function handleClaudePhase(ctx: HandlerContext, latestMessage: LatestChatMessage) {
@@ -212,12 +212,14 @@ export function handleClaudeResponse(ctx: HandlerContext, latestMessage: LatestC
 
     structuredMessageData.content.forEach((part: any) => {
       if (part.type === 'tool_use') {
-        // Only suppress text after internal tools that dump prompt content
-        // (Skill loads full skill.md, Agent/Task dump dispatch instructions)
-        // Regular tools (Read, Write, Bash, Grep, etc.) are followed by user-visible text
+        // Internal tools dump prompt content in the following text blocks — suppress them.
+        // User-visible tools (Read, Write, Bash, etc.) are followed by text the user should see,
+        // so encountering one exits suppression mode.
         const INTERNAL_TOOLS = new Set(['Skill', 'Task', 'Agent', 'Dispatch', 'ToolSearch']);
         if (INTERNAL_TOOLS.has(part.name)) {
           activateInternalSuppression();
+        } else {
+          deactivateInternalSuppression();
         }
         const toolInput = part.input ? JSON.stringify(part.input, null, 2) : '';
 
@@ -287,6 +289,10 @@ export function handleClaudeResponse(ctx: HandlerContext, latestMessage: LatestC
       }
 
       if (part.type === 'text' && part.text?.trim()) {
+        // Check suppression state: internal tool prompt content should be hidden
+        if (shouldSuppressTextBlock()) {
+          return; // skip — internal content following Skill/Agent/Task tool_use
+        }
         let content = decodeHtmlEntities(part.text);
         content = formatUsageLimitText(content);
         ctx.setClaudeStatus(null);

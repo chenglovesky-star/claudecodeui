@@ -38,27 +38,37 @@ export function stripSystemTags(content: string): string {
   return cleaned;
 }
 
-// Track tool-content suppression state.
-// After a tool_use block, the NEXT text content block is typically internal
-// (skill prompt, agent instructions, etc.) and should be suppressed.
-// _textBlocksToSuppress counts how many text blocks to skip after a tool_use.
-let _textBlocksToSuppress = 0;
+// ── Internal content suppression state machine ──
+// States:
+//   NORMAL      – text blocks are displayed normally
+//   SUPPRESSING  – an internal tool was just invoked; suppress ALL subsequent
+//                  text blocks until a user-visible tool or new assistant turn
+//                  switches back to NORMAL.
+//
+// Transitions:
+//   NORMAL      → SUPPRESSING   via activateInternalSuppression()  (internal tool_use)
+//   SUPPRESSING → NORMAL        via deactivateInternalSuppression() (user-visible tool_use / turn end)
+//   any         → NORMAL        via resetInternalSuppression()      (session boundary)
 
-/** Activate suppression: the next text block after this tool_use should be suppressed. */
+type SuppressionState = 'NORMAL' | 'SUPPRESSING';
+let _suppressionState: SuppressionState = 'NORMAL';
+
+/** Enter SUPPRESSING state: all text blocks are dropped until deactivated. */
 export function activateInternalSuppression() {
-  _textBlocksToSuppress = 1;
+  _suppressionState = 'SUPPRESSING';
 }
 
-/** Called on content_block_start(text): consume one suppression if active. Returns true if this block should be suppressed. */
+/** Return to NORMAL state: text blocks are displayed again. */
+export function deactivateInternalSuppression() {
+  _suppressionState = 'NORMAL';
+}
+
+/** Check whether the current text block should be suppressed (consumes nothing — state-based). */
 export function shouldSuppressTextBlock(): boolean {
-  if (_textBlocksToSuppress > 0) {
-    _textBlocksToSuppress--;
-    return true;
-  }
-  return false;
+  return _suppressionState === 'SUPPRESSING';
 }
 
-// Whether the current content block is being suppressed
+// Whether the current streaming content block is being suppressed
 let _currentBlockSuppressed = false;
 
 /** Mark current block as suppressed (called from claudeHandler on content_block_start). */
@@ -68,7 +78,7 @@ export function setCurrentBlockSuppressed(suppressed: boolean) {
 
 /** Reset suppression state (call on session boundaries like claude-complete). */
 export function resetInternalSuppression() {
-  _textBlocksToSuppress = 0;
+  _suppressionState = 'NORMAL';
   _currentBlockSuppressed = false;
 }
 

@@ -557,6 +557,41 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
   // INTERNAL TOOLS (hidden or minimal display)
   // ============================================================================
 
+  Agent: {
+    input: {
+      type: 'collapsible',
+      title: (input) => {
+        const agentType = input.subagent_type || 'general-purpose';
+        const description = input.description || 'Running agent';
+        return `Subagent / ${agentType}: ${description}`;
+      },
+      defaultOpen: false,
+      contentType: 'markdown',
+      getContentProps: (input) => {
+        const parts = [];
+        if (input.model) {
+          parts.push(`**Model:** ${input.model}`);
+        }
+        if (input.prompt) {
+          parts.push(`**Prompt:**\n${input.prompt}`);
+        }
+        if (input.isolation) {
+          parts.push(`**Isolation:** ${input.isolation}`);
+        }
+        return {
+          content: parts.join('\n\n') || ''
+        };
+      },
+      colorScheme: {
+        border: 'border-purple-500 dark:border-purple-400',
+        icon: 'text-purple-500 dark:text-purple-400'
+      }
+    },
+    result: {
+      hidden: true,
+    }
+  },
+
   Skill: {
     input: {
       type: 'collapsible',
