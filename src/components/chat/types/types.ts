@@ -48,6 +48,9 @@ export interface ChatMessage {
   };
   isTimeout?: boolean;
   timeoutType?: string;
+  errorLevel?: 1 | 2 | 3;
+  errorCode?: string;
+  errorActions?: string[];
   [key: string]: unknown;
 }
 
