@@ -68,3 +68,11 @@ export const TERMINAL_OPTIONS: ITerminalOptions = {
     ],
   },
 };
+
+// Auto-reconnect
+export const RECONNECT_MAX_ATTEMPTS = 5;
+export const RECONNECT_BASE_DELAY_MS = 1000;
+export const RECONNECT_JITTER_FACTOR = 0.3;
+
+// Output throttling (P3)
+export const OUTPUT_FRAME_MAX_BYTES = 64 * 1024;

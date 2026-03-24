@@ -30,9 +30,14 @@ type UseShellConnectionOptions = {
 type UseShellConnectionResult = {
   isConnected: boolean;
   isConnecting: boolean;
+  isReconnecting: boolean;
+  reconnectAttempt: number;
+  reconnectCountdown: number;
+  connectionError: string | null;
   closeSocket: () => void;
   connectToShell: () => void;
   disconnectFromShell: () => void;
+  cancelReconnect: () => void;
 };
 
 export function useShellConnection({
@@ -54,6 +59,14 @@ export function useShellConnection({
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const connectingRef = useRef(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const [reconnectCountdown, setReconnectCountdown] = useState(0);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const intentionalDisconnectRef = useRef(false);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // 用 ref 跟踪当前重连次数，避免 onclose 闭包中读到 stale state
+  const reconnectAttemptRef = useRef(0);
 
   const handleProcessCompletion = useCallback(
     (output: string) => {
