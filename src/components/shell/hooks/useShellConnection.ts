@@ -8,6 +8,7 @@ import {
   RECONNECT_MAX_ATTEMPTS,
   RECONNECT_BASE_DELAY_MS,
   RECONNECT_JITTER_FACTOR,
+  OUTPUT_FRAME_MAX_BYTES,
 } from '../constants/constants';
 import { getShellWebSocketUrl, parseShellMessage, sendSocketMessage } from '../utils/socket';
 
@@ -75,6 +76,48 @@ export function useShellConnection({
   // 用 ref 持有 scheduleReconnect，打破 connectWebSocket <-> scheduleReconnect 循环依赖
   const scheduleReconnectRef = useRef<(attempt: number) => void>(() => {});
 
+  // rAF output write buffer
+  const pendingBufferRef = useRef<string[]>([]);
+  const rafHandleRef = useRef<number | null>(null);
+  const pendingBytesRef = useRef(0);
+
+  const flushBuffer = useCallback(() => {
+    rafHandleRef.current = null;
+    const terminal = terminalRef.current;
+    if (!terminal || pendingBufferRef.current.length === 0) return;
+
+    let totalBytes = 0;
+    const toWrite: string[] = [];
+    const remaining: string[] = [];
+    let exceededLimit = false;
+
+    for (const chunk of pendingBufferRef.current) {
+      if (exceededLimit) {
+        remaining.push(chunk);
+        continue;
+      }
+      totalBytes += chunk.length;
+      if (totalBytes > OUTPUT_FRAME_MAX_BYTES) {
+        exceededLimit = true;
+        remaining.push(chunk);
+      } else {
+        toWrite.push(chunk);
+      }
+    }
+
+    if (toWrite.length > 0) {
+      terminal.write(toWrite.join(''));
+    }
+
+    pendingBufferRef.current = remaining;
+    pendingBytesRef.current = remaining.reduce((sum, c) => sum + c.length, 0);
+
+    // If there's remaining data, schedule next frame
+    if (remaining.length > 0) {
+      rafHandleRef.current = requestAnimationFrame(flushBuffer);
+    }
+  }, [terminalRef]);
+
   const handleProcessCompletion = useCallback(
     (output: string) => {
       if (!isPlainShellRef.current || !onProcessCompleteRef.current) {
@@ -112,7 +155,11 @@ export function useShellConnection({
       if (message.type === 'output') {
         const output = typeof message.data === 'string' ? message.data : '';
         handleProcessCompletion(output);
-        terminalRef.current?.write(output);
+        pendingBufferRef.current.push(output);
+        pendingBytesRef.current += output.length;
+        if (rafHandleRef.current === null) {
+          rafHandleRef.current = requestAnimationFrame(flushBuffer);
+        }
         onOutputRef?.current?.();
         return;
       }
@@ -124,7 +171,7 @@ export function useShellConnection({
         }
       }
     },
-    [handleProcessCompletion, onOutputRef, setAuthUrl, terminalRef],
+    [flushBuffer, handleProcessCompletion, onOutputRef, setAuthUrl, terminalRef],
   );
 
   const clearReconnectTimers = useCallback(() => {
@@ -337,11 +384,14 @@ export function useShellConnection({
     };
   }, [autoConnect, connectToShell, isConnected, isConnecting, isInitialized]);
 
-  // Cleanup reconnect timers on unmount
+  // Cleanup reconnect timers and rAF on unmount
   useEffect(() => {
     return () => {
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      if (rafHandleRef.current !== null) {
+        cancelAnimationFrame(rafHandleRef.current);
+      }
     };
   }, []);
 
