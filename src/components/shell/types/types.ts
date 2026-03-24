@@ -35,12 +35,23 @@ export type ShellPasteImageMessage = {
   name: string;       // original filename
 };
 
-export type ShellOutgoingMessage = ShellInitMessage | ShellResizeMessage | ShellInputMessage | ShellPasteImageMessage;
+export type ShellPresetInfo = {
+  id: string;
+  label: string;
+};
+
+export type ShellSwitchPresetMessage = {
+  type: 'switch-preset';
+  presetId: string;
+};
+
+export type ShellOutgoingMessage = ShellInitMessage | ShellResizeMessage | ShellInputMessage | ShellPasteImageMessage | ShellSwitchPresetMessage;
 
 export type ShellIncomingMessage =
   | { type: 'output'; data: string }
   | { type: 'auth_url'; url?: string }
   | { type: 'url_open'; url?: string }
+  | { type: 'preset-switched'; presetId: string; label: string }
   | { type: string; [key: string]: unknown };
 
 export type UseShellRuntimeOptions = {

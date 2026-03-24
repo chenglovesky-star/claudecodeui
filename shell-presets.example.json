@@ -1,0 +1,22 @@
+[
+  {
+    "id": "claude-opus",
+    "label": "Claude Opus",
+    "baseUrl": "https://api.anthropic.com",
+    "apiKey": "sk-ant-xxx",
+    "model": "claude-opus-4-0520",
+    "smallFastModel": "claude-haiku-4-5-20251001",
+    "defaultSonnetModel": "claude-sonnet-4-6-20260320",
+    "defaultOpusModel": "claude-opus-4-0520"
+  },
+  {
+    "id": "minimax",
+    "label": "MiniMax",
+    "baseUrl": "https://your-proxy.com/v1",
+    "apiKey": "your-key",
+    "model": "MiniMax-M2.5",
+    "smallFastModel": "MiniMax-M2.5",
+    "defaultSonnetModel": "MiniMax-M2.5",
+    "defaultOpusModel": "MiniMax-M2.5"
+  }
+]
