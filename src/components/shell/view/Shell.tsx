@@ -24,6 +24,8 @@ import ShellSessionInstance from './subcomponents/ShellSessionInstance';
 import PasteConfirmDialog from './subcomponents/PasteConfirmDialog';
 import SessionTabBar from './subcomponents/SessionTabBar';
 import TerminalSearchBar from './subcomponents/TerminalSearchBar';
+import TerminalSettings from './subcomponents/TerminalSettings';
+import type { TerminalSettingsValues } from './subcomponents/TerminalSettings';
 import TerminalShortcutsPanel from './subcomponents/TerminalShortcutsPanel';
 
 type CliPromptOption = { number: string; label: string };
@@ -72,6 +74,16 @@ export default function Shell({
   void isActive;
 
   const [showSearch, setShowSearch] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
+  const handleToggleSettings = useCallback(() => {
+    setShowSettings((prev) => !prev);
+  }, []);
+
+  const handleSettingsChange = useCallback((_settings: TerminalSettingsValues) => {
+    // Settings are persisted to localStorage by the TerminalSettings component.
+    // Full terminal apply logic (theme, font, cursor, etc.) will be refined later.
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -297,6 +309,13 @@ export default function Shell({
           onClose={closeSession}
           onNewSession={() => {/* TODO: will be wired to sidebar session creation */}}
           onReorder={reorderSessions}
+          showSettings={showSettings}
+          onToggleSettings={handleToggleSettings}
+        />
+        <TerminalSettings
+          isOpen={showSettings}
+          onClose={() => setShowSettings(false)}
+          onSettingsChange={handleSettingsChange}
         />
         <div className="relative flex-1 overflow-hidden">
           {showSearch && (

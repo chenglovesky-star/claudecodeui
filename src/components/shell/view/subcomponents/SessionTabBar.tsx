@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus, Settings, X } from 'lucide-react';
 import type { SessionEntry } from '../../hooks/useSessionManager';
 
 type SessionTabBarProps = {
@@ -10,6 +10,8 @@ type SessionTabBarProps = {
   onClose: (sessionId: string) => void;
   onNewSession: () => void;
   onReorder: (from: number, to: number) => void;
+  showSettings?: boolean;
+  onToggleSettings?: () => void;
 };
 
 const STATUS_DOT_CLASS: Record<SessionEntry['status'], string> = {
@@ -26,6 +28,8 @@ export default function SessionTabBar({
   onClose,
   onNewSession,
   onReorder,
+  showSettings,
+  onToggleSettings,
 }: SessionTabBarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -204,6 +208,17 @@ export default function SessionTabBar({
       >
         <Plus className="h-4 w-4" />
       </button>
+
+      {/* Settings gear icon */}
+      <div className="relative ml-auto flex-shrink-0">
+        <button
+          onClick={onToggleSettings}
+          className="flex h-7 w-7 items-center justify-center rounded text-gray-600 hover:bg-white/10 hover:text-gray-300"
+          aria-label="Terminal settings"
+        >
+          <Settings className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
