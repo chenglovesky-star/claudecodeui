@@ -317,7 +317,7 @@ router.on('router:startSession', ({ sessionId, providerType, connectionId, messa
 
   processManager.startSession(sessionId, providerType, {
     command: message.command,
-    options: { ...(message.options || {}), _username: conn.username, _userId: conn.userId },
+    options: { ...(message.options || {}), _username: conn.username, _userId: conn.userId, _managerSessionId: sessionId },
     writer,
     transport,
     connectionId,
