@@ -2,11 +2,15 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useAuth } from '../components/auth/context/AuthContext';
 import { IS_PLATFORM } from '../constants/config';
 
+export type ConnectionState = 'connected' | 'reconnecting' | 'disconnected' | 'failed';
+
 type WebSocketContextType = {
   ws: WebSocket | null;
   sendMessage: (message: any) => void;
   latestMessage: any | null;
   isConnected: boolean;
+  connectionState: ConnectionState;
+  reconnect: () => void;
   queueStatus: {
     status: string;
     position?: number;
@@ -38,6 +42,7 @@ const HEARTBEAT_ACK_TIMEOUT_MS = 8000;     // Ack timeout
 const HEARTBEAT_MAX_MISSED = 2;            // Disconnect after 2 consecutive misses
 const RECONNECT_BASE_MS = 1000;      // Initial reconnect delay
 const RECONNECT_MAX_MS = 30000;      // Max reconnect delay
+const RECONNECT_MAX_ATTEMPTS = 10;   // Max reconnect attempts before 'failed' state
 const MESSAGE_QUEUE_MAX = 50;        // Max queued messages to prevent memory issues
 const AUTH_FAILURE_MAX = 3;          // Auto-logout after N consecutive auth failures
 
@@ -45,7 +50,7 @@ const useWebSocketProviderState = (): WebSocketContextType => {
   const wsRef = useRef<WebSocket | null>(null);
   const unmountedRef = useRef(false);
   const [latestMessage, setLatestMessage] = useState<any>(null);
-  const [isConnected, setIsConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [queueStatus, setQueueStatus] = useState<{
     status: string;
     position?: number;
@@ -144,7 +149,7 @@ const useWebSocketProviderState = (): WebSocketContextType => {
 
       websocket.onopen = () => {
         isConnectingRef.current = false;
-        setIsConnected(true);
+        setConnectionState('connected');
         wsRef.current = websocket;
         reconnectAttemptRef.current = 0;
         authFailureCountRef.current = 0; // Connection succeeded, reset auth failure count
@@ -267,7 +272,6 @@ const useWebSocketProviderState = (): WebSocketContextType => {
 
       websocket.onclose = (event) => {
         isConnectingRef.current = false;
-        setIsConnected(false);
         wsRef.current = null;
         stopHeartbeat();
 
@@ -283,6 +287,15 @@ const useWebSocketProviderState = (): WebSocketContextType => {
             return;
           }
         }
+
+        // Check if max reconnect attempts exceeded
+        if (reconnectAttemptRef.current >= RECONNECT_MAX_ATTEMPTS) {
+          console.warn('[WS] Max reconnect attempts exceeded');
+          setConnectionState('failed');
+          return;
+        }
+
+        setConnectionState('reconnecting');
 
         // Exponential backoff: 1s, 2s, 4s, 8s, ... max 30s
         const delay = Math.min(
@@ -371,14 +384,24 @@ const useWebSocketProviderState = (): WebSocketContextType => {
     }
   }, [connect]);
 
+  const reconnect = useCallback(() => {
+    reconnectAttemptRef.current = 0;
+    setConnectionState('reconnecting');
+    connect();
+  }, [connect]);
+
+  const isConnected = connectionState === 'connected';
+
   const value: WebSocketContextType = useMemo(() =>
   ({
     ws: wsRef.current,
     sendMessage,
     latestMessage,
     isConnected,
+    connectionState,
+    reconnect,
     queueStatus
-  }), [sendMessage, latestMessage, isConnected, queueStatus]);
+  }), [sendMessage, latestMessage, isConnected, connectionState, reconnect, queueStatus]);
 
   return value;
 };
