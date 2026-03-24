@@ -11,6 +11,7 @@ import {
 export class ClaudeSDKProvider extends BaseProvider {
   #writer = null;
   #capturedSessionId = null;
+  #suppressError = false;  // When true, suppress claude-error events during auth retry
 
   constructor() {
     super('claude-sdk');
@@ -45,24 +46,50 @@ export class ClaudeSDKProvider extends BaseProvider {
         this.sessionId = data.sessionId;
         this.emitComplete(data);
       } else if (data.type === 'claude-error') {
+        if (this.#suppressError) {
+          // During auth retry: suppress error event and don't send to frontend
+          // The retry handler will deal with success/failure
+          return;
+        }
         this.emitError(new Error(data.error || 'Claude SDK error'));
       } else if (
         data.type === 'claude-phase' ||
         data.type === 'token-budget' ||
         data.type === 'claude-permission-request'
       ) {
-        this.emitOutput(data);
+        // Phase/meta messages: 发送给客户端但不触发 streaming 状态转换
+        // 避免过早清除 firstResponse 计时器
+        this.emitPhase(data);
       }
     };
+
+    // If key pool key is assigned, suppress error events from first attempt
+    // so we can transparently retry with OAuth if it fails
+    const canRetryAuth = !!(options._assignedApiKey && !options._authRetried);
+    if (canRetryAuth) {
+      this.#suppressError = true;
+    }
 
     try {
       await queryClaudeSDK(command, options, writer);
       // queryClaudeSDK resolves when the query completes
+      this.#suppressError = false;
       if (this.isRunning) {
         this.isRunning = false;
       }
     } catch (error) {
+      this.#suppressError = false;
+
       if (error._isRateLimit && error._rateLimitPhase === 'pre-stream') {
+        // Send rate-limit-retry phase to frontend
+        if (transport && connectionId) {
+          transport.send(connectionId, {
+            type: 'claude-phase',
+            phase: 'rate-limit-retry',
+            retryAfterSec: 5,
+            sessionId: null,
+          });
+        }
         // Pre-stream 429: notify upper layer to switch key and retry
         this.emit('rate-limited', {
           keyId: options._assignedKeyId,
@@ -89,8 +116,47 @@ export class ClaudeSDKProvider extends BaseProvider {
         return;
       }
 
-      // Non-429 error: re-throw for normal error handling
-      throw error;
+      // Auth failure with key pool key: retry without assigned key (fall back to OAuth/system auth)
+      const isAuthError = error.message?.includes('exited with code 1')
+        || error.message?.includes('authentication')
+        || error.message?.includes('invalid api key')
+        || error.message?.includes('401');
+      if (isAuthError && canRetryAuth) {
+        console.log('[Provider:claude-sdk] Key pool key auth failed, retrying with system auth (OAuth)...');
+
+        // Emit recovery events to pause timers
+        this.emitRecoveryStart();
+
+        // Send auth-fallback phase (replaces configuring)
+        if (transport && connectionId) {
+          transport.send(connectionId, {
+            type: 'claude-phase',
+            phase: 'auth-fallback',
+            attempt: 1,
+            maxAttempts: 2,
+            sessionId: null,
+          });
+        }
+        const fallbackOptions = { ...options };
+        delete fallbackOptions._assignedApiKey;
+        delete fallbackOptions._assignedKeyId;
+        // Also clear sessionId to avoid resuming a broken session
+        delete fallbackOptions.sessionId;
+        fallbackOptions._authRetried = true;
+        try {
+          await queryClaudeSDK(command, fallbackOptions, writer);
+          this.emitRecoveryEnd(true);
+          if (this.isRunning) this.isRunning = false;
+          return;
+        } catch (retryError) {
+          this.emitRecoveryEnd(false);
+          this.emitError(retryError);
+          return;
+        }
+      }
+
+      // Non-429 error: emit error event (don't re-throw to avoid unhandled rejection)
+      this.emitError(error);
     }
   }
 
