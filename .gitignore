@@ -141,3 +141,4 @@ claudecodeui/
 docker.env
 setup-claude-settings.sh
 .superpowers/
+.worktrees/
