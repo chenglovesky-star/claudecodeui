@@ -316,12 +316,12 @@ export default function Shell({
               onRuntimeReady={sid === activeSessionId ? handleRuntimeReady : undefined}
             />
           ))}
+          <TerminalShortcutsPanel
+            wsRef={{ current: activeWsRef.current } as React.MutableRefObject<WebSocket | null>}
+            terminalRef={{ current: activeTerminalRef.current } as React.MutableRefObject<Terminal | null>}
+            isConnected={sessions.some((s) => s.sessionId === activeSessionId && s.status === 'running')}
+          />
         </div>
-        <TerminalShortcutsPanel
-          wsRef={{ current: activeWsRef.current } as React.MutableRefObject<WebSocket | null>}
-          terminalRef={{ current: activeTerminalRef.current } as React.MutableRefObject<Terminal | null>}
-          isConnected={sessions.some((s) => s.sessionId === activeSessionId && s.status === 'running')}
-        />
       </div>
     );
   }
@@ -453,14 +453,13 @@ export default function Shell({
             </div>
           </div>
         )}
+
+        <TerminalShortcutsPanel
+          wsRef={wsRef}
+          terminalRef={terminalRef}
+          isConnected={isConnected}
+        />
       </div>
-
-      <TerminalShortcutsPanel
-        wsRef={wsRef}
-        terminalRef={terminalRef}
-        isConnected={isConnected}
-      />
-
     </div>
   );
 }
