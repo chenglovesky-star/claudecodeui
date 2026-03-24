@@ -1,7 +1,7 @@
 import { decodeHtmlEntities, formatUsageLimitText } from '../../utils/chatFormatting';
 import { safeLocalStorage } from '../../utils/chatStorage';
 import { getErrorMapping, getErrorDescription } from '../../utils/errorMessages';
-import { appendStreamingChunk, finalizeStreamingMessage, resetInternalSuppression } from './streamUtils';
+import { appendStreamingChunk, finalizeStreamingMessage, resetInternalSuppression, activateInternalSuppression, shouldSuppressTextBlock, setCurrentBlockSuppressed } from './streamUtils';
 import type { HandlerContext, LatestChatMessage } from './types';
 
 export function handleClaudePhase(ctx: HandlerContext, latestMessage: LatestChatMessage) {
@@ -71,6 +71,13 @@ export function handleClaudeResponse(ctx: HandlerContext, latestMessage: LatestC
       return;
     }
 
+    // Handle content_block_start for text blocks: check if this block should be suppressed
+    if (messageData.type === 'content_block_start' && messageData.content_block?.type === 'text') {
+      const suppress = shouldSuppressTextBlock();
+      setCurrentBlockSuppressed(suppress);
+      return;
+    }
+
     // Handle content_block_start for thinking blocks
     if (messageData.type === 'content_block_start' && messageData.content_block?.type === 'thinking') {
       ctx.setChatMessages((previous) => [
@@ -108,6 +115,8 @@ export function handleClaudeResponse(ctx: HandlerContext, latestMessage: LatestC
     }
 
     if (messageData.type === 'content_block_stop') {
+      // Clear block-level suppression (the next block decides independently)
+      setCurrentBlockSuppressed(false);
       // Finalize streaming thinking message if active
       ctx.setChatMessages((previous) => {
         const updated = [...previous];
@@ -200,6 +209,8 @@ export function handleClaudeResponse(ctx: HandlerContext, latestMessage: LatestC
 
     structuredMessageData.content.forEach((part: any) => {
       if (part.type === 'tool_use') {
+        // Activate suppression: text following ANY tool_use is internal content
+        activateInternalSuppression();
         const toolInput = part.input ? JSON.stringify(part.input, null, 2) : '';
 
         // Check if this is a child tool from a subagent
