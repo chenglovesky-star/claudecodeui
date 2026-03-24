@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import '@xterm/xterm/css/xterm.css';
+import type { Terminal } from '@xterm/xterm';
 import type { Project, ProjectSession } from '../../../types/app';
 import {
   PROMPT_BUFFER_SCAN_LINES,
@@ -11,12 +12,15 @@ import {
   SHELL_RESTART_DELAY_MS,
 } from '../constants/constants';
 import { useShellRuntime } from '../hooks/useShellRuntime';
+import { useSessionManager } from '../hooks/useSessionManager';
 import { sendSocketMessage } from '../utils/socket';
 import { getSessionDisplayName } from '../utils/auth';
 import ShellConnectionOverlay from './subcomponents/ShellConnectionOverlay';
 import ShellEmptyState from './subcomponents/ShellEmptyState';
 import ShellHeader from './subcomponents/ShellHeader';
 import ShellMinimalView from './subcomponents/ShellMinimalView';
+import ShellSessionInstance from './subcomponents/ShellSessionInstance';
+import SessionTabBar from './subcomponents/SessionTabBar';
 import TerminalShortcutsPanel from './subcomponents/TerminalShortcutsPanel';
 
 type CliPromptOption = { number: string; label: string };
@@ -53,6 +57,21 @@ export default function Shell({
   // Keep the public API stable for existing callers that still pass `isActive`.
   void isActive;
 
+  // ── Mode detection ──────────────────────────────────────────────────────────
+  const isMultiSessionMode = !isPlainShell && !minimal;
+
+  // ── SessionManager (always called to satisfy hook ordering rules) ───────────
+  const {
+    sessions,
+    activeSessionId,
+    tabOrder,
+    switchSession,
+    closeSession,
+    updateStatus,
+    reorderSessions,
+  } = useSessionManager();
+
+  // ── Single-session runtime (always called to satisfy hook ordering rules) ───
   const {
     terminalContainerRef,
     terminalRef,
@@ -83,6 +102,26 @@ export default function Shell({
     onOutputRef,
   });
 
+  // ── Multi-session: track active session's runtime refs for TerminalShortcutsPanel ─
+  const activeWsRef = useRef<WebSocket | null>(null);
+  const activeTerminalRef = useRef<Terminal | null>(null);
+
+  const handleRuntimeReady = useCallback(
+    (wsRefArg: React.MutableRefObject<WebSocket | null>, termRefArg: React.MutableRefObject<Terminal | null>) => {
+      activeWsRef.current = wsRefArg.current;
+      activeTerminalRef.current = termRefArg.current;
+    },
+    [],
+  );
+
+  // ── Multi-session: auto-switch to current session when it changes ──────────
+  useEffect(() => {
+    if (isMultiSessionMode && selectedSession?.id) {
+      switchSession(selectedSession.id);
+    }
+  }, [isMultiSessionMode, selectedSession?.id, switchSession]);
+
+  // ── Forward wsRef to parent (single-session mode only) ─────────────────────
   useEffect(() => {
     onWsRef?.(wsRef);
   }, [wsRef, onWsRef]);
@@ -192,6 +231,8 @@ export default function Shell({
     }, SHELL_RESTART_DELAY_MS);
   }, []);
 
+  // ── Early returns (no hooks below this line) ────────────────────────────────
+
   if (!selectedProject) {
     return (
       <ShellEmptyState
@@ -214,6 +255,43 @@ export default function Shell({
       />
     );
   }
+
+  // ── Multi-session render path ───────────────────────────────────────────────
+  if (isMultiSessionMode) {
+    return (
+      <div className="flex h-full w-full flex-col bg-gray-900">
+        <SessionTabBar
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          tabOrder={tabOrder}
+          onSwitch={switchSession}
+          onClose={closeSession}
+          onNewSession={() => {/* TODO: will be wired to sidebar session creation */}}
+          onReorder={reorderSessions}
+        />
+        <div className="relative flex-1 overflow-hidden">
+          {tabOrder.map((sid) => (
+            <ShellSessionInstance
+              key={sid}
+              sessionId={sid}
+              selectedProject={selectedProject}
+              selectedSession={selectedSession}
+              isVisible={sid === activeSessionId}
+              onStatusChange={updateStatus}
+              onRuntimeReady={sid === activeSessionId ? handleRuntimeReady : undefined}
+            />
+          ))}
+        </div>
+        <TerminalShortcutsPanel
+          wsRef={{ current: activeWsRef.current } as React.MutableRefObject<WebSocket | null>}
+          terminalRef={{ current: activeTerminalRef.current } as React.MutableRefObject<Terminal | null>}
+          isConnected={sessions.some((s) => s.sessionId === activeSessionId && s.status === 'running')}
+        />
+      </div>
+    );
+  }
+
+  // ── Single-session render path (isPlainShell) ──────────────────────────────
 
   const readyDescription = isPlainShell
     ? t('shell.runCommand', {

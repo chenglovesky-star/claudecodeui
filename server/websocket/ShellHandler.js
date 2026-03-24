@@ -8,7 +8,7 @@ import { execFile } from 'child_process';
 import pty from 'node-pty';
 import { WebSocket } from 'ws';
 import legacySessionManager from '../sessionManager.js';
-import { PTY_SESSION_TIMEOUT_MS, SHELL_URL_PARSE_BUFFER_LIMIT } from '../config/constants.js';
+import { PTY_SESSION_TIMEOUT_MS, SHELL_URL_PARSE_BUFFER_LIMIT, PTY_MAX_GLOBAL_SESSIONS } from '../config/constants.js';
 import { createLogger } from '../config/logger.js';
 
 const log = createLogger('Shell');
@@ -168,6 +168,11 @@ export class ShellHandler {
 
                         existingSession.ws = ws;
 
+                        return;
+                    }
+
+                    if (this.ptySessionsMap.size >= PTY_MAX_GLOBAL_SESSIONS) {
+                        this.#sendMessage(ws, { type: 'error', message: '已达最大会话数限制，请关闭不需要的会话' });
                         return;
                     }
 
@@ -638,6 +643,12 @@ export class ShellHandler {
         ws.on('error', (error) => {
             log.error({ err: error }, 'WebSocket error');
         });
+    }
+
+    #sendMessage(ws, data) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(data));
+        }
     }
 
     async #readPreset(_projectPath, presetId) {

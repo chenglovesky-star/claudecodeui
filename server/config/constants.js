@@ -54,3 +54,6 @@ export const MAX_429_RETRIES = 3;                  // 429 最大重试次数
 // ========== Shell ==========
 export const PTY_SESSION_TIMEOUT_MS = 1800000;      // PTY 会话超时 30 分钟
 export const SHELL_URL_PARSE_BUFFER_LIMIT = 32768;  // URL 检测缓冲区限制
+
+// ========== Shell PTY 资源限制 ==========
+export const PTY_MAX_GLOBAL_SESSIONS = 10;      // 全局最大 PTY 会话数
