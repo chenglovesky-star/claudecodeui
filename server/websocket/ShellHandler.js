@@ -637,8 +637,12 @@ export class ShellHandler {
         });
     }
 
-    async #readPreset(projectPath, presetId) {
-        const presetsPath = path.join(projectPath, 'shell-presets.json');
+    async #readPreset(_projectPath, presetId) {
+        // Read from app root, not workspace directory
+        const { fileURLToPath } = await import('url');
+        const { dirname } = await import('path');
+        const appRoot = path.join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+        const presetsPath = path.join(appRoot, 'shell-presets.json');
         const raw = await fs.readFile(presetsPath, 'utf-8');
         const presets = JSON.parse(raw);
         return presets.find(p => p.id === presetId) || null;
