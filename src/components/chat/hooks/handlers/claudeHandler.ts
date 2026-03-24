@@ -188,8 +188,11 @@ export function handleClaudeResponse(ctx: HandlerContext, latestMessage: LatestC
     !ctx.currentSessionId &&
     ctx.isSystemInitForView
   ) {
-    ctx.setIsSystemSessionChange(true);
-    ctx.onNavigateToSession?.(structuredMessageData.session_id);
+    // Don't navigate away on system init for new sessions.
+    // The session-created event (handled in useChatRealtimeHandlers) will
+    // update the session ID without clearing chatMessages. Navigating here
+    // causes the chat to reload from API before messages are persisted,
+    // resulting in an empty "Continue your conversation" screen.
     return;
   }
 
