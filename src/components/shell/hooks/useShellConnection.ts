@@ -3,7 +3,12 @@ import type { MutableRefObject } from 'react';
 import type { FitAddon } from '@xterm/addon-fit';
 import type { Terminal } from '@xterm/xterm';
 import type { Project, ProjectSession } from '../../../types/app';
-import { TERMINAL_INIT_DELAY_MS } from '../constants/constants';
+import {
+  TERMINAL_INIT_DELAY_MS,
+  RECONNECT_MAX_ATTEMPTS,
+  RECONNECT_BASE_DELAY_MS,
+  RECONNECT_JITTER_FACTOR,
+} from '../constants/constants';
 import { getShellWebSocketUrl, parseShellMessage, sendSocketMessage } from '../utils/socket';
 
 const ANSI_ESCAPE_REGEX =
@@ -67,6 +72,8 @@ export function useShellConnection({
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // 用 ref 跟踪当前重连次数，避免 onclose 闭包中读到 stale state
   const reconnectAttemptRef = useRef(0);
+  // 用 ref 持有 scheduleReconnect，打破 connectWebSocket <-> scheduleReconnect 循环依赖
+  const scheduleReconnectRef = useRef<(attempt: number) => void>(() => {});
 
   const handleProcessCompletion = useCallback(
     (output: string) => {
@@ -120,6 +127,17 @@ export function useShellConnection({
     [handleProcessCompletion, onOutputRef, setAuthUrl, terminalRef],
   );
 
+  const clearReconnectTimers = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+  }, []);
+
   const connectWebSocket = useCallback(
     (isConnectionLocked = false) => {
       if ((connectingRef.current && !isConnectionLocked) || isConnecting || isConnected) {
@@ -150,6 +168,11 @@ export function useShellConnection({
           setIsConnecting(false);
           connectingRef.current = false;
           setAuthUrl('');
+          clearReconnectTimers();
+          setReconnectAttempt(0);
+          setReconnectCountdown(0);
+          setConnectionError(null);
+          reconnectAttemptRef.current = 0;
 
           window.setTimeout(() => {
             const currentTerminal = terminalRef.current;
@@ -184,13 +207,25 @@ export function useShellConnection({
           setIsConnected(false);
           setIsConnecting(false);
           connectingRef.current = false;
-          clearTerminalScreen();
+
+          if (intentionalDisconnectRef.current) {
+            // User-initiated disconnect: clear screen, no reconnect
+            clearTerminalScreen();
+            intentionalDisconnectRef.current = false;
+          } else {
+            // Passive disconnect: preserve terminal content, trigger auto-reconnect
+            // Use ref to avoid stale closure
+            scheduleReconnectRef.current(reconnectAttemptRef.current);
+          }
         };
 
         socket.onerror = () => {
           setIsConnected(false);
           setIsConnecting(false);
           connectingRef.current = false;
+          if (!intentionalDisconnectRef.current) {
+            scheduleReconnectRef.current(reconnectAttemptRef.current);
+          }
         };
       } catch {
         setIsConnected(false);
@@ -199,6 +234,7 @@ export function useShellConnection({
       }
     },
     [
+      clearReconnectTimers,
       clearTerminalScreen,
       fitAddonRef,
       handleSocketMessage,
@@ -214,6 +250,54 @@ export function useShellConnection({
     ],
   );
 
+  const scheduleReconnect = useCallback(
+    (attempt: number) => {
+      if (attempt >= RECONNECT_MAX_ATTEMPTS) {
+        setConnectionError('已达最大重连次数');
+        setReconnectAttempt(0);
+        setReconnectCountdown(0);
+        reconnectAttemptRef.current = 0;
+        return;
+      }
+
+      const baseDelay = RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt);
+      const jitter = baseDelay * RECONNECT_JITTER_FACTOR * (Math.random() * 2 - 1);
+      const delay = Math.round(baseDelay + jitter);
+      const delaySec = Math.ceil(delay / 1000);
+
+      reconnectAttemptRef.current = attempt + 1;
+      setReconnectAttempt(attempt + 1);
+      setReconnectCountdown(delaySec);
+      setConnectionError(null);
+
+      countdownTimerRef.current = setInterval(() => {
+        setReconnectCountdown((prev) => {
+          if (prev <= 1) {
+            if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      reconnectTimerRef.current = setTimeout(() => {
+        connectWebSocket(true);
+      }, delay);
+    },
+    [connectWebSocket],
+  );
+
+  // 保持 ref 与最新 scheduleReconnect 同步，供 connectWebSocket 闭包内使用
+  scheduleReconnectRef.current = scheduleReconnect;
+
+  const cancelReconnect = useCallback(() => {
+    clearReconnectTimers();
+    setReconnectAttempt(0);
+    setReconnectCountdown(0);
+    setConnectionError(null);
+    reconnectAttemptRef.current = 0;
+  }, [clearReconnectTimers]);
+
   const connectToShell = useCallback(() => {
     if (!isInitialized || isConnected || isConnecting || connectingRef.current) {
       return;
@@ -225,13 +309,19 @@ export function useShellConnection({
   }, [connectWebSocket, isConnected, isConnecting, isInitialized]);
 
   const disconnectFromShell = useCallback(() => {
+    intentionalDisconnectRef.current = true;
+    clearReconnectTimers();
     closeSocket();
     clearTerminalScreen();
     setIsConnected(false);
     setIsConnecting(false);
     connectingRef.current = false;
     setAuthUrl('');
-  }, [clearTerminalScreen, closeSocket, setAuthUrl]);
+    setReconnectAttempt(0);
+    setReconnectCountdown(0);
+    setConnectionError(null);
+    reconnectAttemptRef.current = 0;
+  }, [clearReconnectTimers, clearTerminalScreen, closeSocket, setAuthUrl]);
 
   useEffect(() => {
     if (!autoConnect || !isInitialized || isConnecting || isConnected) {
@@ -247,11 +337,24 @@ export function useShellConnection({
     };
   }, [autoConnect, connectToShell, isConnected, isConnecting, isInitialized]);
 
+  // Cleanup reconnect timers on unmount
+  useEffect(() => {
+    return () => {
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    };
+  }, []);
+
   return {
     isConnected,
     isConnecting,
+    isReconnecting: reconnectAttempt > 0 && !isConnected,
+    reconnectAttempt,
+    reconnectCountdown,
+    connectionError,
     closeSocket,
     connectToShell,
     disconnectFromShell,
+    cancelReconnect,
   };
 }
