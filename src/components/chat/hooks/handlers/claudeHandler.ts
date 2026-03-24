@@ -209,8 +209,13 @@ export function handleClaudeResponse(ctx: HandlerContext, latestMessage: LatestC
 
     structuredMessageData.content.forEach((part: any) => {
       if (part.type === 'tool_use') {
-        // Activate suppression: text following ANY tool_use is internal content
-        activateInternalSuppression();
+        // Only suppress text after internal tools that dump prompt content
+        // (Skill loads full skill.md, Agent/Task dump dispatch instructions)
+        // Regular tools (Read, Write, Bash, Grep, etc.) are followed by user-visible text
+        const INTERNAL_TOOLS = new Set(['Skill', 'Task', 'Agent', 'Dispatch', 'ToolSearch']);
+        if (INTERNAL_TOOLS.has(part.name)) {
+          activateInternalSuppression();
+        }
         const toolInput = part.input ? JSON.stringify(part.input, null, 2) : '';
 
         // Check if this is a child tool from a subagent
