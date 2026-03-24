@@ -113,6 +113,12 @@ export function useShellConnection({
         return;
       }
 
+      // Prevent duplicate connections: if a WebSocket already exists and is active, skip
+      const existingSocket = wsRef.current;
+      if (existingSocket && (existingSocket.readyState === WebSocket.OPEN || existingSocket.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
       try {
         const wsUrl = getShellWebSocketUrl();
         if (!wsUrl) {
@@ -220,6 +226,12 @@ export function useShellConnection({
     }
 
     connectToShell();
+
+    return () => {
+      // Cleanup: prevent stale effect from leaving orphan connections
+      // (e.g., React 18 Strict Mode double-mount or rapid re-renders)
+      connectingRef.current = false;
+    };
   }, [autoConnect, connectToShell, isConnected, isConnecting, isInitialized]);
 
   return {
