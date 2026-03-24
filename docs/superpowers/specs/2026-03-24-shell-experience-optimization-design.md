@@ -73,7 +73,9 @@ connectionError: string | null  // 错误信息描述
 **实现要点**:
 - 重连定时器存入 `reconnectTimerRef`，组件卸载时清理
 - 重连成功后重置 attempt 计数器
-- 重连期间用户输入排队，连接恢复后自动重放（可选，需评估风险）
+- **重连期间保留终端内容**：`socket.onclose` 中，当 `intentionalDisconnectRef` 为 false 时（被动断连），跳过 `clearTerminalScreen()`，仅在用户主动断开或重连最终失败（FAILED 状态）时才清屏
+- **不重放断连期间的用户输入**：断连期间丢弃用户输入（不排队、不重放）。原因：PTY 断连期间状态可能已变化，盲目重放可能执行非预期命令（如破坏性操作）。更安全的做法是仅恢复连接，让用户自行操作
+- **服务端重启场景**：如果重连时后端 PTY session 已不存在（服务端重启/部署），`init` 消息会创建新 PTY。此时前端在 overlay 中提示"服务已更新，会话已重置"，区别于正常恢复
 
 ### 1.2 错误状态 UI (#5)
 
@@ -97,11 +99,19 @@ connectionError: string | null  // 错误信息描述
 
 **修改文件**: `src/components/shell/hooks/useShellRuntime.ts`
 
-- 切换/连接 session 时将 `{ projectPath, sessionId }` 写入 `sessionStorage`
+- 切换/连接 session 时将会话状态写入 `sessionStorage`
 - 使用 `sessionStorage`（非 localStorage），实现标签页隔离——不同浏览器标签可以有不同的活跃会话
+- **前瞻性 schema 设计**（兼容 P2 多会话）：
+  ```typescript
+  // key: `shell-sessions-${projectPath}`
+  interface PersistedShellState {
+    activeId: string;           // 当前激活的会话 ID
+    sessions: string[];         // 所有打开的会话 ID 列表（P2 时启用）
+  }
+  ```
+  P1 阶段仅使用 `activeId`，`sessions` 字段预留给 P2，避免 schema 迁移
 - 页面刷新后从 `sessionStorage` 恢复，自动重连到上次的 shell 会话
-- 后端 ShellHandler 已有 30 分钟 PTY 缓冲机制，前端恢复后无缝对接
-- key 格式：`shell-active-session-${projectPath}`
+- **后端缓冲机制说明**：ShellHandler 在 WebSocket 断连后保持 PTY 进程存活 30 分钟，并维护 5000 条消息的 FIFO 环形缓冲区。前端恢复后回放的是"最近 5000 条输出"而非完整历史。超出 5000 条的早期内容会丢失——这对大多数场景够用，完整历史恢复可作为后续优化
 
 ---
 
@@ -141,8 +151,14 @@ evictionPolicy: LRU                       // 淘汰策略
 
 **架构变更**:
 - `Shell.tsx` 不再直接持有单个 xterm，改为渲染 `SessionManager` 管理的容器
-- `useShellConnection` 和 `useShellTerminal` 的逻辑下沉到每个 `CachedSession` 内部
-- `useShellRuntime` 变为 `SessionManager` 的上层协调器
+- **实现方式：每个 CachedSession 对应一个隐藏的 React 组件实例**（`<ShellSessionInstance>`），各自内部持有 `useShellConnection` 和 `useShellTerminal` hook，保持现有 hook 的 React 生命周期管理不变。这比改写为命令式 class 更兼容现有架构，也能正确处理 React 18 Strict Mode 的双重挂载/卸载
+- `useSessionManager` 作为上层协调器，管理 `<ShellSessionInstance>` 的创建/销毁/可见性切换
+- `useShellRuntime` 简化为 `useSessionManager` 的薄包装层
+
+**服务端资源限制**:
+- 每个浏览器标签页最多 5 个活跃 WebSocket + PTY 连接
+- **ShellHandler 增加全局 PTY 上限（10 个）**，超出时拒绝新连接并返回错误消息"已达最大会话数"
+- 前端在 SessionManager 中展示此错误，引导用户关闭不需要的会话
 
 ### 2.2 会话标签页 (#4)
 
@@ -168,7 +184,7 @@ evictionPolicy: LRU                       // 淘汰策略
 | 快捷键 | 功能 |
 |--------|------|
 | `⌘1` ~ `⌘9` | 切换到第 N 个标签 |
-| `⌘[` / `⌘]` | 前/后切换标签 |
+| `⌘⇧[` / `⌘⇧]` | 前/后切换标签（与 VS Code 一致，避免与浏览器前进/后退冲突） |
 | `⌘⇧T` | 新建会话 |
 | `⌘⇧W` | 关闭当前标签 |
 
@@ -199,7 +215,7 @@ PTY onData → 追加到 pendingBuffer (string[])
 **关键细节**:
 - 用 `requestAnimationFrame` 而非 `setInterval`，自动适配显示器刷新率
 - 合并写入减少 xterm 的 DOM 重排次数
-- 超大输出保护：单帧写入超过 64KB 时截断并追加 `[...output truncated]`
+- 超大输出保护：单帧写入上限 64KB，超出部分**保留在 pendingBuffer 中延迟到下一帧写入**（不截断、不丢数据）。这样既实现了节流，又保证终端输出完整性
 - rAF handle 存入 ref，组件卸载时 `cancelAnimationFrame`
 
 ### 3.2 终端搜索功能 (#6)
@@ -254,7 +270,7 @@ async function copySelection(terminal: Terminal) {
 
 **Resize 黑区修复**:
 - `ResizeObserver` 回调包装 `requestAnimationFrame`，确保 `xterm.fit()` 在布局稳定后执行
-- 添加 200ms 防抖，避免快速连续调整时的抖动
+- 防抖时间调整为 100ms（当前 50ms 太短易抖动，200ms 太长响应滞后），rAF 本身约 16ms，总延迟约 116ms
 
 ### 4.2 快捷键冲突解决 (#10)
 
@@ -278,7 +294,7 @@ async function copySelection(terminal: Terminal) {
 | 字体大小 | 滑块 | 14px | 10-24px |
 | 字体族 | 下拉 | Menlo | Menlo / Monaco / Fira Code / JetBrains Mono / Consolas |
 | 配色主题 | 下拉 | One Dark | One Dark / Dracula / Solarized Dark / Nord / Monokai / High Contrast |
-| 滚动历史 | 下拉 | 10000 行 | 1000 / 5000 / 10000 / 50000 / 无限 |
+| 滚动历史 | 下拉 | 10000 行 | 1000 / 5000 / 10000 / 50000 / 100000（不提供"无限"选项，避免内存溢出） |
 | 光标样式 | 下拉 | Block (闪烁) | Block / Underline / Bar × 闪烁开关 |
 
 **持久化**: 设置写入 `localStorage` key `shell-terminal-settings`，启动时读取并应用到 xterm options。
@@ -310,15 +326,17 @@ Loading 模式从纯文字 → 三步进度指示器：
 - 最多支持 2×2 四格布局
 - 小屏幕（宽度 < 768px）自动禁用
 
-**数据结构**:
+**数据结构**（使用枚举而非递归，硬性限制布局复杂度）:
 
 ```typescript
-interface SplitLayout {
-  direction: 'horizontal' | 'vertical';
-  children: (SplitLayout | { sessionId: string })[];
-  ratio: number; // 0-1，第一个子元素的占比
-}
+type SplitLayout =
+  | { type: 'single'; sessionId: string }
+  | { type: 'horizontal-2'; left: string; right: string; ratio: number }
+  | { type: 'vertical-2'; top: string; bottom: string; ratio: number }
+  | { type: 'grid-4'; topLeft: string; topRight: string; bottomLeft: string; bottomRight: string; hRatio: number; vRatio: number };
 ```
+
+**交互路径**：单格 → 点击「横分/竖分」→ 双格 → 对任一格再点击「横分/竖分」→ 四格（grid-4）。四格状态下分割按钮禁用。
 
 ### 5.2 移动端适配 (#14)
 
@@ -372,9 +390,55 @@ interface SplitLayout {
 
 ## 测试策略
 
-每个阶段交付时需验证：
-- P1：模拟网络断开后自动重连恢复、刷新后会话恢复
-- P2：快速来回切换 5+ 个会话验证零延迟、LRU 淘汰正确
-- P3：运行 `yes` 或 `cat /dev/urandom` 验证节流不卡顿、搜索功能正确
-- P4：快速 resize 窗口无黑区、Ctrl+C 复制/中断行为正确
-- P5：分割窗格拖拽调整、移动端模拟器验证布局
+### P1 连接层
+
+**单元测试**:
+- 重连状态机：CONNECTED → RECONNECTING → CONNECTED（成功路径）
+- 重连状态机：CONNECTED → RECONNECTING → FAILED（5 次失败路径）
+- `intentionalDisconnectRef` 为 true 时不触发重连
+- 重连过程中用户切换会话，应取消重连并执行主动断开
+- sessionStorage 读写正确性，schema 兼容性
+
+**E2E 测试**:
+- 模拟网络断开 → 验证 overlay 显示重连进度 → 网络恢复 → 验证终端内容保留
+- 刷新页面 → 验证自动恢复到上次会话
+- 服务端重启后重连 → 验证提示"服务已更新"
+
+### P2 会话管理
+
+**单元测试**:
+- SessionManager：创建/获取/淘汰会话的正确性
+- LRU 淘汰：验证最久未用的会话被正确销毁
+- 并发操作：同时创建 + 淘汰不导致状态不一致
+- 全局 PTY 上限拒绝：超过 10 个时返回错误
+
+**E2E 测试**:
+- 快速来回切换 5+ 个会话验证零延迟切换
+- 切换后验证 xterm buffer 和滚动位置保留
+- 标签栏拖拽排序、右键菜单、快捷键切换
+
+### P3 终端性能
+
+**单元测试**:
+- rAF 节流：验证单帧内多次 onData 合并为一次 write
+- 64KB 上限：超出部分延迟到下一帧（不丢数据）
+- SearchAddon 集成：搜索/高亮/导航正确性
+
+**E2E 测试**:
+- 运行 `yes` 或 `cat /dev/urandom` 验证不卡顿
+- 粘贴多行内容验证确认弹窗
+- ⌘F 打开搜索栏，输入关键词验证匹配
+
+### P4 UI 打磨
+
+**E2E 测试**:
+- 快速 resize 窗口 10 次，无黑区出现
+- Ctrl+C 有选中 → 复制；无选中 → 发送 SIGINT
+- 修改字体大小/主题后刷新，验证设置持久化
+
+### P5 高级功能
+
+**E2E 测试**:
+- 分割窗格：单格 → 双格 → 四格 → 关闭窗格回到单格
+- Chrome DevTools 设备模拟（375px 宽度）验证移动端布局
+- 键盘 Tab 导航标签栏，方向键切换，Enter 激活
