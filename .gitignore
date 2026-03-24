@@ -1,5 +1,8 @@
 # Dependencies
 node_modules/
+
+# Shell preset config (contains API keys)
+shell-presets.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
