@@ -520,6 +520,9 @@ export class ShellHandler {
                         if (session.timeoutId) clearTimeout(session.timeoutId);
                         this.ptySessionsMap.delete(ptySessionKey);
 
+                        // Update ~/.claude/settings.json with preset env vars
+                        await this.#updateSettingsJson(preset);
+
                         const samePlatform = oldBaseUrl === preset.baseUrl && oldSessionId;
                         const shellCmd = samePlatform
                             ? `cd "${projectPath}" && claude --resume ${oldSessionId} || claude`
@@ -646,6 +649,32 @@ export class ShellHandler {
         const raw = await fs.readFile(presetsPath, 'utf-8');
         const presets = JSON.parse(raw);
         return presets.find(p => p.id === presetId) || null;
+    }
+
+    async #updateSettingsJson(preset) {
+        const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+        try {
+            let settings = {};
+            try {
+                const raw = await fs.readFile(settingsPath, 'utf-8');
+                settings = JSON.parse(raw);
+            } catch {
+                // File doesn't exist or invalid — start fresh
+            }
+
+            if (!settings.env) settings.env = {};
+            settings.env.ANTHROPIC_BASE_URL = preset.baseUrl || '';
+            settings.env.ANTHROPIC_AUTH_TOKEN = preset.apiKey || '';
+            settings.env.ANTHROPIC_MODEL = preset.model || '';
+            settings.env.ANTHROPIC_SMALL_FAST_MODEL = preset.smallFastModel || '';
+            settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL = preset.defaultSonnetModel || '';
+            settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL = preset.defaultOpusModel || '';
+
+            await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+            log.info(`Updated settings.json for preset: ${preset.label}`);
+        } catch (err) {
+            log.error({ err }, 'Failed to update settings.json');
+        }
     }
 
     #buildPresetEnv(preset) {
