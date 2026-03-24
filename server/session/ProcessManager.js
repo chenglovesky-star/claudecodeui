@@ -56,6 +56,11 @@ export class ProcessManager extends EventEmitter {
       this.emit('process:output', { sessionId, data });
     });
 
+    // Phase events: forward to client but don't trigger state machine
+    provider.on('phase', (data) => {
+      this.emit('process:phase', { sessionId, data });
+    });
+
     provider.on('complete', (result) => {
       this.emit('process:complete', { sessionId, result });
       this.#cleanup(sessionId);
@@ -66,6 +71,14 @@ export class ProcessManager extends EventEmitter {
       this.#cleanup(sessionId);
     });
 
+    // Recovery events: pause/resume timers during auto-recovery
+    provider.on('recovery-start', () => {
+      this.emit('process:recovery-start', { sessionId });
+    });
+    provider.on('recovery-end', ({ success }) => {
+      this.emit('process:recovery-end', { sessionId, success });
+    });
+
     // Store in active map before starting
     this.#activeProviders.set(sessionId, {
       provider,
@@ -73,8 +86,16 @@ export class ProcessManager extends EventEmitter {
       startedAt: Date.now(),
     });
 
-    // Start in background (do not await)
-    provider.start(config);
+    // Start in background (do not await).
+    // Catch rejections: provider.on('error') handles the event side,
+    // but the promise itself must also be caught to prevent unhandled rejection.
+    provider.start(config).catch((err) => {
+      // Only emit if not already cleaned up (e.g. by the 'error' event handler)
+      if (this.#activeProviders.has(sessionId)) {
+        this.emit('process:error', { sessionId, error: err });
+        this.#cleanup(sessionId);
+      }
+    });
 
     log.info(`started ${providerType} session ${sessionId}`);
   }

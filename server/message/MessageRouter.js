@@ -151,7 +151,12 @@ export class MessageRouter extends EventEmitter {
     } catch (err) {
       console.error(`[Router] handleProviderCommand error:`, err.message);
       if (err.name === 'QuotaExceededError') {
-        this.#transport.send(connectionId, { type: 'quota-exceeded', reason: err.message });
+        this.#transport.send(connectionId, {
+          type: 'claude-error',
+          errorCode: 'quota-exceeded',
+          error: err.message,
+          meta: {},
+        });
       } else {
         this.#transport.send(connectionId, { type: 'session-error', error: err.message });
       }
@@ -192,11 +197,21 @@ export class MessageRouter extends EventEmitter {
   }
 
   bindEvents() {
-    this.#sessionManager.on('session:timeout', ({ sessionId, timeoutType }) => {
+    this.#sessionManager.on('session:timeout', ({ sessionId, timeoutType, errorCode, meta }) => {
       const session = this.#sessionManager.getSession(sessionId);
       if (session) {
-        this.#transport.send(session.connectionId, { type: 'session-timeout', sessionId, timeoutType });
-        this.#messageBuffer.addCriticalEvent(sessionId, { type: 'session-timeout', sessionId, timeoutType });
+        this.#transport.send(session.connectionId, {
+          type: 'claude-error',
+          errorCode: errorCode || timeoutType,
+          error: `Session timeout: ${timeoutType}`,
+          sessionId,
+          meta: meta || { timeoutMs: 0 },
+        });
+        this.#messageBuffer.addCriticalEvent(sessionId, {
+          type: 'claude-error',
+          errorCode: errorCode || timeoutType,
+          sessionId,
+        });
       }
       this.#processManager.abortSession(sessionId);
     });
@@ -208,6 +223,14 @@ export class MessageRouter extends EventEmitter {
       if (data?.data?.delta?.text) {
         this.#messageBuffer.appendContent(sessionId, data.data.delta.text);
       }
+    });
+
+    // Phase events: forward to client without triggering state machine
+    // This keeps the session in 'running' state, preserving the firstResponse timeout
+    this.#processManager.on('process:phase', ({ sessionId, data }) => {
+      const session = this.#sessionManager.getSession(sessionId);
+      if (!session) return;
+      // Just send to client, no state transition
     });
 
     this.#processManager.on('process:complete', ({ sessionId, result }) => {
@@ -230,6 +253,15 @@ export class MessageRouter extends EventEmitter {
       }
       this.#sessionManager.cleanup(sessionId);
       setTimeout(() => this.#messageBuffer.clearSession(sessionId), 60000);
+    });
+
+    // Recovery events: coordinate timeout timers
+    this.#processManager.on('process:recovery-start', ({ sessionId }) => {
+      this.#sessionManager.pauseTimers(sessionId);
+    });
+
+    this.#processManager.on('process:recovery-end', ({ sessionId }) => {
+      this.#sessionManager.resumeTimers(sessionId);
     });
   }
 }
