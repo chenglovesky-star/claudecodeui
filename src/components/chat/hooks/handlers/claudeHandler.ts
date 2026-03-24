@@ -1,7 +1,7 @@
 import { decodeHtmlEntities, formatUsageLimitText } from '../../utils/chatFormatting';
 import { safeLocalStorage } from '../../utils/chatStorage';
 import { getErrorMapping, getErrorDescription } from '../../utils/errorMessages';
-import { appendStreamingChunk, finalizeStreamingMessage } from './streamUtils';
+import { appendStreamingChunk, finalizeStreamingMessage, resetInternalSuppression } from './streamUtils';
 import type { HandlerContext, LatestChatMessage } from './types';
 
 export function handleClaudePhase(ctx: HandlerContext, latestMessage: LatestChatMessage) {
@@ -27,6 +27,7 @@ export function handleClaudePhase(ctx: HandlerContext, latestMessage: LatestChat
     ctx.setRecoveryStatus(null);
   }
   if (latestMessage.phase === 'acknowledged') {
+    resetInternalSuppression(); // New turn: reset suppression from previous skill calls
     ctx.startFallbackTimer();
   }
 }
@@ -486,6 +487,7 @@ export function handleClaudeError(ctx: HandlerContext, latestMessage: LatestChat
 
 export function handleClaudeComplete(ctx: HandlerContext, latestMessage: LatestChatMessage) {
   ctx.clearFallbackTimer();
+  resetInternalSuppression(); // Reset skill content suppression for next turn
   if (ctx.setCurrentPhase) {
     ctx.setCurrentPhase(undefined);
   }

@@ -39,15 +39,32 @@ export function stripSystemTags(content: string): string {
 }
 
 // Tools whose output text is internal (prompts, skill content, dispatch instructions).
-// Text following these tool_use blocks is suppressed when it exceeds the threshold.
+// Text following these tool_use blocks is suppressed entirely.
 const INTERNAL_CONTENT_TOOLS = new Set([
   'Task', 'Agent', 'Dispatch',   // subagent dispatching
   'Skill',                         // skill loading (outputs full SKILL.md)
   'ToolSearch',                    // deferred tool loading
 ]);
 
-// Threshold: text blocks shorter than this are considered user-facing status messages.
-const INTERNAL_TEXT_THRESHOLD = 150;
+// Patterns that indicate the start of internal/skill content in a text chunk
+const INTERNAL_CONTENT_MARKERS = [
+  /^Base directory for this skill:/,
+  /^Launching skill:/,
+  /^# .+\n\n>/,                    // markdown heading followed by blockquote (skill docs)
+  /^ARGUMENTS:/,
+  /^<SUBAGENT-STOP>/,
+  /^<EXTREMELY-IMPORTANT>/,
+  /^<HARD-GATE>/,
+];
+
+// Track whether we're in an internal content suppression zone.
+// This persists across chunks until a non-tool user-facing message resets it.
+let _suppressionActive = false;
+
+/** Reset suppression state (call on session boundaries like claude-complete). */
+export function resetInternalSuppression() {
+  _suppressionActive = false;
+}
 
 export const appendStreamingChunk = (
   setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>,
@@ -63,31 +80,59 @@ export const appendStreamingChunk = (
 
   setChatMessages((previous) => {
     // ── Internal content suppression ──
-    // When the most recent messages are tool_use calls (no user-facing text in between),
-    // large text blocks that follow are almost always internal content: subagent prompts,
-    // skill file dumps, tool dispatch instructions. Suppress them.
+    // Detect and suppress skill prompts, subagent instructions, and other
+    // internal content that should not be shown to users.
     //
-    // Architecture: instead of matching specific tool names only, we check two conditions:
-    // 1. Specific tools known to dump internal content (INTERNAL_CONTENT_TOOLS)
-    // 2. General heuristic: if the last N messages are ALL tool_use with no text between
-    //    them, the next large text block is likely internal content too.
-    const recentMessages = previous.slice(-5);
-    const lastNonStreamingMsg = recentMessages.filter(m => !m.isStreaming).slice(-1)[0];
-    const hasInternalTool = recentMessages.some(
-      m => m.isToolUse && m.toolName && INTERNAL_CONTENT_TOOLS.has(m.toolName)
-    );
-    // Heuristic: if the last non-streaming message is a tool_use, text following it
-    // is likely internal (prompt content, skill content, etc.)
-    const lastIsToolUse = lastNonStreamingMsg?.isToolUse === true;
+    // Strategy: look back through ALL recent messages (not just last 5) to
+    // find internal tools, and suppress ALL text after them until a user
+    // message or non-tool assistant message breaks the chain.
 
-    if (hasInternalTool || lastIsToolUse) {
-      const lastMsg = previous[previous.length - 1];
-      const existingLen = (lastMsg?.type === 'assistant' && lastMsg.isStreaming)
-        ? (lastMsg.content?.length || 0)
-        : 0;
-      if (existingLen + chunk.length > INTERNAL_TEXT_THRESHOLD) {
-        return previous; // suppress — internal content dump
+    // Check if current streaming content starts with internal markers
+    const lastMsg = previous[previous.length - 1];
+    const currentStreamContent = (lastMsg?.type === 'assistant' && lastMsg.isStreaming)
+      ? (lastMsg.content || '') + chunk
+      : chunk;
+
+    const startsWithInternalMarker = INTERNAL_CONTENT_MARKERS.some(
+      pattern => pattern.test(currentStreamContent.trim())
+    );
+
+    if (startsWithInternalMarker) {
+      _suppressionActive = true;
+      // Remove partially displayed content if the marker was detected after initial chunks
+      if (lastMsg?.type === 'assistant' && lastMsg.isStreaming && lastMsg.content) {
+        const updated = [...previous];
+        updated[updated.length - 1] = { ...lastMsg, content: '', isStreaming: true };
+        return updated;
       }
+      return previous;
+    }
+
+    // Check for internal tools in recent history (scan further back than 5)
+    if (!_suppressionActive) {
+      const scanLimit = Math.min(previous.length, 15);
+      const recentMessages = previous.slice(-scanLimit);
+      // Walk backwards to find the last non-streaming message
+      for (let i = recentMessages.length - 1; i >= 0; i--) {
+        const msg = recentMessages[i];
+        if (msg.isStreaming) continue;
+        // If last non-streaming is a user message, not suppressing
+        if (msg.type === 'user') break;
+        // If last non-streaming is a tool_use with internal tool, suppress
+        if (msg.isToolUse && msg.toolName && INTERNAL_CONTENT_TOOLS.has(msg.toolName)) {
+          _suppressionActive = true;
+          break;
+        }
+        // If it's a finalized assistant text message (not tool), not suppressing
+        if (msg.type === 'assistant' && !msg.isToolUse && msg.content?.trim()) break;
+        // If it's any tool_use, keep scanning
+        if (msg.isToolUse) continue;
+        break;
+      }
+    }
+
+    if (_suppressionActive) {
+      return previous; // suppress — internal content dump
     }
 
     const updated = [...previous];
