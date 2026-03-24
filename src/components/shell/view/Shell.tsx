@@ -500,6 +500,10 @@ export default function Shell({
             />
           </div>
         </div>
+        {/* Screen reader announcements */}
+        <div aria-live="assertive" className="sr-only">
+          {sessions.find(s => s.sessionId === activeSessionId)?.status === 'disconnected' && '终端已断开连接'}
+        </div>
         <MobileToolbar
           wsRef={{ current: activeWsRef.current } as React.MutableRefObject<WebSocket | null>}
           terminalRef={{ current: activeTerminalRef.current } as React.MutableRefObject<Terminal | null>}
@@ -565,6 +569,8 @@ export default function Shell({
           ref={terminalContainerRef}
           className="h-full w-full focus:outline-none"
           style={{ outline: 'none' }}
+          role="application"
+          aria-label="终端"
         />
 
         {showSearch && (
@@ -644,6 +650,11 @@ export default function Shell({
             isConnected={isConnected}
           />
         </div>
+      </div>
+      {/* Screen reader announcements */}
+      <div aria-live="assertive" className="sr-only">
+        {isReconnecting && `正在重连，第 ${reconnectAttempt} 次尝试`}
+        {connectionError && `连接失败: ${connectionError}`}
       </div>
       <MobileToolbar
         wsRef={wsRef}

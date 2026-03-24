@@ -245,6 +245,8 @@ export default function ShellSessionInstance({
         ref={terminalContainerRef}
         className="h-full w-full focus:outline-none"
         style={{ outline: 'none' }}
+        role="application"
+        aria-label="终端"
       />
 
       {showSearch && (

@@ -49,6 +49,18 @@ export default function SessionTabBar({
   // Keyboard shortcuts
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // Left/Right arrow navigation within tabs
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        const currentIdx = orderedSessions.findIndex((s) => s.sessionId === activeSessionId);
+        if (currentIdx === -1) return;
+        const nextIdx = e.key === 'ArrowLeft'
+          ? (currentIdx - 1 + orderedSessions.length) % orderedSessions.length
+          : (currentIdx + 1) % orderedSessions.length;
+        onSwitch(orderedSessions[nextIdx].sessionId);
+        return;
+      }
+
       const isMac = navigator.platform.includes('Mac');
       const mod = isMac ? e.metaKey : e.ctrlKey;
       if (!mod) return;

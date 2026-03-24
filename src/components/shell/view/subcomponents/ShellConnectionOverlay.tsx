@@ -108,7 +108,7 @@ export default function ShellConnectionOverlay({
 
   if (mode === 'reconnecting') {
     return (
-      <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-900/70 backdrop-blur-sm">
+      <div role="status" className="absolute inset-0 z-20 flex items-center justify-center bg-gray-900/70 backdrop-blur-sm">
         <div className="w-full max-w-sm text-center">
           <div className="flex items-center justify-center space-x-3 text-yellow-400">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-yellow-400 border-t-transparent" />
@@ -131,7 +131,7 @@ export default function ShellConnectionOverlay({
 
   // mode === 'error'
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-90 p-4">
+    <div role="alert" className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-90 p-4">
       <div className="w-full max-w-sm text-center">
         <div className="flex items-center justify-center space-x-2 text-red-400">
           <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
