@@ -228,7 +228,18 @@ export class SessionManager extends EventEmitter {
       session.timers[timerKey] = null;
       log.warn(`${session.sessionId} timeout: ${timeoutType}`);
       this.transition(session.sessionId, 'timeout');
-      this.emit('session:timeout', { sessionId: session.sessionId, timeoutType });
+      const errorCodeMap = {
+        firstResponse: 'firstResponse',
+        activity: 'activity',
+        toolExecution: 'tool-timeout',
+        global: 'global-timeout',
+      };
+      this.emit('session:timeout', {
+        sessionId: session.sessionId,
+        timeoutType,
+        errorCode: errorCodeMap[timerKey] || timeoutType,
+        meta: { timeoutMs: ms },
+      });
     }, ms);
   }
 
@@ -274,6 +285,36 @@ export class SessionManager extends EventEmitter {
       default:
         break;
     }
+  }
+
+  pauseTimers(sessionId) {
+    const session = this._sessions.get(sessionId);
+    if (!session) return;
+    session._pausedTimers = {};
+    for (const key of Object.keys(session.timers)) {
+      if (session.timers[key] !== null) {
+        session._pausedTimers[key] = true;
+        this._clearTimeout(session.timers[key]);
+        session.timers[key] = null;
+      }
+    }
+    session._pausedAt = Date.now();
+    log.info(`Paused timers for ${sessionId}`);
+  }
+
+  resumeTimers(sessionId) {
+    const session = this._sessions.get(sessionId);
+    if (!session || !session._pausedTimers) return;
+    const state = session.state;
+    if (!['running', 'streaming', 'tool_executing'].includes(state)) {
+      delete session._pausedTimers;
+      delete session._pausedAt;
+      return;
+    }
+    this._manageTimers(session, null, state);
+    delete session._pausedTimers;
+    delete session._pausedAt;
+    log.info(`Resumed timers for ${sessionId}`);
   }
 
   /** Refresh activity timeout without full state transition (for streaming self-loop). */

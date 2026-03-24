@@ -22,6 +22,9 @@ export class BaseProvider extends EventEmitter {
 
   // 便捷方法：emit 标准事件
   emitOutput(data) { this.emit('output', data); }
+  emitPhase(data) { this.emit('phase', data); }  // phase 消息不触发 streaming 状态
   emitComplete(result) { this.emit('complete', result); this.isRunning = false; }
   emitError(error) { this.emit('error', error); this.isRunning = false; }
+  emitRecoveryStart() { this.emit('recovery-start'); }
+  emitRecoveryEnd(success) { this.emit('recovery-end', { success }); }
 }
