@@ -313,6 +313,11 @@ export function handleClaudeResponse(ctx: HandlerContext, latestMessage: LatestC
   }
 
   if (structuredMessageData?.role === 'user' && Array.isArray(structuredMessageData.content)) {
+    // tool_result marks the boundary between the previous assistant turn
+    // (which may have had internal tools) and the upcoming assistant turn.
+    // Reset suppression so the next response's text blocks are displayed.
+    deactivateInternalSuppression();
+
     const parentToolUseId = rawStructuredData?.parentToolUseId;
 
     structuredMessageData.content.forEach((part: any) => {
