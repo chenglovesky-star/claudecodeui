@@ -118,8 +118,10 @@ export class MessageRouter extends EventEmitter {
 
     if (result.rejected) {
       this.#transport.send(connectionId, {
-        type: 'queue-status',
-        data: { status: 'rejected', message: result.reason },
+        type: 'claude-error',
+        errorCode: 'queue-full',
+        error: result.reason,
+        meta: { queueSize: 50 },
       });
       return;
     }

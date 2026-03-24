@@ -43,10 +43,17 @@ export class RequestQueue extends EventEmitter {
       onDispatched: onDispatched || null,
     };
     this.#queue.push(item);
+    const queuedAt = item.enqueuedAt;
     const timer = setTimeout(() => {
       this.#removeItem(requestId);
       this.#timeoutTimers.delete(requestId);
-      this.emit('queue:timeout', { requestId, userId, connectionId });
+      this.emit('queue:timeout', {
+        requestId,
+        userId,
+        connectionId,
+        errorCode: 'queue-timeout',
+        meta: { waitedSec: Math.floor((Date.now() - queuedAt) / 1000) },
+      });
     }, QUEUE_TIMEOUT_MS);
     this.#timeoutTimers.set(requestId, timer);
     const position = this.#queue.filter(i => i.status === 'waiting').indexOf(item) + 1;
@@ -61,10 +68,17 @@ export class RequestQueue extends EventEmitter {
       onDispatched: onDispatched || null,
     };
     this.#queue.unshift(item);
+    const requeuedAt = item.enqueuedAt;
     const timer = setTimeout(() => {
       this.#removeItem(requestId);
       this.#timeoutTimers.delete(requestId);
-      this.emit('queue:timeout', { requestId, userId, connectionId });
+      this.emit('queue:timeout', {
+        requestId,
+        userId,
+        connectionId,
+        errorCode: 'queue-timeout',
+        meta: { waitedSec: Math.floor((Date.now() - requeuedAt) / 1000) },
+      });
     }, QUEUE_TIMEOUT_MS);
     this.#timeoutTimers.set(requestId, timer);
     this._tryDispatchNext();
