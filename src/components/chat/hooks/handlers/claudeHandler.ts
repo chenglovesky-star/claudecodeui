@@ -211,7 +211,10 @@ export function handleClaudeResponse(ctx: HandlerContext, latestMessage: LatestC
     return;
   }
 
-  if (structuredMessageData && Array.isArray(structuredMessageData.content)) {
+  if (structuredMessageData && Array.isArray(structuredMessageData.content) && structuredMessageData.role !== 'user') {
+    // Only process tool_use/text for assistant (or unspecified) role messages.
+    // User role messages contain subagent prompts and tool_results — prompts should
+    // never be displayed; tool_results are handled in the dedicated block below.
     const parentToolUseId = rawStructuredData?.parentToolUseId;
     // Track whether the most recent tool_use in THIS content array is internal.
     // Text following internal tools in the same array is suppressed directly
