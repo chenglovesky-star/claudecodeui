@@ -80,4 +80,21 @@ router.post('/update', async (req, res) => {
     }
 });
 
+// GET /api/system/shell-presets
+// Returns preset list (id + label only, no API keys) for the shell preset switcher.
+// Reads from app root: /app/shell-presets.json (Docker) or project root (dev).
+router.get('/shell-presets', async (req, res) => {
+    try {
+        const presetsPath = path.join(projectRoot, 'shell-presets.json');
+        const raw = fs.readFileSync(presetsPath, 'utf-8');
+        const presets = JSON.parse(raw);
+        const safePresets = Array.isArray(presets)
+            ? presets.map(p => ({ id: p.id, label: p.label }))
+            : [];
+        res.json({ presets: safePresets });
+    } catch {
+        res.json({ presets: [] });
+    }
+});
+
 export default router;

@@ -38,7 +38,7 @@ export default function StandaloneShell({
 }: StandaloneShellProps) {
   const [isCompleted, setIsCompleted] = useState(false);
   const wsRefFromShell = useRef<MutableRefObject<WebSocket | null> | null>(null);
-  const { presets, activePresetId, switchPreset } = useShellPresets(project);
+  const { presets, activePresetId, switchPreset } = useShellPresets();
 
   const handleWsRef = useCallback((ref: MutableRefObject<WebSocket | null>) => {
     wsRefFromShell.current = ref;

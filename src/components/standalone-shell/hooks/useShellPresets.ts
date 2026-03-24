@@ -1,25 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Project } from '../../../types/app';
 import type { ShellPresetInfo } from '../../shell/types/types';
 import { authenticatedFetch } from '../../../utils/api';
 
-export function useShellPresets(project: Project | null | undefined) {
+export function useShellPresets() {
   const [presets, setPresets] = useState<ShellPresetInfo[]>([]);
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!project) {
-      setPresets([]);
-      return;
-    }
-
     let cancelled = false;
 
     async function load() {
       try {
-        const res = await authenticatedFetch(
-          `/api/projects/${encodeURIComponent(project!.name)}/shell-presets`,
-        );
+        const res = await authenticatedFetch('/api/system/shell-presets');
         if (!res.ok || cancelled) return;
         const data = await res.json();
         setPresets(data.presets || []);
@@ -30,7 +22,7 @@ export function useShellPresets(project: Project | null | undefined) {
 
     load();
     return () => { cancelled = true; };
-  }, [project]);
+  }, []);
 
   const switchPreset = useCallback(
     (ws: WebSocket | null, presetId: string) => {
