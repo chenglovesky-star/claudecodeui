@@ -9,6 +9,7 @@ import { useChatRealtimeHandlers } from '../hooks/useChatRealtimeHandlers';
 import { useChatComposerState } from '../hooks/useChatComposerState';
 import ChatMessagesPane from './subcomponents/ChatMessagesPane';
 import ChatComposer from './subcomponents/ChatComposer';
+import ConnectionStatusBanner from './subcomponents/ConnectionStatusBanner';
 
 
 type PendingViewSession = {
@@ -200,7 +201,7 @@ function ChatInterface({
     setPendingPermissionRequests,
   });
 
-  useChatRealtimeHandlers({
+  const { currentPhase, recoveryStatus } = useChatRealtimeHandlers({
     latestMessage,
     provider,
     selectedProject,
@@ -250,6 +251,42 @@ function ChatInterface({
     };
   }, [resetStreamingState]);
 
+  const handleNewSession = useCallback(() => {
+    // Clear current session to trigger new session creation flow
+    setCurrentSessionId(null);
+    setChatMessages([]);
+    setIsLoading(false);
+    setCanAbortSession(false);
+    setClaudeStatus(null);
+    pendingViewSessionRef.current = null;
+    // Focus textarea for immediate input
+    setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 50);
+  }, [setCurrentSessionId, setChatMessages, setIsLoading, setCanAbortSession, setClaudeStatus, textareaRef]);
+
+  const handleContinueGeneration = useCallback(() => {
+    if (currentSessionId) {
+      sendMessage({
+        type: 'claude-command',
+        command: '',
+        options: { sessionId: currentSessionId, resume: true },
+      });
+    }
+  }, [currentSessionId, sendMessage]);
+
+  // Retry: find last user message and put it back into the input
+  const handleRetry = useCallback(() => {
+    const lastUserMsg = [...chatMessages].reverse().find(m => m.type === 'user');
+    if (lastUserMsg?.content) {
+      setInput(lastUserMsg.content);
+      // Focus textarea so user can press Enter to resend
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 50);
+    }
+  }, [chatMessages, setInput, textareaRef]);
+
   if (!selectedProject) {
     const selectedProviderLabel =
       provider === 'cursor'
@@ -277,6 +314,7 @@ function ChatInterface({
   return (
     <>
       <div className="flex h-full flex-col">
+        <ConnectionStatusBanner />
         <ChatMessagesPane
           scrollContainerRef={scrollContainerRef}
           onWheel={handleScroll}
@@ -324,6 +362,11 @@ function ChatInterface({
           showThinking={showThinking}
           selectedProject={selectedProject}
           isLoading={isLoading}
+          onRetry={handleRetry}
+          onNewSession={handleNewSession}
+          onContinueGeneration={handleContinueGeneration}
+          currentPhase={currentPhase}
+          recoveryStatus={recoveryStatus}
         />
 
         <ChatComposer

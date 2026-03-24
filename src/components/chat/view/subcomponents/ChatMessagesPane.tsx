@@ -55,6 +55,11 @@ interface ChatMessagesPaneProps {
   selectedProject: Project;
   isLoading: boolean;
   selectedProjectPath?: string;
+  onRetry?: () => void;
+  onNewSession?: () => void;
+  onContinueGeneration?: () => void;
+  currentPhase?: string;
+  recoveryStatus?: { code: string; meta?: Record<string, unknown> } | null;
 }
 
 export default function ChatMessagesPane({
@@ -104,6 +109,11 @@ export default function ChatMessagesPane({
   selectedProject,
   isLoading,
   selectedProjectPath,
+  onRetry,
+  onNewSession,
+  onContinueGeneration,
+  currentPhase,
+  recoveryStatus,
 }: ChatMessagesPaneProps) {
   const { t } = useTranslation('chat');
   const MESSAGE_DISPLAY_LIMIT = 50;
@@ -282,6 +292,9 @@ export default function ChatMessagesPane({
                       showThinking={showThinking}
                       selectedProject={selectedProject}
                       provider={provider}
+                      onRetry={message.type === 'error' ? onRetry : undefined}
+                      onNewSession={message.type === 'error' ? onNewSession : undefined}
+                      onContinueGeneration={message.type === 'error' ? onContinueGeneration : undefined}
                     />
                   );
                 })}
@@ -306,7 +319,7 @@ export default function ChatMessagesPane({
             </div>
           );
         }
-        return <AssistantThinkingIndicator selectedProvider={provider} />;
+        return <AssistantThinkingIndicator selectedProvider={provider} currentPhase={currentPhase} recoveryStatus={recoveryStatus} />;
       })()}
     </div>
   );

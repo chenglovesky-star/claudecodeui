@@ -1,5 +1,6 @@
 import { decodeHtmlEntities, formatUsageLimitText } from '../../utils/chatFormatting';
 import { safeLocalStorage } from '../../utils/chatStorage';
+import { getErrorMapping, getErrorDescription } from '../../utils/errorMessages';
 import { appendStreamingChunk, finalizeStreamingMessage } from './streamUtils';
 import type { HandlerContext, LatestChatMessage } from './types';
 
@@ -13,6 +14,9 @@ export function handleClaudePhase(ctx: HandlerContext, latestMessage: LatestChat
   ctx.setClaudeStatus({ text: phaseText, tokens: 0, can_interrupt: true });
   ctx.setIsLoading(true);
   ctx.setCanAbortSession(true);
+  if (ctx.setCurrentPhase) {
+    ctx.setCurrentPhase(latestMessage.phase as string);
+  }
   if (latestMessage.phase === 'acknowledged') {
     ctx.startFallbackTimer();
   }
@@ -412,6 +416,22 @@ export function handleClaudePermissionCancelled(ctx: HandlerContext, latestMessa
 }
 
 export function handleClaudeError(ctx: HandlerContext, latestMessage: LatestChatMessage) {
+  const errorCode: string = (latestMessage as any).errorCode || 'unknown';
+  const meta: Record<string, unknown> = (latestMessage as any).meta || {};
+  const mapping = getErrorMapping(errorCode);
+
+  // Level 1: auto-recovery event — update recovery status, don't show error, don't stop loading
+  if (mapping.level === 1) {
+    if (ctx.setRecoveryStatus) {
+      ctx.setRecoveryStatus({ code: errorCode, meta });
+    }
+    if (ctx.setCurrentPhase) {
+      ctx.setCurrentPhase(errorCode);
+    }
+    return;
+  }
+
+  // Level 2 or 3: terminal error
   ctx.clearFallbackTimer();
   ctx.finalizeLifecycleForCurrentView(latestMessage.sessionId, ctx.currentSessionId, ctx.selectedSession?.id);
 
@@ -422,33 +442,23 @@ export function handleClaudeError(ctx: HandlerContext, latestMessage: LatestChat
   }
   ctx.streamBufferRef.current = '';
 
-  // Finalize any in-progress streaming message
+  // Finalize any in-progress streaming message and add error
   ctx.setChatMessages((previous) => {
     const updated = [...previous];
-    // Mark any streaming messages as complete
     for (let i = updated.length - 1; i >= 0; i--) {
       if (updated[i].isStreaming) {
         updated[i] = { ...updated[i], isStreaming: false };
       }
     }
 
-    // Map common error messages to user-friendly text
-    let errorText = latestMessage.error || '发生错误';
-    if (errorText.includes('rate_limit') || errorText.includes('429')) {
-      errorText = '请求过于频繁，请稍后重试';
-    } else if (errorText.includes('timeout') || errorText.includes('ETIMEDOUT')) {
-      errorText = '请求超时，请重试';
-    } else if (errorText.includes('ENOENT')) {
-      errorText = '服务配置错误，请联系管理员';
-    } else if (errorText.includes('authentication') || errorText.includes('invalid api key')) {
-      errorText = 'API 认证失败，请检查配置';
-    }
-
     return [
       ...updated,
       {
         type: 'error' as const,
-        content: errorText,
+        content: getErrorDescription(mapping, meta),
+        errorLevel: mapping.level as 2 | 3,
+        errorCode,
+        errorActions: mapping.actions,
         timestamp: new Date(),
       },
     ];
@@ -457,10 +467,22 @@ export function handleClaudeError(ctx: HandlerContext, latestMessage: LatestChat
   ctx.setIsLoading(false);
   ctx.setCanAbortSession(false);
   ctx.setClaudeStatus(null);
+  if (ctx.setCurrentPhase) {
+    ctx.setCurrentPhase(undefined);
+  }
+  if (ctx.setRecoveryStatus) {
+    ctx.setRecoveryStatus(null);
+  }
 }
 
 export function handleClaudeComplete(ctx: HandlerContext, latestMessage: LatestChatMessage) {
   ctx.clearFallbackTimer();
+  if (ctx.setCurrentPhase) {
+    ctx.setCurrentPhase(undefined);
+  }
+  if (ctx.setRecoveryStatus) {
+    ctx.setRecoveryStatus(null);
+  }
   const pendingSessionId = sessionStorage.getItem('pendingSessionId');
   const completedSessionId =
     latestMessage.sessionId || ctx.currentSessionId || pendingSessionId;

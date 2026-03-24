@@ -11,6 +11,7 @@ import type {
   SetStateAction,
   TouchEvent,
 } from 'react';
+import { useWebSocket } from '../../../../contexts/WebSocketContext';
 import MicButton from '../../../mic-button/view/MicButton';
 import type { PendingPermissionRequest, PermissionMode, Provider } from '../../types/types';
 import CommandMenu from './CommandMenu';
@@ -151,6 +152,8 @@ export default function ChatComposer({
   onTranscript,
 }: ChatComposerProps) {
   const { t } = useTranslation('chat');
+  const { connectionState } = useWebSocket();
+  const isDisconnected = connectionState !== 'connected';
   const textareaRect = textareaRef.current?.getBoundingClientRect();
   const commandMenuPosition = {
     top: textareaRect ? Math.max(16, textareaRect.top - 316) : 0,
@@ -291,8 +294,8 @@ export default function ChatComposer({
               onFocus={() => onInputFocusChange?.(true)}
               onBlur={() => onInputFocusChange?.(false)}
               onInput={onTextareaInput}
-              placeholder={placeholder}
-              disabled={isLoading}
+              placeholder={isDisconnected ? '连接断开中，请稍候...' : placeholder}
+              disabled={isLoading || isDisconnected}
               className="chat-input-placeholder block max-h-[40vh] min-h-[50px] w-full resize-none overflow-y-auto rounded-2xl bg-transparent py-1.5 pl-12 pr-20 text-base leading-6 text-foreground placeholder-muted-foreground/50 transition-all duration-200 focus:outline-none disabled:opacity-50 sm:max-h-[300px] sm:min-h-[80px] sm:py-4 sm:pr-40"
               style={{ height: '50px' }}
             />
@@ -319,7 +322,7 @@ export default function ChatComposer({
 
             <button
               type="submit"
-              disabled={!input.trim() || isLoading}
+              disabled={!input.trim() || isLoading || isDisconnected}
               onMouseDown={(event) => {
                 event.preventDefault();
                 onSubmit(event);

@@ -1,4 +1,5 @@
 import { appendStreamingChunk } from './streamUtils';
+import { getErrorMapping, getErrorDescription } from '../../utils/errorMessages';
 import type { HandlerContext, LatestChatMessage } from './types';
 
 export function handleSessionTimeout(ctx: HandlerContext, latestMessage: LatestChatMessage) {
@@ -14,16 +15,16 @@ export function handleSessionTimeout(ctx: HandlerContext, latestMessage: LatestC
     appendStreamingChunk(ctx.setChatMessages, chunk, false);
   }
 
-  const timeoutMessages: Record<string, string> = {
-    firstResponse: '会话首响应超时（60秒无输出）',
-    activity: '会话活动超时（120秒无新输出）',
-    toolExecution: '工具执行超时（10分钟）',
-    global: '会话全局超时（30分钟）',
-  };
+  const errorCode = (latestMessage as any).errorCode || latestMessage.timeoutType as string || 'unknown';
+  const meta = (latestMessage as any).meta || {};
+  const mapping = getErrorMapping(errorCode);
 
   ctx.setChatMessages(prev => [...prev, {
     type: 'error',
-    content: timeoutMessages[latestMessage.timeoutType as string] || `会话超时 (${latestMessage.timeoutType})`,
+    content: getErrorDescription(mapping, meta),
+    errorLevel: mapping.level as 2 | 3,
+    errorCode,
+    errorActions: mapping.actions,
     timestamp: new Date(),
     isTimeout: true,
     timeoutType: latestMessage.timeoutType,

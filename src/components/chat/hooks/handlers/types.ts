@@ -51,4 +51,7 @@ export interface HandlerContext {
   resetFallbackTimer: () => void;
   clearLoadingIndicators: () => void;
   isSystemInitForView: boolean | string | null;
+  // Phase & recovery state setters (optional for backward compat)
+  setCurrentPhase?: (phase: string | undefined) => void;
+  setRecoveryStatus?: (status: { code: string; meta?: Record<string, unknown> } | null) => void;
 }

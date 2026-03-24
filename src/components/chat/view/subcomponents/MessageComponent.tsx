@@ -8,11 +8,15 @@ import type {
   Provider,
 } from '../../types/types';
 import { formatUsageLimitText } from '../../utils/chatFormatting';
+import { getErrorMapping } from '../../utils/errorMessages';
 import { getClaudePermissionSuggestion } from '../../utils/chatPermissions';
 import { copyTextToClipboard } from '../../../../utils/clipboard';
 import type { Project } from '../../../../types/app';
 import { ToolRenderer, shouldHideToolResult } from '../../tools';
 import { Markdown } from './Markdown';
+import ErrorCard from './ErrorCard';
+import type { ErrorAction } from './ErrorCard';
+import { ACTION_ICONS } from './ErrorCard';
 
 type DiffLine = {
   type: string;
@@ -32,6 +36,9 @@ interface MessageComponentProps {
   showThinking?: boolean;
   selectedProject?: Project | null;
   provider: Provider | string;
+  onRetry?: () => void;
+  onNewSession?: () => void;
+  onContinueGeneration?: () => void;
 }
 
 type InteractiveOption = {
@@ -42,7 +49,7 @@ type InteractiveOption = {
 
 type PermissionGrantState = 'idle' | 'granted' | 'error';
 
-const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, onShowSettings, onGrantToolPermission, autoExpandTools, showRawParameters, showThinking, selectedProject, provider }: MessageComponentProps) => {
+const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, onShowSettings, onGrantToolPermission, autoExpandTools, showRawParameters, showThinking, selectedProject, provider, onRetry, onNewSession, onContinueGeneration }: MessageComponentProps) => {
   const { t } = useTranslation('chat');
   const isGrouped = prevMessage && prevMessage.type === message.type &&
     ((prevMessage.type === 'assistant') ||
@@ -199,7 +206,29 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
 
           <div className="w-full">
 
-            {message.isToolUse ? (
+            {message.type === 'error' && message.errorLevel && message.errorActions ? (() => {
+              const actionMap: Record<string, ErrorAction> = {
+                retry: { key: 'retry', label: '重新发送', icon: ACTION_ICONS.refresh, onClick: () => onRetry?.(), variant: 'primary' },
+                newSession: { key: 'newSession', label: '新建会话', icon: ACTION_ICONS.plus, onClick: () => onNewSession?.(), variant: 'secondary' },
+                settings: { key: 'settings', label: '打开设置', icon: ACTION_ICONS.settings, onClick: () => onShowSettings?.(), variant: 'secondary' },
+                continue: { key: 'continue', label: '继续生成', icon: ACTION_ICONS.play, onClick: () => onContinueGeneration?.(), variant: 'primary' },
+              };
+              const actions = (message.errorActions || [])
+                .map((key: string) => actionMap[key])
+                .filter(Boolean);
+
+              return (
+                <div className="w-full py-2">
+                  <ErrorCard
+                    level={message.errorLevel as 2 | 3}
+                    title={message.errorCode ? getErrorMapping(message.errorCode).title : 'Error'}
+                    description={String(message.content || '')}
+                    actions={actions}
+                    timestamp={new Date(message.timestamp)}
+                  />
+                </div>
+              );
+            })() : message.isToolUse ? (
               <>
                 <div className="flex flex-col">
                   <div className="flex flex-col">
@@ -466,6 +495,22 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                     <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert" isStreaming={message.isStreaming}>
                       {content}
                     </Markdown>
+                  ) : message.type === 'error' ? (
+                    <div>
+                      <div className="whitespace-pre-wrap">{content}</div>
+                      {onRetry && (message.isTimeout || content.includes('超时') || content.includes('重试')) && (
+                        <button
+                          type="button"
+                          onClick={onRetry}
+                          className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-red-300/70 bg-white/80 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-800/60 dark:bg-gray-900/40 dark:text-red-200 dark:hover:bg-gray-900/70"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          重新发送
+                        </button>
+                      )}
+                    </div>
                   ) : (
                     <div className="whitespace-pre-wrap">
                       {content}

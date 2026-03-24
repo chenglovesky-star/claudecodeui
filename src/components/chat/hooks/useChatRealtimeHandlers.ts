@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { ChatMessage, PendingPermissionRequest } from '../types/types';
 import type { Project, ProjectSession, SessionProvider } from '../../../types/app';
@@ -99,6 +99,9 @@ export function useChatRealtimeHandlers({
   onReplaceTemporarySession,
   onNavigateToSession,
 }: UseChatRealtimeHandlersArgs) {
+  const [currentPhase, setCurrentPhase] = useState<string | undefined>(undefined);
+  const [recoveryStatus, setRecoveryStatus] = useState<{ code: string; meta?: Record<string, unknown> } | null>(null);
+
   const lastProcessedMessageRef = useRef<LatestChatMessage | null>(null);
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backgroundBuffersRef = useRef<Map<string, {
@@ -124,12 +127,17 @@ export function useChatRealtimeHandlers({
       console.warn('[Chat] Fallback timeout triggered - server appears unresponsive');
       setChatMessages(prev => [...prev, {
         type: 'error',
-        content: '响应超时，请重试或中止当前会话',
+        content: 'API 响应超时（90 秒无数据返回），可能是网络问题或 API 服务不可用。',
+        errorLevel: 2 as const,
+        errorCode: 'clientFallback',
+        errorActions: ['retry', 'newSession'] as string[],
         timestamp: new Date(),
         isTimeout: true,
         timeoutType: 'clientFallback',
       }]);
       setIsLoading(false);
+      setCurrentPhase(undefined);
+      setRecoveryStatus(null);
     }, timeout);
   }, [clearFallbackTimer, setChatMessages, setIsLoading]);
 
@@ -378,6 +386,8 @@ export function useChatRealtimeHandlers({
       resetFallbackTimer,
       clearLoadingIndicators,
       isSystemInitForView,
+      setCurrentPhase,
+      setRecoveryStatus,
     };
 
     switch (latestMessage.type) {
@@ -497,6 +507,8 @@ export function useChatRealtimeHandlers({
 
       case 'session-aborted': {
         clearFallbackTimer();
+        setCurrentPhase(undefined);
+        setRecoveryStatus(null);
         const pendingSessionId =
           typeof window !== 'undefined' ? sessionStorage.getItem('pendingSessionId') : null;
         const abortedSessionId = latestMessage.sessionId || currentSessionId;
@@ -608,6 +620,8 @@ export function useChatRealtimeHandlers({
         // Generic backend failure (e.g., provider process failed before a provider-specific
         // completion event was emitted). Treat it as terminal for current view lifecycle.
         clearFallbackTimer();
+        setCurrentPhase(undefined);
+        setRecoveryStatus(null);
         finalizeLifecycleForCurrentView(latestMessage.sessionId, currentSessionId, selectedSession?.id);
         if (latestMessage.error) {
           setChatMessages((previous) => [
@@ -676,5 +690,7 @@ export function useChatRealtimeHandlers({
 
   return {
     backgroundBuffersRef,
+    currentPhase,
+    recoveryStatus,
   };
 }
