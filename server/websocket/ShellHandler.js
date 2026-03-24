@@ -2,6 +2,9 @@
 // 处理 /shell WebSocket 连接，封装 PTY 会话生命周期 (P3)
 
 import os from 'os';
+import fs from 'fs/promises';
+import path from 'path';
+import { execFile } from 'child_process';
 import pty from 'node-pty';
 import { WebSocket } from 'ws';
 import legacySessionManager from '../sessionManager.js';
@@ -422,6 +425,62 @@ export class ShellHandler {
                     if (shellProcess && shellProcess.resize) {
                         log.info(`Terminal resize requested: ${data.cols} x ${data.rows}`);
                         shellProcess.resize(data.cols, data.rows);
+                    }
+                } else if (data.type === 'paste-image') {
+                    // Handle image paste: save to temp file and copy to system clipboard
+                    // so Claude Code CLI can read it when the user submits their prompt.
+                    try {
+                        const base64Data = data.data;
+                        const mimeType = data.mimeType || 'image/png';
+                        const ext = mimeType === 'image/jpeg' ? '.jpg'
+                            : mimeType === 'image/gif' ? '.gif'
+                            : mimeType === 'image/webp' ? '.webp'
+                            : '.png';
+
+                        const tmpDir = path.join(os.tmpdir(), 'claude-ui-paste');
+                        await fs.mkdir(tmpDir, { recursive: true });
+                        const tmpFile = path.join(tmpDir, `paste-${Date.now()}${ext}`);
+                        await fs.writeFile(tmpFile, Buffer.from(base64Data, 'base64'));
+                        log.info(`Image saved to temp file: ${tmpFile}`);
+
+                        // Copy image to system clipboard so Claude Code CLI can detect it
+                        if (os.platform() === 'darwin') {
+                            // macOS: use osascript to set clipboard to image data
+                            const appleClass = mimeType === 'image/jpeg' ? '«class JPEG»'
+                                : mimeType === 'image/gif' ? '«class GIFf»'
+                                : '«class PNGf»';
+                            const script = `set the clipboard to (read (POSIX file "${tmpFile}") as ${appleClass})`;
+                            await new Promise((resolve, reject) => {
+                                execFile('osascript', ['-e', script], (err) => {
+                                    if (err) reject(err); else resolve();
+                                });
+                            });
+                            log.info('Image copied to system clipboard (macOS)');
+                        } else if (os.platform() === 'linux') {
+                            // Linux: use xclip
+                            await new Promise((resolve, reject) => {
+                                execFile('xclip', ['-selection', 'clipboard', '-t', mimeType, '-i', tmpFile], (err) => {
+                                    if (err) reject(err); else resolve();
+                                });
+                            });
+                            log.info('Image copied to system clipboard (Linux)');
+                        }
+                        // Windows: not supported yet, but the temp file is still available
+
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'output',
+                                data: `\x1b[36m[Image pasted to clipboard: ${data.name || 'image'}]\x1b[0m`
+                            }));
+                        }
+                    } catch (imgErr) {
+                        log.error({ err: imgErr }, 'Error handling paste-image');
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'output',
+                                data: `\r\n\x1b[31m[Image paste failed: ${imgErr.message}]\x1b[0m\r\n`
+                            }));
+                        }
                     }
                 }
             } catch (error) {

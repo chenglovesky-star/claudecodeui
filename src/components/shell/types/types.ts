@@ -28,7 +28,14 @@ export type ShellInputMessage = {
   data: string;
 };
 
-export type ShellOutgoingMessage = ShellInitMessage | ShellResizeMessage | ShellInputMessage;
+export type ShellPasteImageMessage = {
+  type: 'paste-image';
+  data: string;      // base64-encoded image data (no data: prefix)
+  mimeType: string;   // e.g. 'image/png'
+  name: string;       // original filename
+};
+
+export type ShellOutgoingMessage = ShellInitMessage | ShellResizeMessage | ShellInputMessage | ShellPasteImageMessage;
 
 export type ShellIncomingMessage =
   | { type: 'output'; data: string }

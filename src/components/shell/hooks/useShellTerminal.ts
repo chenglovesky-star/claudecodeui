@@ -142,6 +142,36 @@ export function useShellTerminal({
     // Handle paste via the native paste event – works reliably across browsers
     // without requiring the async clipboard-read permission.
     const handlePaste = (e: ClipboardEvent) => {
+      // Check for image content first
+      const items = e.clipboardData ? Array.from(e.clipboardData.items) : [];
+      const imageItem = items.find((item) => item.type.startsWith('image/'));
+
+      if (imageItem) {
+        e.preventDefault();
+        const file = imageItem.getAsFile();
+        if (!file) return;
+
+        // Read as base64 and send via WebSocket
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          // result is "data:image/png;base64,iVBOR..."
+          const commaIndex = result.indexOf(',');
+          if (commaIndex === -1) return;
+          const base64Data = result.slice(commaIndex + 1);
+
+          sendSocketMessage(wsRef.current, {
+            type: 'paste-image',
+            data: base64Data,
+            mimeType: file.type,
+            name: file.name || 'clipboard-image.png',
+          });
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      // Fall back to text paste
       const text = e.clipboardData?.getData('text');
       if (text) {
         e.preventDefault();
