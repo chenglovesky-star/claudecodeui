@@ -1,8 +1,11 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import type { MutableRefObject } from 'react';
 import type { Project, ProjectSession } from '../../../types/app';
 import Shell from '../../shell/view/Shell';
 import StandaloneShellEmptyState from './subcomponents/StandaloneShellEmptyState';
 import StandaloneShellHeader from './subcomponents/StandaloneShellHeader';
+import ShellPresetBar from './ShellPresetBar';
+import { useShellPresets } from '../hooks/useShellPresets';
 
 type StandaloneShellProps = {
   project?: Project | null;
@@ -34,6 +37,16 @@ export default function StandaloneShell({
   minimal = false,
 }: StandaloneShellProps) {
   const [isCompleted, setIsCompleted] = useState(false);
+  const wsRefFromShell = useRef<MutableRefObject<WebSocket | null> | null>(null);
+  const { presets, activePresetId, switchPreset } = useShellPresets(project);
+
+  const handleWsRef = useCallback((ref: MutableRefObject<WebSocket | null>) => {
+    wsRefFromShell.current = ref;
+  }, []);
+
+  const handlePresetSwitch = useCallback((presetId: string) => {
+    switchPreset(wsRefFromShell.current?.current ?? null, presetId);
+  }, [switchPreset]);
 
   // Keep `compact` in the public API for compatibility with existing callers.
   void compact;
@@ -58,6 +71,14 @@ export default function StandaloneShell({
         <StandaloneShellHeader title={title} isCompleted={isCompleted} onClose={onClose} />
       )}
 
+      {presets.length > 0 && (
+        <ShellPresetBar
+          presets={presets}
+          activePresetId={activePresetId}
+          onSwitch={handlePresetSwitch}
+        />
+      )}
+
       <div className="min-h-0 w-full flex-1">
         <Shell
           selectedProject={project}
@@ -67,6 +88,7 @@ export default function StandaloneShell({
           onProcessComplete={handleProcessComplete}
           minimal={minimal}
           autoConnect={minimal ? true : autoConnect}
+          onWsRef={handleWsRef}
         />
       </div>
     </div>
