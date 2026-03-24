@@ -575,4 +575,27 @@ function cloneGitHubRepository(githubUrl, destinationPath, githubToken = null) {
   });
 }
 
+router.get('/:projectName/shell-presets', authorizeProject, async (req, res) => {
+  try {
+    const fsMod = (await import('fs')).promises;
+    const pathMod = (await import('path')).default;
+    const project = req.authorizedProject;
+    const presetsPath = pathMod.join(project.path, 'shell-presets.json');
+
+    try {
+      const raw = await fsMod.readFile(presetsPath, 'utf-8');
+      const presets = JSON.parse(raw);
+      const safePresets = Array.isArray(presets)
+        ? presets.map(p => ({ id: p.id, label: p.label }))
+        : [];
+      res.json({ presets: safePresets });
+    } catch {
+      res.json({ presets: [] });
+    }
+  } catch (error) {
+    console.error('Error reading shell presets:', error);
+    res.status(500).json({ error: 'Failed to read shell presets' });
+  }
+});
+
 export default router;
