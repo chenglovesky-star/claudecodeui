@@ -1,10 +1,11 @@
 type ShellConnectionOverlayProps = {
-  mode: 'loading' | 'connect' | 'connecting';
+  mode: 'loading' | 'connect' | 'connecting' | 'reconnecting';
   description: string;
   loadingLabel: string;
   connectLabel: string;
   connectTitle: string;
   connectingLabel: string;
+  reconnectingLabel: string;
   onConnect: () => void;
 };
 
@@ -15,6 +16,7 @@ export default function ShellConnectionOverlay({
   connectLabel,
   connectTitle,
   connectingLabel,
+  reconnectingLabel,
   onConnect,
 }: ShellConnectionOverlayProps) {
   if (mode === 'loading') {
@@ -45,6 +47,21 @@ export default function ShellConnectionOverlay({
     );
   }
 
+  if (mode === 'reconnecting') {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-90 p-4">
+        <div className="w-full max-w-sm text-center">
+          <div className="flex items-center justify-center space-x-3 text-blue-400">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"></div>
+            <span className="text-base font-medium">{reconnectingLabel}</span>
+          </div>
+          <p className="mt-3 px-2 text-sm text-gray-400">{description}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // mode === 'connecting'
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-90 p-4">
       <div className="w-full max-w-sm text-center">
