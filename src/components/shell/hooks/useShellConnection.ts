@@ -30,6 +30,8 @@ type UseShellConnectionOptions = {
 type UseShellConnectionResult = {
   isConnected: boolean;
   isConnecting: boolean;
+  isReconnecting: boolean;
+  reconnectAttempt: number;
   closeSocket: () => void;
   connectToShell: () => void;
   disconnectFromShell: () => void;
@@ -54,6 +56,15 @@ export function useShellConnection({
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const connectingRef = useRef(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const intentionalDisconnectRef = useRef(false);
+  const unmountedRef = useRef(false);
+
+  const MAX_RECONNECT_ATTEMPTS = 5;
+  const RECONNECT_BASE_DELAY_MS = 1000;
+  const RECONNECT_MAX_DELAY_MS = 10000;
 
   const handleProcessCompletion = useCallback(
     (output: string) => {
@@ -133,8 +144,17 @@ export function useShellConnection({
         wsRef.current = socket;
 
         socket.onopen = () => {
+          if (unmountedRef.current) return;
+
+          // 如果是重连，清屏以准备接收后端完整回放
+          if (reconnectTimerRef.current !== null || isReconnecting) {
+            terminalRef.current?.clear();
+          }
+
           setIsConnected(true);
           setIsConnecting(false);
+          setIsReconnecting(false);
+          setReconnectAttempt(0);
           connectingRef.current = false;
           setAuthUrl('');
 
@@ -168,13 +188,50 @@ export function useShellConnection({
         };
 
         socket.onclose = () => {
+          if (unmountedRef.current) return;
+
           setIsConnected(false);
           setIsConnecting(false);
           connectingRef.current = false;
-          clearTerminalScreen();
+          // 注意：不再调用 clearTerminalScreen()，保留终端内容
+
+          if (intentionalDisconnectRef.current) {
+            return;
+          }
+
+          setReconnectAttempt((prev) => {
+            const attempt = prev;
+
+            if (attempt >= MAX_RECONNECT_ATTEMPTS) {
+              setIsReconnecting(false);
+              return 0;
+            }
+
+            setIsReconnecting(true);
+
+            const baseDelay = Math.min(
+              RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt),
+              RECONNECT_MAX_DELAY_MS,
+            );
+            const jitter = baseDelay * (0.7 + Math.random() * 0.6);
+
+            if (reconnectTimerRef.current) {
+              clearTimeout(reconnectTimerRef.current);
+            }
+
+            reconnectTimerRef.current = setTimeout(() => {
+              reconnectTimerRef.current = null;
+              if (!unmountedRef.current && !intentionalDisconnectRef.current) {
+                connectWebSocket(true);
+              }
+            }, jitter);
+
+            return attempt + 1;
+          });
         };
 
         socket.onerror = () => {
+          if (unmountedRef.current) return;
           setIsConnected(false);
           setIsConnecting(false);
           connectingRef.current = false;
@@ -186,13 +243,13 @@ export function useShellConnection({
       }
     },
     [
-      clearTerminalScreen,
       fitAddonRef,
       handleSocketMessage,
       initialCommandRef,
       isConnected,
       isConnecting,
       isPlainShellRef,
+      isReconnecting,
       selectedProjectRef,
       selectedSessionRef,
       setAuthUrl,
@@ -206,12 +263,30 @@ export function useShellConnection({
       return;
     }
 
+    intentionalDisconnectRef.current = false;
+
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    setReconnectAttempt(0);
+    setIsReconnecting(false);
+
     connectingRef.current = true;
     setIsConnecting(true);
     connectWebSocket(true);
   }, [connectWebSocket, isConnected, isConnecting, isInitialized]);
 
   const disconnectFromShell = useCallback(() => {
+    intentionalDisconnectRef.current = true;
+
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    setReconnectAttempt(0);
+    setIsReconnecting(false);
+
     closeSocket();
     clearTerminalScreen();
     setIsConnected(false);
@@ -234,9 +309,67 @@ export function useShellConnection({
     };
   }, [autoConnect, connectToShell, isConnected, isConnecting, isInitialized]);
 
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (intentionalDisconnectRef.current) return;
+      if (!isInitialized) return;
+
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        setReconnectAttempt(0);
+        if (reconnectTimerRef.current) {
+          clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = null;
+        }
+        connectingRef.current = false;
+        setIsConnecting(false);
+        connectWebSocket(true);
+      }
+    };
+
+    const handleOnline = () => {
+      if (intentionalDisconnectRef.current) return;
+      if (!isInitialized) return;
+
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        setReconnectAttempt(0);
+        if (reconnectTimerRef.current) {
+          clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = null;
+        }
+        connectingRef.current = false;
+        setIsConnecting(false);
+        connectWebSocket(true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [connectWebSocket, isInitialized, wsRef]);
+
   return {
     isConnected,
     isConnecting,
+    isReconnecting,
+    reconnectAttempt,
     closeSocket,
     connectToShell,
     disconnectFromShell,
