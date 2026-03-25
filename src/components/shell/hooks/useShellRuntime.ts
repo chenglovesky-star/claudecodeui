@@ -6,6 +6,18 @@ import { copyTextToClipboard } from '../../../utils/clipboard';
 import { useShellConnection } from './useShellConnection';
 import { useShellTerminal } from './useShellTerminal';
 
+function simpleHash(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+const PTY_SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes，与后端一致
+
 export function useShellRuntime({
   selectedProject,
   selectedSession,
@@ -105,7 +117,7 @@ export function useShellRuntime({
     closeSocket,
   });
 
-  const { isConnected, isConnecting, connectToShell, disconnectFromShell } = useShellConnection({
+  const { isConnected, isConnecting, isReconnecting, reconnectAttempt, connectToShell, disconnectFromShell } = useShellConnection({
     wsRef,
     terminalRef,
     fitAddonRef,
@@ -122,14 +134,74 @@ export function useShellRuntime({
     onOutputRef,
   });
 
+  // 连接成功时持久化 shell 会话信息
+  useEffect(() => {
+    if (!isConnected || !selectedProject) {
+      return;
+    }
+
+    const projectPath = selectedProject.fullPath || selectedProject.path || '';
+    const key = `shell-active-session-${simpleHash(projectPath)}`;
+    const value = JSON.stringify({
+      sessionId: selectedSession?.id || null,
+      provider: selectedSession?.__provider || localStorage.getItem('selected-provider') || 'claude',
+      projectPath,
+      connectedAt: Date.now(),
+    });
+
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // localStorage unavailable or full
+    }
+  }, [isConnected, selectedProject, selectedSession]);
+
+  // 页面加载时自动恢复上次的 shell 会话
+  useEffect(() => {
+    if (!isInitialized || isConnected || isConnecting || !selectedProject || !autoConnect) {
+      return;
+    }
+
+    const projectPath = selectedProject.fullPath || selectedProject.path || '';
+    const key = `shell-active-session-${simpleHash(projectPath)}`;
+
+    try {
+      const stored = localStorage.getItem(key);
+      if (!stored) return;
+
+      const { connectedAt } = JSON.parse(stored);
+      const elapsed = Date.now() - connectedAt;
+
+      if (elapsed > PTY_SESSION_TIMEOUT_MS) {
+        // 超过 30 分钟，PTY 已销毁，清除旧记录
+        localStorage.removeItem(key);
+        return;
+      }
+
+      // 在 30 分钟内，自动重连
+      connectToShell();
+    } catch {
+      // JSON parse error or localStorage unavailable
+    }
+  }, [isInitialized, isConnected, isConnecting, selectedProject, autoConnect, connectToShell]);
+
   useEffect(() => {
     if (!isRestarting) {
       return;
     }
 
+    if (selectedProject) {
+      const projectPath = selectedProject.fullPath || selectedProject.path || '';
+      try {
+        localStorage.removeItem(`shell-active-session-${simpleHash(projectPath)}`);
+      } catch {
+        // localStorage unavailable
+      }
+    }
+
     disconnectFromShell();
     disposeTerminal();
-  }, [disconnectFromShell, disposeTerminal, isRestarting]);
+  }, [disconnectFromShell, disposeTerminal, isRestarting, selectedProject]);
 
   useEffect(() => {
     if (selectedProject) {
@@ -156,6 +228,8 @@ export function useShellRuntime({
     isConnected,
     isInitialized,
     isConnecting,
+    isReconnecting,
+    reconnectAttempt,
     authUrl,
     authUrlVersion,
     connectToShell,
