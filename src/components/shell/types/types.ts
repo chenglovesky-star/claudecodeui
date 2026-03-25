@@ -85,6 +85,8 @@ export type UseShellRuntimeResult = {
   isConnected: boolean;
   isInitialized: boolean;
   isConnecting: boolean;
+  isReconnecting: boolean;
+  reconnectAttempt: number;
   authUrl: string;
   authUrlVersion: number;
   connectToShell: () => void;
