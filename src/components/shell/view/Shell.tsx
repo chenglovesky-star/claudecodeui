@@ -60,6 +60,8 @@ export default function Shell({
     isConnected,
     isInitialized,
     isConnecting,
+    isReconnecting,
+    reconnectAttempt,
     authUrl,
     authUrlVersion,
     connectToShell,
@@ -226,8 +228,26 @@ export default function Shell({
       })
     : t('shell.startCli', { projectName: selectedProject.displayName });
 
-  const overlayMode = !isInitialized ? 'loading' : isConnecting ? 'connecting' : !isConnected ? 'connect' : null;
-  const overlayDescription = overlayMode === 'connecting' ? connectingDescription : readyDescription;
+  const reconnectingDescription = t('shell.reconnecting', {
+    attempt: reconnectAttempt,
+    max: 5,
+    defaultValue: 'Reconnecting... ({{attempt}}/{{max}})',
+  });
+
+  const overlayMode = !isInitialized
+    ? 'loading'
+    : isReconnecting
+      ? 'reconnecting'
+      : isConnecting
+        ? 'connecting'
+        : !isConnected
+          ? 'connect'
+          : null;
+  const overlayDescription = overlayMode === 'reconnecting'
+    ? reconnectingDescription
+    : overlayMode === 'connecting'
+      ? connectingDescription
+      : readyDescription;
 
   return (
     <div className="flex h-full w-full flex-col bg-gray-900">
@@ -264,6 +284,7 @@ export default function Shell({
             connectLabel={t('shell.actions.connect')}
             connectTitle={t('shell.actions.connectTitle')}
             connectingLabel={t('shell.connecting')}
+            reconnectingLabel={t('shell.reconnectingLabel', { defaultValue: 'Reconnecting...' })}
             onConnect={connectToShell}
           />
         )}
