@@ -31,6 +31,7 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
   });
 
   const lastProviderRef = useRef(provider);
+  const lastSessionIdRef = useRef(selectedSession?.id);
 
   useEffect(() => {
     if (!selectedSession?.id) {
@@ -40,6 +41,26 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
     const savedMode = localStorage.getItem(`permissionMode-${selectedSession.id}`);
     setPermissionMode((savedMode as PermissionMode) || 'default');
   }, [selectedSession?.id]);
+
+  // Restore per-session model when switching sessions
+  useEffect(() => {
+    if (!selectedSession?.id || selectedSession.id === lastSessionIdRef.current) {
+      return;
+    }
+    lastSessionIdRef.current = selectedSession.id;
+
+    const savedModel = localStorage.getItem(`session-model-${selectedSession.id}`);
+    if (!savedModel) {
+      return;
+    }
+
+    const sessionProvider = selectedSession.__provider || provider;
+    if (sessionProvider === 'claude') { setClaudeModel(savedModel); localStorage.setItem('claude-model', savedModel); }
+    else if (sessionProvider === 'claude-cli') { setClaudeCliModel(savedModel); localStorage.setItem('claude-cli-model', savedModel); }
+    else if (sessionProvider === 'cursor') { setCursorModel(savedModel); localStorage.setItem('cursor-model', savedModel); }
+    else if (sessionProvider === 'codex') { setCodexModel(savedModel); localStorage.setItem('codex-model', savedModel); }
+    else if (sessionProvider === 'gemini') { setGeminiModel(savedModel); localStorage.setItem('gemini-model', savedModel); }
+  }, [selectedSession?.id, selectedSession?.__provider, provider, setClaudeModel, setClaudeCliModel, setCursorModel, setCodexModel, setGeminiModel]);
 
   useEffect(() => {
     if (!selectedSession?.__provider || selectedSession.__provider === provider) {

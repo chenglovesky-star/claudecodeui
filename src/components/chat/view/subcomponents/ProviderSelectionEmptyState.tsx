@@ -138,6 +138,11 @@ export default function ProviderSelectionEmptyState({
     else if (provider === 'codex') { setCodexModel(value); localStorage.setItem('codex-model', value); }
     else if (provider === 'gemini') { setGeminiModel(value); localStorage.setItem('gemini-model', value); }
     else { setCursorModel(value); localStorage.setItem('cursor-model', value); }
+
+    // Save model per-session so switching sessions restores the correct model
+    if (selectedSession?.id) {
+      localStorage.setItem(`session-model-${selectedSession.id}`, value);
+    }
   };
 
   const handleTestContext = async () => {

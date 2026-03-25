@@ -714,6 +714,17 @@ export function useChatComposerState({
         }
       }
 
+      // Save model per-session so switching sessions restores the correct model
+      const modelForSession =
+        provider === 'claude' ? claudeModel
+          : provider === 'claude-cli' ? claudeCliModel
+            : provider === 'cursor' ? cursorModel
+              : provider === 'codex' ? codexModel
+                : geminiModel;
+      if (effectiveSessionId && !isTemporarySessionId(effectiveSessionId)) {
+        localStorage.setItem(`session-model-${effectiveSessionId}`, modelForSession);
+      }
+
       setInput('');
       inputValueRef.current = '';
       resetCommandMenuState();
