@@ -6,6 +6,9 @@ import type { Project, ProjectSession } from '../../../types/app';
 import { TERMINAL_INIT_DELAY_MS } from '../constants/constants';
 import { getShellWebSocketUrl, parseShellMessage, sendSocketMessage } from '../utils/socket';
 
+// ── Output throttling: batch terminal.write() via rAF to keep main thread responsive ──
+const OUTPUT_BUFFER_MAX_BYTES = 65536; // 64KB per frame cap
+
 const ANSI_ESCAPE_REGEX =
   /(?:\u001B\[[0-?]*[ -/]*[@-~]|\u009B[0-?]*[ -/]*[@-~]|\u001B\][^\u0007\u001B]*(?:\u0007|\u001B\\)|\u009D[^\u0007\u009C]*(?:\u0007|\u009C)|\u001B[PX^_][^\u001B]*\u001B\\|[\u0090\u0098\u009E\u009F][^\u009C]*\u009C|\u001B[@-Z\\-_])/g;
 const PROCESS_EXIT_REGEX = /Process exited with code (\d+)/;
@@ -60,6 +63,11 @@ export function useShellConnection({
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const intentionalDisconnectRef = useRef(false);
+
+  // ── Output batching refs ──
+  const outputBufferRef = useRef<string[]>([]);
+  const outputBufferSizeRef = useRef(0);
+  const rafHandleRef = useRef<number | null>(null);
   const unmountedRef = useRef(false);
 
   const MAX_RECONNECT_ATTEMPTS = 5;
@@ -92,6 +100,22 @@ export function useShellConnection({
     [isPlainShellRef, onProcessCompleteRef],
   );
 
+  // Flush buffered output to terminal in a single write per animation frame.
+  // This keeps the main thread responsive for user input during high-frequency output.
+  const flushOutputBuffer = useCallback(() => {
+    rafHandleRef.current = null;
+
+    const chunks = outputBufferRef.current;
+    if (chunks.length === 0) return;
+
+    const joined = chunks.join('');
+    outputBufferRef.current = [];
+    outputBufferSizeRef.current = 0;
+
+    terminalRef.current?.write(joined);
+    onOutputRef?.current?.();
+  }, [onOutputRef, terminalRef]);
+
   const handleSocketMessage = useCallback(
     (rawPayload: string) => {
       const message = parseShellMessage(rawPayload);
@@ -103,8 +127,24 @@ export function useShellConnection({
       if (message.type === 'output') {
         const output = typeof message.data === 'string' ? message.data : '';
         handleProcessCompletion(output);
-        terminalRef.current?.write(output);
-        onOutputRef?.current?.();
+
+        // Append to buffer instead of writing immediately
+        outputBufferRef.current.push(output);
+        outputBufferSizeRef.current += output.length;
+
+        // If buffer exceeds cap, flush immediately to avoid memory buildup
+        if (outputBufferSizeRef.current >= OUTPUT_BUFFER_MAX_BYTES) {
+          if (rafHandleRef.current !== null) {
+            cancelAnimationFrame(rafHandleRef.current);
+          }
+          flushOutputBuffer();
+          return;
+        }
+
+        // Schedule flush on next animation frame (batches ~16ms of output)
+        if (rafHandleRef.current === null) {
+          rafHandleRef.current = requestAnimationFrame(flushOutputBuffer);
+        }
         return;
       }
 
@@ -115,7 +155,7 @@ export function useShellConnection({
         }
       }
     },
-    [handleProcessCompletion, onOutputRef, setAuthUrl, terminalRef],
+    [flushOutputBuffer, handleProcessCompletion, setAuthUrl],
   );
 
   const connectWebSocket = useCallback(
@@ -284,6 +324,14 @@ export function useShellConnection({
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
+    // Cancel pending output flush
+    if (rafHandleRef.current !== null) {
+      cancelAnimationFrame(rafHandleRef.current);
+      rafHandleRef.current = null;
+    }
+    outputBufferRef.current = [];
+    outputBufferSizeRef.current = 0;
+
     setReconnectAttempt(0);
     setIsReconnecting(false);
 
@@ -316,6 +364,10 @@ export function useShellConnection({
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
+      }
+      if (rafHandleRef.current !== null) {
+        cancelAnimationFrame(rafHandleRef.current);
+        rafHandleRef.current = null;
       }
     };
   }, []);
