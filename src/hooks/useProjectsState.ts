@@ -415,7 +415,7 @@ export function useProjectsState({
     (project: Project) => {
       setSelectedProject(project);
       setSelectedSession(null);
-      setActiveTab('chat');
+      setActiveTab('shell');
       navigate('/');
 
       if (isMobile) {
