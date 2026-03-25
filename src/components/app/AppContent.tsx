@@ -36,6 +36,7 @@ export default function AppContent() {
     isLoadingProjects,
     isInputFocused,
     externalMessageUpdate,
+    shellRestartKey,
     setActiveTab,
     setSidebarOpen,
     setIsInputFocused,
@@ -160,6 +161,7 @@ export default function AppContent() {
           onNavigateToSession={(targetSessionId: string) => navigate(`/session/${targetSessionId}`)}
           onShowSettings={() => setShowSettings(true)}
           externalMessageUpdate={externalMessageUpdate}
+          shellRestartKey={shellRestartKey}
         />
       </div>
 

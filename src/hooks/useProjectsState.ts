@@ -147,6 +147,7 @@ export function useProjectsState({
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState('agents');
   const [externalMessageUpdate, setExternalMessageUpdate] = useState(0);
+  const [shellRestartKey, setShellRestartKey] = useState(0);
 
   const loadingProgressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -416,6 +417,7 @@ export function useProjectsState({
       setSelectedProject(project);
       setSelectedSession(null);
       setActiveTab('shell');
+      setShellRestartKey((prev) => prev + 1);
       navigate('/');
 
       if (isMobile) {
@@ -554,6 +556,7 @@ export function useProjectsState({
     showSettings,
     settingsInitialTab,
     externalMessageUpdate,
+    shellRestartKey,
     setActiveTab,
     setSidebarOpen,
     setIsInputFocused,
