@@ -221,7 +221,9 @@
     "resumeSession": "세션 재개: {{displayName}}...",
     "runCommand": "{{projectName}}에서 {{command}} 실행",
     "startCli": "{{projectName}}에서 Claude CLI 시작",
-    "defaultCommand": "명령어"
+    "defaultCommand": "명령어",
+    "reconnecting": "재연결 중... ({{attempt}}/{{max}})",
+    "reconnectingLabel": "재연결 중..."
   },
   "claudeStatus": {
     "actions": {

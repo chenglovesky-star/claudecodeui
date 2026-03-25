@@ -241,7 +241,9 @@
     "resumeSession": "Resume session: {{displayName}}...",
     "runCommand": "Run {{command}} in {{projectName}}",
     "startCli": "Starting Claude CLI in {{projectName}}",
-    "defaultCommand": "command"
+    "defaultCommand": "command",
+    "reconnecting": "Reconnecting... ({{attempt}}/{{max}})",
+    "reconnectingLabel": "Reconnecting..."
   },
   "claudeStatus": {
     "actions": {

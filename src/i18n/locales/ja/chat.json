@@ -213,7 +213,9 @@
     "resumeSession": "セッションを再開: {{displayName}}...",
     "runCommand": "{{projectName}}で{{command}}を実行",
     "startCli": "{{projectName}}でClaude CLIを起動しています",
-    "defaultCommand": "コマンド"
+    "defaultCommand": "コマンド",
+    "reconnecting": "再接続中... ({{attempt}}/{{max}})",
+    "reconnectingLabel": "再接続中..."
   },
   "claudeStatus": {
     "actions": {
