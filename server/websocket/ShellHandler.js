@@ -83,8 +83,7 @@ function shouldAutoOpenUrlFromOutput(value = '') {
 // ─── Per-user HOME isolation ─────────────────────────────────────────────────
 
 /**
- * Recursively copy a directory (shallow: files are copied, subdirs are recursed).
- * Skips if source doesn't exist.
+ * Recursively copy a directory. Skips symlinks and special files for safety.
  */
 function copyDirSync(src, dest) {
     if (!fsSync.existsSync(src)) return;
@@ -92,13 +91,16 @@ function copyDirSync(src, dest) {
         fsSync.mkdirSync(dest, { recursive: true });
     }
     for (const entry of fsSync.readdirSync(src, { withFileTypes: true })) {
+        // Skip symlinks to avoid copying unintended external content
+        if (entry.isSymbolicLink()) continue;
         const srcPath = path.join(src, entry.name);
         const destPath = path.join(dest, entry.name);
         if (entry.isDirectory()) {
             copyDirSync(srcPath, destPath);
-        } else {
+        } else if (entry.isFile()) {
             fsSync.copyFileSync(srcPath, destPath);
         }
+        // Skip sockets, FIFOs, device files
     }
 }
 
@@ -129,13 +131,25 @@ function setupUserHome(userId) {
         }
 
         // Copy .claude/ directory (NOT symlink — each user needs writable isolation).
-        // Only copy if user's .claude/ doesn't exist yet (first session).
-        // This avoids re-copying on every session start.
+        // Re-copy when base .claude/ has been updated (version marker tracks this).
         const userClaudeDir = path.join(userHome, '.claude');
         const baseClaudeDir = path.join(baseHome, '.claude');
-        if (!fsSync.existsSync(userClaudeDir) && fsSync.existsSync(baseClaudeDir)) {
-            copyDirSync(baseClaudeDir, userClaudeDir);
-            log.info(`[MCP] Copied .claude/ dir for user ${userId}`);
+        if (fsSync.existsSync(baseClaudeDir)) {
+            const baseVersion = (() => {
+                try {
+                    return fsSync.statSync(path.join(baseClaudeDir, 'settings.json')).mtimeMs.toString();
+                } catch { return '0'; }
+            })();
+            const versionFile = path.join(userClaudeDir, '.base-version');
+            const userVersion = (() => {
+                try { return fsSync.readFileSync(versionFile, 'utf8'); } catch { return ''; }
+            })();
+
+            if (!fsSync.existsSync(userClaudeDir) || userVersion !== baseVersion) {
+                copyDirSync(baseClaudeDir, userClaudeDir);
+                fsSync.writeFileSync(versionFile, baseVersion, 'utf8');
+                log.info(`[MCP] Copied .claude/ dir for user ${userId} (version=${baseVersion})`);
+            }
         }
 
         // Copy base .claude.json then merge user's MCP servers
@@ -158,7 +172,9 @@ function setupUserHome(userId) {
             config.mcpServers = { ...(config.mcpServers || {}), ...mcpServers };
         }
 
-        fsSync.writeFileSync(userConfigPath, JSON.stringify(config, null, 2), 'utf8');
+        fsSync.writeFileSync(userConfigPath, JSON.stringify(config, null, 2), { encoding: 'utf8', mode: 0o600 });
+        // Restrict user HOME directory to owner-only
+        try { fsSync.chmodSync(userHome, 0o700); } catch { /* non-fatal */ }
         log.info(`[MCP] Setup user HOME ${userHome} with ${rows?.length || 0} MCP server(s)`);
 
         return userHome;
@@ -664,27 +680,59 @@ export class ShellHandler {
                             presetBaseUrl: preset.baseUrl,
                         });
 
-                        shellProcess.onData((outputData) => {
+                        // Reuse the same onData handler as init path (URL detection, buffer, auth URL)
+                        shellProcess.onData((data) => {
                             const s = this.ptySessionsMap.get(ptySessionKey);
                             if (!s) return;
+
                             if (s.buffer.length < 5000) {
-                                s.buffer.push(outputData);
+                                s.buffer.push(data);
                             } else {
                                 s.buffer.shift();
-                                s.buffer.push(outputData);
+                                s.buffer.push(data);
                             }
+
                             if (s.ws && s.ws.readyState === WebSocket.OPEN) {
+                                let outputData = data;
+
+                                const cleanChunk = stripAnsiSequences(data);
+                                urlDetectionBuffer = `${urlDetectionBuffer}${cleanChunk}`.slice(-SHELL_URL_PARSE_BUFFER_LIMIT);
+
+                                outputData = outputData.replace(
+                                    /OPEN_URL:\s*(https?:\/\/[^\s\x1b\x07]+)/g,
+                                    '[INFO] Opening in browser: $1'
+                                );
+
+                                const emitAuthUrl = (detectedUrl, autoOpen = false) => {
+                                    const normalizedUrl = normalizeDetectedUrl(detectedUrl);
+                                    if (!normalizedUrl) return;
+                                    if (!announcedAuthUrls.has(normalizedUrl)) {
+                                        announcedAuthUrls.add(normalizedUrl);
+                                        s.ws.send(JSON.stringify({ type: 'auth_url', url: normalizedUrl, autoOpen }));
+                                    }
+                                };
+
+                                const dedupedUrls = Array.from(new Set(
+                                    extractUrlsFromText(urlDetectionBuffer).map(normalizeDetectedUrl).filter(Boolean)
+                                )).filter((url, _, urls) => !urls.some((o) => o !== url && o.startsWith(url)));
+
+                                dedupedUrls.forEach((url) => emitAuthUrl(url, false));
+
+                                if (shouldAutoOpenUrlFromOutput(cleanChunk) && dedupedUrls.length > 0) {
+                                    emitAuthUrl(dedupedUrls.reduce((a, b) => b.length > a.length ? b : a), true);
+                                }
+
                                 s.ws.send(JSON.stringify({ type: 'output', data: outputData }));
                             }
                         });
 
                         shellProcess.onExit((exitCode) => {
-                            log.info(`Switched shell exited: ${exitCode.exitCode}`);
+                            log.info(`Switched shell exited: ${exitCode.exitCode} signal: ${exitCode.signal}`);
                             const s = this.ptySessionsMap.get(ptySessionKey);
                             if (s?.ws?.readyState === WebSocket.OPEN) {
                                 s.ws.send(JSON.stringify({
                                     type: 'output',
-                                    data: `\r\n\x1b[33mProcess exited with code ${exitCode.exitCode}\x1b[0m\r\n`
+                                    data: `\r\n\x1b[33mProcess exited with code ${exitCode.exitCode}${exitCode.signal ? ` (${exitCode.signal})` : ''}\x1b[0m\r\n`
                                 }));
                             }
                             if (s?.timeoutId) clearTimeout(s.timeoutId);
@@ -776,7 +824,7 @@ export class ShellHandler {
             settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL = preset.defaultSonnetModel || '';
             settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL = preset.defaultOpusModel || '';
 
-            await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+            await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), { encoding: 'utf-8', mode: 0o600 });
             log.info(`Updated settings.json for preset: ${preset.label}`);
         } catch (err) {
             log.error({ err }, 'Failed to update settings.json');
