@@ -622,8 +622,8 @@ export class ShellHandler {
                         if (session.timeoutId) clearTimeout(session.timeoutId);
                         this.ptySessionsMap.delete(ptySessionKey);
 
-                        // Reuse the per-user HOME from the original session
-                        const presetUserHome = session.userHome || os.homedir();
+                        // Reuse per-user HOME, or set up fresh if session predates isolation
+                        const presetUserHome = session.userHome || (userId ? setupUserHome(userId) : os.homedir());
 
                         // Update settings.json in the user's own HOME (not shared)
                         await this.#updateSettingsJson(preset, presetUserHome);
