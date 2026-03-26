@@ -15,9 +15,8 @@ const MCP_SQL_GATEWAY_URL = process.env.MCP_SQL_GATEWAY_URL || 'http://ime-data-
 
 /**
  * Auto-configure iflytek-sql-gateway MCP server with the user's login credentials.
- * Only saves to per-user DB. MCP configs are injected into project-level
- * .claude/settings.local.json when shell sessions start (see ShellHandler.js).
- * This avoids writing to shared ~/.claude.json which causes multi-user conflicts.
+ * Saves to per-user DB only. MCP is injected into per-user HOME at shell spawn time
+ * (see ShellHandler.js setupUserHome) for complete user isolation.
  */
 function syncMcpSqlGateway(username, password, userId) {
   if (!userId) return;
@@ -30,21 +29,6 @@ function syncMcpSqlGateway(username, password, userId) {
     console.log(`[MCP] DB: saved ${MCP_SQL_GATEWAY_NAME} for user ${username} (id=${userId})`);
   } catch (err) {
     console.error(`[MCP] DB: failed to save ${MCP_SQL_GATEWAY_NAME}:`, err.message);
-  }
-
-  // Clean up any stale entry from ~/.claude.json to avoid OAuth conflict
-  try {
-    const configPath = path.join(process.env.HOME || '', '.claude.json');
-    if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      if (config.mcpServers && config.mcpServers[MCP_SQL_GATEWAY_NAME]) {
-        delete config.mcpServers[MCP_SQL_GATEWAY_NAME];
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
-        console.log(`[MCP] Cleaned stale ${MCP_SQL_GATEWAY_NAME} from ~/.claude.json`);
-      }
-    }
-  } catch {
-    // Non-fatal
   }
 }
 

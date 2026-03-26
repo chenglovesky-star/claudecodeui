@@ -80,44 +80,62 @@ function shouldAutoOpenUrlFromOutput(value = '') {
     );
 }
 
-// ─── Per-user MCP injection ──────────────────────────────────────────────────
+// ─── Per-user HOME isolation ─────────────────────────────────────────────────
 
 /**
- * Write user's MCP servers from DB into the project-level settings.local.json
- * so Claude CLI picks them up when spawned in shell mode.
+ * Create a per-user HOME directory with the user's MCP config.
+ * Returns the user-specific HOME path to be used as HOME env var in PTY spawn.
+ *
+ * Structure: /home/claude/users/{userId}/
+ *   ├── .claude.json         (copy from base + user's MCP servers)
+ *   └── .claude/             (symlink to base ~/.claude for settings, skills, etc.)
+ *
+ * Claude CLI reads ~/.claude.json → resolves to user-specific file → per-user MCP.
  */
-function injectUserMcpConfig(projectPath, userId) {
+function setupUserHome(userId) {
+    const baseHome = os.homedir();
+    const userHome = path.join(baseHome, 'users', String(userId));
+
     try {
-        const rows = userMcpDb.getAll(userId);
-        if (!rows || rows.length === 0) return;
-
-        const mcpServers = userMcpDb.toSdkFormat(rows);
-        if (Object.keys(mcpServers).length === 0) return;
-
-        // Write to project-level .claude/settings.local.json (per-folder isolation).
-        // Each user works in their own project directory, so MCP configs don't conflict.
-        // This also avoids the OAuth fallback bug caused by headerless entries in ~/.claude.json.
-        const claudeDir = path.join(projectPath, '.claude');
-        if (!fsSync.existsSync(claudeDir)) {
-            fsSync.mkdirSync(claudeDir, { recursive: true });
+        // Create user home directory
+        if (!fsSync.existsSync(userHome)) {
+            fsSync.mkdirSync(userHome, { recursive: true });
         }
 
-        const settingsPath = path.join(claudeDir, 'settings.local.json');
-        let settings = {};
-        if (fsSync.existsSync(settingsPath)) {
+        // Symlink .claude/ dir (settings, skills, projects, etc.)
+        const userClaudeDir = path.join(userHome, '.claude');
+        const baseClaudeDir = path.join(baseHome, '.claude');
+        if (!fsSync.existsSync(userClaudeDir) && fsSync.existsSync(baseClaudeDir)) {
+            fsSync.symlinkSync(baseClaudeDir, userClaudeDir, 'dir');
+        }
+
+        // Copy base .claude.json then merge user's MCP servers
+        const baseConfigPath = path.join(baseHome, '.claude.json');
+        const userConfigPath = path.join(userHome, '.claude.json');
+
+        let config = {};
+        if (fsSync.existsSync(baseConfigPath)) {
             try {
-                settings = JSON.parse(fsSync.readFileSync(settingsPath, 'utf8'));
+                config = JSON.parse(fsSync.readFileSync(baseConfigPath, 'utf8'));
             } catch {
-                settings = {};
+                config = {};
             }
         }
 
-        // Merge MCP servers (preserve existing non-MCP settings like permissions)
-        settings.mcpServers = { ...(settings.mcpServers || {}), ...mcpServers };
-        fsSync.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
-        log.info(`[MCP] Injected ${Object.keys(mcpServers).length} MCP server(s) for user ${userId} into ${settingsPath}`);
+        // Inject user's MCP servers from DB
+        const rows = userMcpDb.getAll(userId);
+        if (rows && rows.length > 0) {
+            const mcpServers = userMcpDb.toSdkFormat(rows);
+            config.mcpServers = { ...(config.mcpServers || {}), ...mcpServers };
+        }
+
+        fsSync.writeFileSync(userConfigPath, JSON.stringify(config, null, 2), 'utf8');
+        log.info(`[MCP] Setup user HOME ${userHome} with ${rows?.length || 0} MCP server(s)`);
+
+        return userHome;
     } catch (err) {
-        log.error({ err }, `[MCP] Failed to inject MCP config for user ${userId}`);
+        log.error({ err }, `[MCP] Failed to setup user HOME for userId=${userId}`);
+        return baseHome; // fallback to shared home
     }
 }
 
@@ -337,10 +355,10 @@ export class ShellHandler {
 
                         log.info(`Executing shell command: ${shellCommand}`);
 
-                        // Inject per-user MCP config into project before spawning CLI
-                        if (userId && !isPlainShell) {
-                            injectUserMcpConfig(projectPath, userId);
-                        }
+                        // Setup per-user HOME with isolated MCP config
+                        const userHome = (userId && !isPlainShell)
+                            ? setupUserHome(userId)
+                            : os.homedir();
 
                         // Use appropriate shell based on platform
                         const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
@@ -355,9 +373,10 @@ export class ShellHandler {
                             name: 'xterm-256color',
                             cols: termCols,
                             rows: termRows,
-                            cwd: os.homedir(),
+                            cwd: userHome,
                             env: {
                                 ...process.env,
+                                HOME: userHome,
                                 TERM: 'xterm-256color',
                                 COLORTERM: 'truecolor',
                                 FORCE_COLOR: '3'
