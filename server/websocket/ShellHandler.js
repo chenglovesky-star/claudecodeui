@@ -83,16 +83,42 @@ function shouldAutoOpenUrlFromOutput(value = '') {
 // ─── Per-user HOME isolation ─────────────────────────────────────────────────
 
 /**
+ * Recursively copy a directory (shallow: files are copied, subdirs are recursed).
+ * Skips if source doesn't exist.
+ */
+function copyDirSync(src, dest) {
+    if (!fsSync.existsSync(src)) return;
+    if (!fsSync.existsSync(dest)) {
+        fsSync.mkdirSync(dest, { recursive: true });
+    }
+    for (const entry of fsSync.readdirSync(src, { withFileTypes: true })) {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+        if (entry.isDirectory()) {
+            copyDirSync(srcPath, destPath);
+        } else {
+            fsSync.copyFileSync(srcPath, destPath);
+        }
+    }
+}
+
+/**
  * Create a per-user HOME directory with the user's MCP config.
  * Returns the user-specific HOME path to be used as HOME env var in PTY spawn.
  *
  * Structure: /home/claude/users/{userId}/
- *   ├── .claude.json         (copy from base + user's MCP servers)
- *   └── .claude/             (symlink to base ~/.claude for settings, skills, etc.)
+ *   ├── .claude.json         (copy from base + user's MCP servers merged)
+ *   └── .claude/             (COPY of base ~/.claude — per-user writable isolation)
  *
  * Claude CLI reads ~/.claude.json → resolves to user-specific file → per-user MCP.
  */
 function setupUserHome(userId) {
+    // Validate userId to prevent path traversal
+    if (!Number.isInteger(userId) || userId <= 0) {
+        log.error(`[MCP] Invalid userId: ${userId}`);
+        return os.homedir();
+    }
+
     const baseHome = os.homedir();
     const userHome = path.join(baseHome, 'users', String(userId));
 
@@ -102,11 +128,14 @@ function setupUserHome(userId) {
             fsSync.mkdirSync(userHome, { recursive: true });
         }
 
-        // Symlink .claude/ dir (settings, skills, projects, etc.)
+        // Copy .claude/ directory (NOT symlink — each user needs writable isolation).
+        // Only copy if user's .claude/ doesn't exist yet (first session).
+        // This avoids re-copying on every session start.
         const userClaudeDir = path.join(userHome, '.claude');
         const baseClaudeDir = path.join(baseHome, '.claude');
         if (!fsSync.existsSync(userClaudeDir) && fsSync.existsSync(baseClaudeDir)) {
-            fsSync.symlinkSync(baseClaudeDir, userClaudeDir, 'dir');
+            copyDirSync(baseClaudeDir, userClaudeDir);
+            log.info(`[MCP] Copied .claude/ dir for user ${userId}`);
         }
 
         // Copy base .claude.json then merge user's MCP servers
@@ -135,7 +164,7 @@ function setupUserHome(userId) {
         return userHome;
     } catch (err) {
         log.error({ err }, `[MCP] Failed to setup user HOME for userId=${userId}`);
-        return baseHome; // fallback to shared home
+        return baseHome;
     }
 }
 
@@ -395,6 +424,7 @@ export class ShellHandler {
                             timeoutId: null,
                             projectPath,
                             sessionId,
+                            userHome,
                             presetBaseUrl: ''
                         });
 
@@ -592,8 +622,11 @@ export class ShellHandler {
                         if (session.timeoutId) clearTimeout(session.timeoutId);
                         this.ptySessionsMap.delete(ptySessionKey);
 
-                        // Update ~/.claude/settings.json with preset env vars
-                        await this.#updateSettingsJson(preset);
+                        // Reuse the per-user HOME from the original session
+                        const presetUserHome = session.userHome || os.homedir();
+
+                        // Update settings.json in the user's own HOME (not shared)
+                        await this.#updateSettingsJson(preset, presetUserHome);
 
                         const samePlatform = oldBaseUrl === preset.baseUrl && oldSessionId;
                         const shellCmd = samePlatform
@@ -612,8 +645,8 @@ export class ShellHandler {
                             name: 'xterm-256color',
                             cols: currentCols,
                             rows: currentRows,
-                            cwd: os.homedir(),
-                            env: this.#buildPresetEnv(preset),
+                            cwd: presetUserHome,
+                            env: this.#buildPresetEnv(preset, presetUserHome),
                         });
 
                         ptySessionKey = `${projectPath}_preset_${preset.id}`;
@@ -627,6 +660,7 @@ export class ShellHandler {
                             timeoutId: null,
                             projectPath,
                             sessionId: oldSessionId,
+                            userHome: presetUserHome,
                             presetBaseUrl: preset.baseUrl,
                         });
 
@@ -723,8 +757,8 @@ export class ShellHandler {
         return presets.find(p => p.id === presetId) || null;
     }
 
-    async #updateSettingsJson(preset) {
-        const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+    async #updateSettingsJson(preset, userHome = os.homedir()) {
+        const settingsPath = path.join(userHome, '.claude', 'settings.json');
         try {
             let settings = {};
             try {
@@ -749,9 +783,10 @@ export class ShellHandler {
         }
     }
 
-    #buildPresetEnv(preset) {
+    #buildPresetEnv(preset, userHome = os.homedir()) {
         const env = {
             ...process.env,
+            HOME: userHome,
             TERM: 'xterm-256color',
             COLORTERM: 'truecolor',
             FORCE_COLOR: '3',
