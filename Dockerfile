@@ -27,7 +27,7 @@ COPY package.json package-lock.json ./
 COPY scripts ./scripts
 
 # 安装所有依赖（含 devDependencies 用于构建前端）
-RUN npm ci
+RUN npm config set fetch-retries 5 && npm ci
 
 # 复制源代码
 COPY . .
@@ -75,7 +75,9 @@ COPY package.json package-lock.json ./
 COPY scripts ./scripts
 
 # 仅安装生产依赖（忽略 prepare/husky 脚本，然后重建所有原生模块）
-RUN npm ci --omit=dev --ignore-scripts \
+# fetch-retries=5 防止镜像源网络波动导致构建失败
+RUN npm config set fetch-retries 5 \
+    && npm ci --omit=dev --ignore-scripts \
     && npm rebuild \
     && node scripts/fix-node-pty.js
 
