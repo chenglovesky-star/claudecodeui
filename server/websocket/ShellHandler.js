@@ -818,6 +818,7 @@ export class ShellHandler {
 
             if (!settings.env) settings.env = {};
             settings.env.ANTHROPIC_BASE_URL = preset.baseUrl || '';
+            settings.env.ANTHROPIC_API_KEY = preset.apiKey || '';
             settings.env.ANTHROPIC_AUTH_TOKEN = preset.apiKey || '';
             settings.env.ANTHROPIC_MODEL = preset.model || '';
             settings.env.ANTHROPIC_SMALL_FAST_MODEL = preset.smallFastModel || '';
@@ -842,6 +843,7 @@ export class ShellHandler {
         if (preset) {
             env.ANTHROPIC_BASE_URL = preset.baseUrl;
             env.ANTHROPIC_API_KEY = preset.apiKey;
+            env.ANTHROPIC_AUTH_TOKEN = preset.apiKey;
             env.ANTHROPIC_MODEL = preset.model;
             env.ANTHROPIC_SMALL_FAST_MODEL = preset.smallFastModel;
             env.ANTHROPIC_DEFAULT_SONNET_MODEL = preset.defaultSonnetModel;
