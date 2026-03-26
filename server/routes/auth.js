@@ -48,12 +48,13 @@ function syncMcpSqlGatewayDirect(username, password) {
     if (!config.mcpServers) {
       config.mcpServers = {};
     }
-    // Store global MCP server config (system-level, no credentials — per-user creds in DB)
+    // Store MCP server config with user credentials so Claude CLI can authenticate
+    // (CLI reads ~/.claude.json directly, headers are required to avoid OAuth fallback)
     config.mcpServers[MCP_SQL_GATEWAY_NAME] = {
       type: 'http',
       url: MCP_SQL_GATEWAY_URL,
+      headers: { username, password },
     };
-    // _mcpUserCredentials removed — per-user credentials now stored in DB
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
     console.log(`[MCP] Direct-wrote ${MCP_SQL_GATEWAY_NAME} for user ${username}`);
