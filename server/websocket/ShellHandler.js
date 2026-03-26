@@ -94,21 +94,28 @@ function injectUserMcpConfig(projectPath, userId) {
         const mcpServers = userMcpDb.toSdkFormat(rows);
         if (Object.keys(mcpServers).length === 0) return;
 
-        // Claude CLI reads MCP servers from ~/.claude.json (not project-level settings)
-        const homedir = os.homedir();
-        const claudeJsonPath = path.join(homedir, '.claude.json');
-        let claudeConfig = {};
-        if (fsSync.existsSync(claudeJsonPath)) {
+        // Write to project-level .claude/settings.local.json (per-folder isolation).
+        // Each user works in their own project directory, so MCP configs don't conflict.
+        // This also avoids the OAuth fallback bug caused by headerless entries in ~/.claude.json.
+        const claudeDir = path.join(projectPath, '.claude');
+        if (!fsSync.existsSync(claudeDir)) {
+            fsSync.mkdirSync(claudeDir, { recursive: true });
+        }
+
+        const settingsPath = path.join(claudeDir, 'settings.local.json');
+        let settings = {};
+        if (fsSync.existsSync(settingsPath)) {
             try {
-                claudeConfig = JSON.parse(fsSync.readFileSync(claudeJsonPath, 'utf8'));
+                settings = JSON.parse(fsSync.readFileSync(settingsPath, 'utf8'));
             } catch {
-                claudeConfig = {};
+                settings = {};
             }
         }
 
-        claudeConfig.mcpServers = { ...claudeConfig.mcpServers, ...mcpServers };
-        fsSync.writeFileSync(claudeJsonPath, JSON.stringify(claudeConfig, null, 2), 'utf8');
-        log.info(`[MCP] Injected ${Object.keys(mcpServers).length} MCP server(s) for user ${userId} into ${claudeJsonPath}`);
+        // Merge MCP servers (preserve existing non-MCP settings like permissions)
+        settings.mcpServers = { ...(settings.mcpServers || {}), ...mcpServers };
+        fsSync.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+        log.info(`[MCP] Injected ${Object.keys(mcpServers).length} MCP server(s) for user ${userId} into ${settingsPath}`);
     } catch (err) {
         log.error({ err }, `[MCP] Failed to inject MCP config for user ${userId}`);
     }

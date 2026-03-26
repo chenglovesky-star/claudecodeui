@@ -15,51 +15,36 @@ const MCP_SQL_GATEWAY_URL = process.env.MCP_SQL_GATEWAY_URL || 'http://ime-data-
 
 /**
  * Auto-configure iflytek-sql-gateway MCP server with the user's login credentials.
- * Runs in the background (non-blocking, non-fatal).
+ * Only saves to per-user DB. MCP configs are injected into project-level
+ * .claude/settings.local.json when shell sessions start (see ShellHandler.js).
+ * This avoids writing to shared ~/.claude.json which causes multi-user conflicts.
  */
 function syncMcpSqlGateway(username, password, userId) {
-  // Write to ~/.claude.json for system-level compatibility
-  syncMcpSqlGatewayDirect(username, password);
+  if (!userId) return;
 
-  // Write to per-user DB for user-isolated MCP loading
-  if (userId) {
-    try {
-      userMcpDb.upsert(userId, MCP_SQL_GATEWAY_NAME, 'http', {
-        url: MCP_SQL_GATEWAY_URL,
-        headers: { username, password },
-      });
-      console.log(`[MCP] DB: saved ${MCP_SQL_GATEWAY_NAME} for user ${username} (id=${userId})`);
-    } catch (err) {
-      console.error(`[MCP] DB: failed to save ${MCP_SQL_GATEWAY_NAME}:`, err.message);
-    }
-  }
-}
-
-/**
- * Fallback: write MCP config directly to ~/.claude.json when claude CLI is unavailable.
- */
-function syncMcpSqlGatewayDirect(username, password) {
   try {
-    const configPath = path.join(process.env.HOME || '', '.claude.json');
-    let config = {};
-    if (fs.existsSync(configPath)) {
-      config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    }
-    if (!config.mcpServers) {
-      config.mcpServers = {};
-    }
-    // Store MCP server config with user credentials so Claude CLI can authenticate
-    // (CLI reads ~/.claude.json directly, headers are required to avoid OAuth fallback)
-    config.mcpServers[MCP_SQL_GATEWAY_NAME] = {
-      type: 'http',
+    userMcpDb.upsert(userId, MCP_SQL_GATEWAY_NAME, 'http', {
       url: MCP_SQL_GATEWAY_URL,
       headers: { username, password },
-    };
-
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
-    console.log(`[MCP] Direct-wrote ${MCP_SQL_GATEWAY_NAME} for user ${username}`);
+    });
+    console.log(`[MCP] DB: saved ${MCP_SQL_GATEWAY_NAME} for user ${username} (id=${userId})`);
   } catch (err) {
-    console.error(`[MCP] Failed to sync ${MCP_SQL_GATEWAY_NAME}:`, err.message);
+    console.error(`[MCP] DB: failed to save ${MCP_SQL_GATEWAY_NAME}:`, err.message);
+  }
+
+  // Clean up any stale entry from ~/.claude.json to avoid OAuth conflict
+  try {
+    const configPath = path.join(process.env.HOME || '', '.claude.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (config.mcpServers && config.mcpServers[MCP_SQL_GATEWAY_NAME]) {
+        delete config.mcpServers[MCP_SQL_GATEWAY_NAME];
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+        console.log(`[MCP] Cleaned stale ${MCP_SQL_GATEWAY_NAME} from ~/.claude.json`);
+      }
+    }
+  } catch {
+    // Non-fatal
   }
 }
 
