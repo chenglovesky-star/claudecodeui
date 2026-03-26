@@ -8,6 +8,7 @@ import type {
   Project,
   ProjectSession,
   ProjectsUpdatedMessage,
+  SessionProvider,
 } from '../types/app';
 
 type UseProjectsStateArgs = {
@@ -415,7 +416,12 @@ export function useProjectsState({
   const handleNewSession = useCallback(
     (project: Project) => {
       setSelectedProject(project);
-      setSelectedSession(null);
+      // Generate a unique session ID so the backend creates a fresh PTY
+      // (null would map to 'default' key and reuse the cached session)
+      setSelectedSession({
+        id: `new-${Date.now()}`,
+        __provider: (localStorage.getItem('selected-provider') as SessionProvider) || 'claude',
+      } as ProjectSession);
       setActiveTab('shell');
       setShellRestartKey((prev) => prev + 1);
       navigate('/');
