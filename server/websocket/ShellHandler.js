@@ -212,6 +212,7 @@ export class ShellHandler {
         const announcedAuthUrls = new Set();
         let currentCols = 80;
         let currentRows = 24;
+        let processGeneration = 0;
 
         ws.on('message', async (message) => {
             try {
@@ -432,8 +433,10 @@ export class ShellHandler {
 
                         currentCols = termCols;
                         currentRows = termRows;
+                        const myGeneration = ++processGeneration;
+                        const mySessionKey = ptySessionKey;
 
-                        this.ptySessionsMap.set(ptySessionKey, {
+                        this.ptySessionsMap.set(mySessionKey, {
                             pty: shellProcess,
                             ws: ws,
                             buffer: [],
@@ -446,7 +449,8 @@ export class ShellHandler {
 
                         // Handle data output
                         shellProcess.onData((data) => {
-                            const session = this.ptySessionsMap.get(ptySessionKey);
+                            if (myGeneration !== processGeneration) return;
+                            const session = this.ptySessionsMap.get(mySessionKey);
                             if (!session) return;
 
                             if (session.buffer.length < 5000) {
@@ -510,8 +514,9 @@ export class ShellHandler {
 
                         // Handle process exit
                         shellProcess.onExit((exitCode) => {
+                            if (myGeneration !== processGeneration) return;
                             log.info(`Shell process exited with code: ${exitCode.exitCode} signal: ${exitCode.signal}`);
-                            const session = this.ptySessionsMap.get(ptySessionKey);
+                            const session = this.ptySessionsMap.get(mySessionKey);
                             if (session && session.ws && session.ws.readyState === WebSocket.OPEN) {
                                 session.ws.send(JSON.stringify({
                                     type: 'output',
@@ -521,7 +526,7 @@ export class ShellHandler {
                             if (session && session.timeoutId) {
                                 clearTimeout(session.timeoutId);
                             }
-                            this.ptySessionsMap.delete(ptySessionKey);
+                            this.ptySessionsMap.delete(mySessionKey);
                             shellProcess = null;
                         });
 
@@ -547,10 +552,14 @@ export class ShellHandler {
                 } else if (data.type === 'resize') {
                     // Handle terminal resize
                     if (shellProcess && shellProcess.resize) {
-                        log.info(`Terminal resize requested: ${data.cols} x ${data.rows}`);
-                        shellProcess.resize(data.cols, data.rows);
-                        currentCols = data.cols;
-                        currentRows = data.rows;
+                        try {
+                            log.info(`Terminal resize requested: ${data.cols} x ${data.rows}`);
+                            shellProcess.resize(data.cols, data.rows);
+                            currentCols = data.cols;
+                            currentRows = data.rows;
+                        } catch (error) {
+                            log.error({ err: error }, 'Error resizing shell');
+                        }
                     }
                 } else if (data.type === 'paste-image') {
                     // Handle image paste: save to temp file, copy to system clipboard,
@@ -668,8 +677,10 @@ export class ShellHandler {
                         ptySessionKey = `${projectPath}_preset_${preset.id}`;
                         urlDetectionBuffer = '';
                         announcedAuthUrls.clear();
+                        const switchGeneration = ++processGeneration;
+                        const switchSessionKey = ptySessionKey;
 
-                        this.ptySessionsMap.set(ptySessionKey, {
+                        this.ptySessionsMap.set(switchSessionKey, {
                             pty: shellProcess,
                             ws: ws,
                             buffer: [],
@@ -682,7 +693,8 @@ export class ShellHandler {
 
                         // Reuse the same onData handler as init path (URL detection, buffer, auth URL)
                         shellProcess.onData((data) => {
-                            const s = this.ptySessionsMap.get(ptySessionKey);
+                            if (switchGeneration !== processGeneration) return;
+                            const s = this.ptySessionsMap.get(switchSessionKey);
                             if (!s) return;
 
                             if (s.buffer.length < 5000) {
@@ -727,8 +739,9 @@ export class ShellHandler {
                         });
 
                         shellProcess.onExit((exitCode) => {
+                            if (switchGeneration !== processGeneration) return;
                             log.info(`Switched shell exited: ${exitCode.exitCode} signal: ${exitCode.signal}`);
-                            const s = this.ptySessionsMap.get(ptySessionKey);
+                            const s = this.ptySessionsMap.get(switchSessionKey);
                             if (s?.ws?.readyState === WebSocket.OPEN) {
                                 s.ws.send(JSON.stringify({
                                     type: 'output',
@@ -736,7 +749,7 @@ export class ShellHandler {
                                 }));
                             }
                             if (s?.timeoutId) clearTimeout(s.timeoutId);
-                            this.ptySessionsMap.delete(ptySessionKey);
+                            this.ptySessionsMap.delete(switchSessionKey);
                             shellProcess = null;
                         });
 
@@ -841,13 +854,13 @@ export class ShellHandler {
             FORCE_COLOR: '3',
         };
         if (preset) {
-            env.ANTHROPIC_BASE_URL = preset.baseUrl;
-            env.ANTHROPIC_API_KEY = preset.apiKey;
-            env.ANTHROPIC_AUTH_TOKEN = preset.apiKey;
-            env.ANTHROPIC_MODEL = preset.model;
-            env.ANTHROPIC_SMALL_FAST_MODEL = preset.smallFastModel;
-            env.ANTHROPIC_DEFAULT_SONNET_MODEL = preset.defaultSonnetModel;
-            env.ANTHROPIC_DEFAULT_OPUS_MODEL = preset.defaultOpusModel;
+            env.ANTHROPIC_BASE_URL = preset.baseUrl || '';
+            env.ANTHROPIC_API_KEY = preset.apiKey || '';
+            env.ANTHROPIC_AUTH_TOKEN = preset.apiKey || '';
+            env.ANTHROPIC_MODEL = preset.model || '';
+            env.ANTHROPIC_SMALL_FAST_MODEL = preset.smallFastModel || '';
+            env.ANTHROPIC_DEFAULT_SONNET_MODEL = preset.defaultSonnetModel || '';
+            env.ANTHROPIC_DEFAULT_OPUS_MODEL = preset.defaultOpusModel || '';
         }
         return env;
     }
