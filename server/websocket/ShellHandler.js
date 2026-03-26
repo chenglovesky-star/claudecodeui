@@ -3,11 +3,13 @@
 
 import os from 'os';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import pty from 'node-pty';
 import { WebSocket } from 'ws';
 import legacySessionManager from '../sessionManager.js';
+import { userMcpDb } from '../database/db.js';
 import { PTY_SESSION_TIMEOUT_MS, SHELL_URL_PARSE_BUFFER_LIMIT } from '../config/constants.js';
 import { createLogger } from '../config/logger.js';
 
@@ -78,6 +80,43 @@ function shouldAutoOpenUrlFromOutput(value = '') {
     );
 }
 
+// ─── Per-user MCP injection ──────────────────────────────────────────────────
+
+/**
+ * Write user's MCP servers from DB into the project-level settings.local.json
+ * so Claude CLI picks them up when spawned in shell mode.
+ */
+function injectUserMcpConfig(projectPath, userId) {
+    try {
+        const rows = userMcpDb.getAll(userId);
+        if (!rows || rows.length === 0) return;
+
+        const mcpServers = userMcpDb.toSdkFormat(rows);
+        if (Object.keys(mcpServers).length === 0) return;
+
+        const claudeDir = path.join(projectPath, '.claude');
+        if (!fsSync.existsSync(claudeDir)) {
+            fsSync.mkdirSync(claudeDir, { recursive: true });
+        }
+
+        const settingsPath = path.join(claudeDir, 'settings.local.json');
+        let settings = {};
+        if (fsSync.existsSync(settingsPath)) {
+            try {
+                settings = JSON.parse(fsSync.readFileSync(settingsPath, 'utf8'));
+            } catch {
+                settings = {};
+            }
+        }
+
+        settings.mcpServers = mcpServers;
+        fsSync.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+        log.info(`[MCP] Injected ${Object.keys(mcpServers).length} MCP server(s) for user ${userId} into ${settingsPath}`);
+    } catch (err) {
+        log.error({ err }, `[MCP] Failed to inject MCP config for user ${userId}`);
+    }
+}
+
 // ─── ShellHandler ────────────────────────────────────────────────────────────
 
 export class ShellHandler {
@@ -97,7 +136,9 @@ export class ShellHandler {
      * @param {string} connectionId
      */
     handleConnection(ws, connectionId) {
-        log.info('Client connected');
+        const connRecord = this.registry.get(connectionId);
+        const userId = connRecord?.userId || 0;
+        log.info(`Client connected (user=${userId})`);
         let shellProcess = null;
         let ptySessionKey = null;
         let urlDetectionBuffer = '';
@@ -288,6 +329,11 @@ export class ShellHandler {
                         }
 
                         log.info(`Executing shell command: ${shellCommand}`);
+
+                        // Inject per-user MCP config into project before spawning CLI
+                        if (userId && !isPlainShell) {
+                            injectUserMcpConfig(projectPath, userId);
+                        }
 
                         // Use appropriate shell based on platform
                         const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
