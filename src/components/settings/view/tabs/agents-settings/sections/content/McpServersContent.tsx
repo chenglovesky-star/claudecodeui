@@ -1,4 +1,5 @@
 import { Edit3, Globe, Plus, Server, Terminal, Trash2, Zap } from 'lucide-react';
+import SkillPackDownload from './SkillPackDownload';
 import { useTranslation } from 'react-i18next';
 import { Badge, Button } from '../../../../../../../shared/view/ui';
 import type { McpServer, McpToolsResult, McpTestResult } from '../../../../../types/types';
@@ -370,7 +371,12 @@ type McpServersContentProps = ClaudeMcpServersProps | CursorMcpServersProps | Co
 
 export default function McpServersContent(props: McpServersContentProps) {
   if (props.agent === 'claude') {
-    return <ClaudeMcpServers {...props} />;
+    return (
+      <>
+        <SkillPackDownload />
+        <ClaudeMcpServers {...props} />
+      </>
+    );
   }
 
   if (props.agent === 'cursor') {
