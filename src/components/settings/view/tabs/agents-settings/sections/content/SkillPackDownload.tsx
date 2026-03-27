@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Download, Laptop, Monitor } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../../../../../../../shared/view/ui';
+import { authenticatedFetch } from '../../../../../../../utils/api';
 
 type SkillPackInfo = {
     commands: number;
@@ -15,7 +16,7 @@ export default function SkillPackDownload() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetch('/api/skill-pack/info')
+        authenticatedFetch('/api/skill-pack/info')
             .then((res) => res.json())
             .then((data) => {
                 setInfo(data);
@@ -39,8 +40,22 @@ export default function SkillPackDownload() {
         return null;
     }
 
-    const handleDownload = (platform: 'mac' | 'windows') => {
-        window.location.href = `/api/skill-pack/download?platform=${platform}`;
+    const handleDownload = async (platform: 'mac' | 'windows') => {
+        try {
+            const res = await authenticatedFetch(`/api/skill-pack/download?platform=${platform}`);
+            const blob = await res.blob();
+            const filename = platform === 'mac'
+                ? 'install-claude-skills.command'
+                : 'install-claude-skills.bat';
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch {
+            // download failed silently
+        }
     };
 
     return (

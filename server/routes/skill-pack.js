@@ -80,11 +80,19 @@ async function collectMcpServers() {
     const config = JSON.parse(raw);
     const servers = config.mcpServers || {};
 
-    // Deep-clone and remove headers (may contain tokens/passwords)
+    // Deep-clone, remove headers, and scrub sensitive env vars
+    const SENSITIVE_KEYS = /key|token|secret|password|credential|auth/i;
     const sanitized = {};
     for (const [name, cfg] of Object.entries(servers)) {
       const clone = JSON.parse(JSON.stringify(cfg));
       delete clone.headers;
+      if (clone.env && typeof clone.env === 'object') {
+        for (const envKey of Object.keys(clone.env)) {
+          if (SENSITIVE_KEYS.test(envKey)) {
+            clone.env[envKey] = '<YOUR_VALUE_HERE>';
+          }
+        }
+      }
       sanitized[name] = clone;
     }
     return sanitized;
@@ -94,6 +102,14 @@ async function collectMcpServers() {
 }
 
 // ─── Script Generators ───────────────────────────────────────
+
+/**
+ * Sanitize a path component to prevent shell injection.
+ * Only allow alphanumeric, hyphens, underscores, dots, and forward slashes.
+ */
+function safePath(p) {
+  return p.replace(/[^a-zA-Z0-9_\-./]/g, '_');
+}
 
 /**
  * Generate a unique heredoc delimiter that doesn't collide with file content.
@@ -130,28 +146,30 @@ function generateMacScript(commands, skills, mcpServers) {
 
   // --- Commands ---
   for (const cmd of commands) {
-    const dir = path.dirname(cmd.relativePath);
+    const relPath = safePath(cmd.relativePath);
+    const dir = path.dirname(relPath);
     const delim = uniqueDelimiter('CMD_EOF', cmd.content);
     if (dir && dir !== '.') {
       lines.push(`mkdir -p "$COMMANDS_DIR/${dir}"`);
     } else {
       lines.push('mkdir -p "$COMMANDS_DIR"');
     }
-    lines.push(`cat > "$COMMANDS_DIR/${cmd.relativePath}" << '${delim}'`);
+    lines.push(`cat > "$COMMANDS_DIR/${relPath}" << '${delim}'`);
     lines.push(cmd.content);
     lines.push(delim);
-    lines.push(`echo "  ✓ command: ${cmd.relativePath}"`);
+    lines.push(`echo "  ✓ command: ${relPath}"`);
     lines.push('');
   }
 
   // --- Skills ---
   for (const skill of skills) {
+    const skillName = safePath(skill.name);
     const delim = uniqueDelimiter('SKILL_EOF', skill.content);
-    lines.push(`mkdir -p "$SKILLS_DIR/${skill.name}"`);
-    lines.push(`cat > "$SKILLS_DIR/${skill.name}/SKILL.md" << '${delim}'`);
+    lines.push(`mkdir -p "$SKILLS_DIR/${skillName}"`);
+    lines.push(`cat > "$SKILLS_DIR/${skillName}/SKILL.md" << '${delim}'`);
     lines.push(skill.content);
     lines.push(delim);
-    lines.push(`echo "  ✓ skill: ${skill.name}"`);
+    lines.push(`echo "  ✓ skill: ${skillName}"`);
     lines.push('');
   }
 
@@ -160,6 +178,10 @@ function generateMacScript(commands, skills, mcpServers) {
     const mcpJson = JSON.stringify(mcpServers);
     const delim = uniqueDelimiter('MCP_EOF', mcpJson);
     lines.push('# Merge MCP server configs into ~/.claude.json');
+    lines.push('if ! command -v python3 &>/dev/null; then');
+    lines.push('  echo "  ⚠ python3 not found, skipping MCP config merge"');
+    lines.push('  echo "    You can manually add MCP servers to ~/.claude.json"');
+    lines.push('else');
     lines.push(`MERGE_JSON=$(cat << '${delim}'`);
     lines.push(mcpJson);
     lines.push(`${delim}`);
@@ -194,6 +216,7 @@ with open(config_path, 'w') as f:
 
 print(f'  MCP: {added} added, {skipped} skipped')
 " "$MERGE_JSON"`);
+    lines.push('fi');
     lines.push('');
   }
 
