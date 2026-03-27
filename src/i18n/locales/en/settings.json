@@ -400,6 +400,8 @@
   "skillPack": {
     "title": "Install to Local Claude Code",
     "description": "Download and install {{total}} skills and {{mcp}} MCP servers to your local Claude Code CLI",
+    "breakdown": "Package includes: {{commands}} commands, {{skills}} skills, and {{mcp}} MCP servers.",
+    "policyHint": "Install policy: add only. Existing commands/skills/MCP entries are skipped and never overwritten.",
     "downloadMac": "Mac Download",
     "downloadWindows": "Windows Download",
     "hint": "Download and double-click to install",

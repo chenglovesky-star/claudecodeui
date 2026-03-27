@@ -10,6 +10,7 @@ import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { userMcpDb } from '../database/db.js';
 
 const router = express.Router();
 
@@ -70,35 +71,62 @@ async function collectSkillFiles(dir) {
   return results;
 }
 
-/**
- * Read mcpServers from ~/.claude.json, stripping sensitive headers.
- * @returns {Promise<Record<string, object>>}
- */
-async function collectMcpServers() {
+function sanitizeMcpServers(servers) {
+  const SENSITIVE_KEYS = /key|token|secret|password|credential|auth/i;
+  const sanitized = {};
+
+  for (const [name, cfg] of Object.entries(servers || {})) {
+    const clone = JSON.parse(JSON.stringify(cfg));
+    delete clone.headers;
+
+    if (clone.env && typeof clone.env === 'object') {
+      for (const envKey of Object.keys(clone.env)) {
+        if (SENSITIVE_KEYS.test(envKey)) {
+          clone.env[envKey] = '<YOUR_VALUE_HERE>';
+        }
+      }
+    }
+
+    sanitized[name] = clone;
+  }
+
+  return sanitized;
+}
+
+async function collectLegacyMcpServers() {
   try {
     const raw = await fs.readFile(CLAUDE_JSON, 'utf-8');
     const config = JSON.parse(raw);
-    const servers = config.mcpServers || {};
-
-    // Deep-clone, remove headers, and scrub sensitive env vars
-    const SENSITIVE_KEYS = /key|token|secret|password|credential|auth/i;
-    const sanitized = {};
-    for (const [name, cfg] of Object.entries(servers)) {
-      const clone = JSON.parse(JSON.stringify(cfg));
-      delete clone.headers;
-      if (clone.env && typeof clone.env === 'object') {
-        for (const envKey of Object.keys(clone.env)) {
-          if (SENSITIVE_KEYS.test(envKey)) {
-            clone.env[envKey] = '<YOUR_VALUE_HERE>';
-          }
-        }
-      }
-      sanitized[name] = clone;
-    }
-    return sanitized;
+    return config.mcpServers || {};
   } catch {
     return {};
   }
+}
+
+/**
+ * Read MCP servers for the current user, with legacy ~/.claude.json fallback.
+ * Settings UI stores MCP servers in DB, so the download pack needs the same source.
+ * @returns {Promise<Record<string, object>>}
+ */
+async function collectMcpServers(userId) {
+  const legacyServers = await collectLegacyMcpServers();
+
+  if (!userId) {
+    return sanitizeMcpServers(legacyServers);
+  }
+
+  let userServers = {};
+  try {
+    const userRows = userMcpDb.getAll(userId);
+    userServers = userMcpDb.toSdkFormat(userRows);
+  } catch (error) {
+    console.warn('[skill-pack] Failed to read user MCP servers from DB, falling back to legacy config:', error?.message || error);
+  }
+
+  return sanitizeMcpServers({
+    ...legacyServers,
+    ...userServers,
+  });
 }
 
 // ─── Script Generators ───────────────────────────────────────
@@ -142,6 +170,10 @@ function generateMacScript(commands, skills, mcpServers) {
   lines.push('echo "  Claude CLI Skill Pack Installer"');
   lines.push('echo "========================================="');
   lines.push('echo ""');
+  lines.push('command_added=0');
+  lines.push('command_skipped=0');
+  lines.push('skill_added=0');
+  lines.push('skill_skipped=0');
   lines.push('');
 
   // --- Commands ---
@@ -154,10 +186,16 @@ function generateMacScript(commands, skills, mcpServers) {
     } else {
       lines.push('mkdir -p "$COMMANDS_DIR"');
     }
-    lines.push(`cat > "$COMMANDS_DIR/${relPath}" << '${delim}'`);
+    lines.push(`if [ -f "$COMMANDS_DIR/${relPath}" ]; then`);
+    lines.push(`  echo "  ⊘ command (already exists): ${relPath}"`);
+    lines.push('  command_skipped=$((command_skipped + 1))');
+    lines.push('else');
+    lines.push(`  cat > "$COMMANDS_DIR/${relPath}" << '${delim}'`);
     lines.push(cmd.content);
     lines.push(delim);
-    lines.push(`echo "  ✓ command: ${relPath}"`);
+    lines.push(`  echo "  ✓ command: ${relPath}"`);
+    lines.push('  command_added=$((command_added + 1))');
+    lines.push('fi');
     lines.push('');
   }
 
@@ -166,10 +204,16 @@ function generateMacScript(commands, skills, mcpServers) {
     const skillName = safePath(skill.name);
     const delim = uniqueDelimiter('SKILL_EOF', skill.content);
     lines.push(`mkdir -p "$SKILLS_DIR/${skillName}"`);
-    lines.push(`cat > "$SKILLS_DIR/${skillName}/SKILL.md" << '${delim}'`);
+    lines.push(`if [ -f "$SKILLS_DIR/${skillName}/SKILL.md" ]; then`);
+    lines.push(`  echo "  ⊘ skill (already exists): ${skillName}"`);
+    lines.push('  skill_skipped=$((skill_skipped + 1))');
+    lines.push('else');
+    lines.push(`  cat > "$SKILLS_DIR/${skillName}/SKILL.md" << '${delim}'`);
     lines.push(skill.content);
     lines.push(delim);
-    lines.push(`echo "  ✓ skill: ${skillName}"`);
+    lines.push(`  echo "  ✓ skill: ${skillName}"`);
+    lines.push('  skill_added=$((skill_added + 1))');
+    lines.push('fi');
     lines.push('');
   }
 
@@ -225,8 +269,8 @@ print(f'  MCP: {added} added, {skipped} skipped')
   lines.push('echo "========================================="');
   lines.push('echo "  Installation Complete!"');
   lines.push('echo "========================================="');
-  lines.push(`echo "  Commands: ${commands.length}"`);
-  lines.push(`echo "  Skills:   ${skills.length}"`);
+  lines.push('echo "  Commands: ${command_added} added, ${command_skipped} skipped"');
+  lines.push('echo "  Skills:   ${skill_added} added, ${skill_skipped} skipped"');
   lines.push(`echo "  MCP:      ${Object.keys(mcpServers).length}"`);
   lines.push('echo ""');
   lines.push('echo "Restart Claude CLI to apply changes."');
@@ -251,6 +295,8 @@ function generateWindowsScript(commands, skills, mcpServers) {
   psLines.push('Write-Host "  Claude CLI Skill Pack Installer"');
   psLines.push('Write-Host "========================================="');
   psLines.push('Write-Host ""');
+  psLines.push('$commandAdded = 0; $commandSkipped = 0');
+  psLines.push('$skillAdded = 0; $skillSkipped = 0');
   psLines.push('');
 
   // --- Commands ---
@@ -265,9 +311,16 @@ function generateWindowsScript(commands, skills, mcpServers) {
       psLines.push('$d = $commandsDir');
     }
     psLines.push('if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }');
-    psLines.push(`$bytes = [Convert]::FromBase64String("${encoded}")`);
-    psLines.push(`[System.IO.File]::WriteAllBytes((Join-Path $commandsDir "${winPath}"), $bytes)`);
-    psLines.push(`Write-Host "  OK command: ${cmd.relativePath}"`);
+    psLines.push(`$commandPath = Join-Path $commandsDir "${winPath}"`);
+    psLines.push('if (Test-Path $commandPath) {');
+    psLines.push(`  Write-Host "  SKIP command (already exists): ${cmd.relativePath}"`);
+    psLines.push('  $commandSkipped++');
+    psLines.push('} else {');
+    psLines.push(`  $bytes = [Convert]::FromBase64String("${encoded}")`);
+    psLines.push('  [System.IO.File]::WriteAllBytes($commandPath, $bytes)');
+    psLines.push(`  Write-Host "  OK command: ${cmd.relativePath}"`);
+    psLines.push('  $commandAdded++');
+    psLines.push('}');
     psLines.push('');
   }
 
@@ -276,9 +329,16 @@ function generateWindowsScript(commands, skills, mcpServers) {
     const encoded = Buffer.from(skill.content, 'utf-8').toString('base64');
     psLines.push(`$sd = Join-Path $skillsDir "${skill.name}"`);
     psLines.push('if (-not (Test-Path $sd)) { New-Item -ItemType Directory -Path $sd -Force | Out-Null }');
-    psLines.push(`$bytes = [Convert]::FromBase64String("${encoded}")`);
-    psLines.push(`[System.IO.File]::WriteAllBytes((Join-Path $sd "SKILL.md"), $bytes)`);
-    psLines.push(`Write-Host "  OK skill: ${skill.name}"`);
+    psLines.push('$skillPath = Join-Path $sd "SKILL.md"');
+    psLines.push('if (Test-Path $skillPath) {');
+    psLines.push(`  Write-Host "  SKIP skill (already exists): ${skill.name}"`);
+    psLines.push('  $skillSkipped++');
+    psLines.push('} else {');
+    psLines.push(`  $bytes = [Convert]::FromBase64String("${encoded}")`);
+    psLines.push('  [System.IO.File]::WriteAllBytes($skillPath, $bytes)');
+    psLines.push(`  Write-Host "  OK skill: ${skill.name}"`);
+    psLines.push('  $skillAdded++');
+    psLines.push('}');
     psLines.push('');
   }
 
@@ -318,8 +378,8 @@ function generateWindowsScript(commands, skills, mcpServers) {
   psLines.push('Write-Host "========================================="');
   psLines.push('Write-Host "  Installation Complete!"');
   psLines.push('Write-Host "========================================="');
-  psLines.push(`Write-Host "  Commands: ${commands.length}"`);
-  psLines.push(`Write-Host "  Skills:   ${skills.length}"`);
+  psLines.push('Write-Host "  Commands: $commandAdded added, $commandSkipped skipped"');
+  psLines.push('Write-Host "  Skills:   $skillAdded added, $skillSkipped skipped"');
   psLines.push(`Write-Host "  MCP:      ${Object.keys(mcpServers).length}"`);
   psLines.push('Write-Host ""');
   psLines.push('Write-Host "Restart Claude CLI to apply changes."');
@@ -348,16 +408,36 @@ function generateWindowsScript(commands, skills, mcpServers) {
  */
 router.get('/info', async (req, res) => {
   try {
+    const userId = req.user?.id;
     const [commands, skills, mcpServers] = await Promise.all([
       collectCommandFiles(COMMANDS_DIR),
       collectSkillFiles(SKILLS_DIR),
-      collectMcpServers(),
+      collectMcpServers(userId),
     ]);
 
+    const commandCount = commands.length;
+    const skillCount = skills.length;
+    const mcpCount = Object.keys(mcpServers).length;
+
     res.json({
-      commands: commands.length,
-      skills: skills.length,
-      mcpServers: Object.keys(mcpServers).length,
+      commands: commandCount,
+      skills: skillCount,
+      mcpServers: mcpCount,
+      package: {
+        commands: commandCount,
+        skills: skillCount,
+        mcpServers: mcpCount,
+        total: commandCount + skillCount,
+      },
+      installPolicy: {
+        commands: 'add_if_missing',
+        skills: 'add_if_missing',
+        mcpServers: 'add_if_missing',
+      },
+      estimate: {
+        canPredictLocalResult: false,
+        reason: 'client_local_state_unavailable',
+      },
     });
   } catch (error) {
     console.error('Skill pack info error:', error);
@@ -375,6 +455,7 @@ router.get('/info', async (req, res) => {
 router.get('/download', async (req, res) => {
   try {
     const { platform } = req.query;
+    const userId = req.user?.id;
 
     if (!platform || !['mac', 'windows'].includes(platform)) {
       return res.status(400).json({
@@ -386,7 +467,7 @@ router.get('/download', async (req, res) => {
     const [commands, skills, mcpServers] = await Promise.all([
       collectCommandFiles(COMMANDS_DIR),
       collectSkillFiles(SKILLS_DIR),
-      collectMcpServers(),
+      collectMcpServers(userId),
     ]);
 
     if (platform === 'mac') {

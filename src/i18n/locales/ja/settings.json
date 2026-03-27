@@ -284,7 +284,7 @@
         "initCommand": "プロジェクトディレクトリで task-master init を実行してください"
       }
     },
-    "settings": {
+  "settings": {
       "enableLabel": "TaskMaster統合を有効にする",
       "enableDescription": "インターフェース全体でTaskMasterのタスク、バナー、サイドバーインジケータを表示します"
     }
@@ -396,6 +396,18 @@
     "actions": {
       "add": "追加"
     }
+  },
+  "skillPack": {
+    "title": "ローカル Claude Code にインストール",
+    "description": "{{total}} 個のスキルと {{mcp}} 個の MCP サーバーをローカル Claude Code CLI にインストールします",
+    "breakdown": "パッケージ内容: commands {{commands}} 件、skills {{skills}} 件、MCP {{mcp}} 件",
+    "policyHint": "インストール方針: 追加のみ。既存の commands/skills/MCP は上書きせずスキップします。",
+    "downloadMac": "Mac ダウンロード",
+    "downloadWindows": "Windows ダウンロード",
+    "hint": "ダウンロード後にダブルクリックしてインストール",
+    "runHint": "ダウンロード完了。ターミナルで次のコマンドを実行してください:",
+    "empty": "ダウンロード可能な skills または MCP サーバーがありません",
+    "loading": "読み込み中..."
   },
   "mcpServers": {
     "title": "MCPサーバー",

@@ -3,12 +3,7 @@ import { Download, Laptop, Monitor, Copy, Check, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../../../../../../../shared/view/ui';
 import { authenticatedFetch } from '../../../../../../../utils/api';
-
-type SkillPackInfo = {
-    commands: number;
-    skills: number;
-    mcpServers: number;
-};
+import type { SkillPackInfo } from '../../../../../types/types';
 
 export default function SkillPackDownload() {
     const { t } = useTranslation('settings');
@@ -63,8 +58,10 @@ export default function SkillPackDownload() {
         );
     }
 
-    const total = (info?.commands ?? 0) + (info?.skills ?? 0);
-    const mcp = info?.mcpServers ?? 0;
+    const commands = info?.package?.commands ?? info?.commands ?? 0;
+    const skills = info?.package?.skills ?? info?.skills ?? 0;
+    const total = info?.package?.total ?? (commands + skills);
+    const mcp = info?.package?.mcpServers ?? info?.mcpServers ?? 0;
 
     if (total === 0 && mcp === 0) {
         return null;
@@ -80,6 +77,12 @@ export default function SkillPackDownload() {
             </div>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
                 {t('skillPack.description', { total, mcp })}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-500 mb-3">
+                {t('skillPack.breakdown', { commands, skills, mcp })}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-500 mb-3">
+                {t('skillPack.policyHint')}
             </p>
             <div className="flex gap-2 mb-2">
                 <Button

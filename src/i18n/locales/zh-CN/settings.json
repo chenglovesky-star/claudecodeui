@@ -400,6 +400,8 @@
   "skillPack": {
     "title": "一键安装到本地 Claude Code",
     "description": "将 {{total}} 个技能和 {{mcp}} 个 MCP 配置安装到你本地的 Claude Code CLI",
+    "breakdown": "安装包包含：{{commands}} 个 commands、{{skills}} 个 skills、{{mcp}} 个 MCP",
+    "policyHint": "安装策略：仅新增，已存在的 commands/skills/MCP 会跳过，不会覆盖。",
     "downloadMac": "Mac 下载",
     "downloadWindows": "Windows 下载",
     "hint": "下载后双击运行即可完成安装",

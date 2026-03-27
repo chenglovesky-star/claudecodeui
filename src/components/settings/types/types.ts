@@ -100,6 +100,37 @@ export type McpToolsResult = {
   prompts?: unknown[];
 };
 
+export type SkillPackPackageInfo = {
+  commands: number;
+  skills: number;
+  mcpServers: number;
+  total: number;
+};
+
+export type SkillPackInstallMode = 'add_if_missing';
+
+export type SkillPackInstallPolicy = {
+  commands: SkillPackInstallMode;
+  skills: SkillPackInstallMode;
+  mcpServers: SkillPackInstallMode;
+};
+
+export type SkillPackEstimateReason = 'client_local_state_unavailable';
+
+export type SkillPackEstimate = {
+  canPredictLocalResult: boolean;
+  reason: SkillPackEstimateReason;
+};
+
+export type SkillPackInfo = {
+  commands: number;
+  skills: number;
+  mcpServers: number;
+  package?: SkillPackPackageInfo;
+  installPolicy?: SkillPackInstallPolicy;
+  estimate?: SkillPackEstimate;
+};
+
 export type ClaudePermissionsState = {
   allowedTools: string[];
   disallowedTools: string[];
