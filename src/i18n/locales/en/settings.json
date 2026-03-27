@@ -397,6 +397,15 @@
       "add": "Add"
     }
   },
+  "skillPack": {
+    "title": "Install to Local Claude Code",
+    "description": "Download and install {{total}} skills and {{mcp}} MCP servers to your local Claude Code CLI",
+    "downloadMac": "Mac Download",
+    "downloadWindows": "Windows Download",
+    "hint": "Download and double-click to install",
+    "empty": "No skills or MCP servers available for download",
+    "loading": "Loading..."
+  },
   "mcpServers": {
     "title": "MCP Servers",
     "description": {

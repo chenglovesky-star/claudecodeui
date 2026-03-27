@@ -397,6 +397,15 @@
       "add": "添加"
     }
   },
+  "skillPack": {
+    "title": "一键安装到本地 Claude Code",
+    "description": "将 {{total}} 个技能和 {{mcp}} 个 MCP 配置安装到你本地的 Claude Code CLI",
+    "downloadMac": "Mac 下载",
+    "downloadWindows": "Windows 下载",
+    "hint": "下载后双击运行即可完成安装",
+    "empty": "暂无可安装的技能或 MCP 配置",
+    "loading": "加载中..."
+  },
   "mcpServers": {
     "title": "MCP 服务器",
     "description": {
