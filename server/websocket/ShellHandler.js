@@ -410,9 +410,9 @@ export class ShellHandler {
                         const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
                         const shellArgs = os.platform() === 'win32' ? ['-Command', shellCommand] : ['-c', shellCommand];
 
-                        // Use terminal dimensions from client if provided, otherwise use defaults
-                        const termCols = data.cols || 80;
-                        const termRows = data.rows || 24;
+                        // Use terminal dimensions from client if provided, enforce minimum
+                        const termCols = Math.max(Number(data.cols) || 80, 40);
+                        const termRows = Math.max(Number(data.rows) || 24, 10);
                         log.info(`Using terminal dimensions: ${termCols} x ${termRows}`);
 
                         shellProcess = pty.spawn(shell, shellArgs, {
@@ -550,13 +550,15 @@ export class ShellHandler {
                         log.warn('No active shell process to send input to');
                     }
                 } else if (data.type === 'resize') {
-                    // Handle terminal resize
+                    // Handle terminal resize (enforce minimum to prevent broken layouts)
+                    const cols = Math.max(Number(data.cols) || 80, 40);
+                    const rows = Math.max(Number(data.rows) || 24, 10);
                     if (shellProcess && shellProcess.resize) {
                         try {
-                            log.info(`Terminal resize requested: ${data.cols} x ${data.rows}`);
-                            shellProcess.resize(data.cols, data.rows);
-                            currentCols = data.cols;
-                            currentRows = data.rows;
+                            log.info(`Terminal resize requested: ${cols} x ${rows}`);
+                            shellProcess.resize(cols, rows);
+                            currentCols = cols;
+                            currentRows = rows;
                         } catch (error) {
                             log.error({ err: error }, 'Error resizing shell');
                         }

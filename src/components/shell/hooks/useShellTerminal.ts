@@ -193,10 +193,12 @@ export function useShellTerminal({
       }
 
       currentFitAddon.fit();
+      const cols = Math.max(currentTerminal.cols, 40);
+      const rows = Math.max(currentTerminal.rows, 10);
       sendSocketMessage(wsRef.current, {
         type: 'resize',
-        cols: currentTerminal.cols,
-        rows: currentTerminal.rows,
+        cols,
+        rows,
       });
     }, TERMINAL_INIT_DELAY_MS);
 
@@ -222,10 +224,12 @@ export function useShellTerminal({
         }
 
         currentFitAddon.fit();
+        const cols = Math.max(currentTerminal.cols, 40);
+        const rows = Math.max(currentTerminal.rows, 10);
         sendSocketMessage(wsRef.current, {
           type: 'resize',
-          cols: currentTerminal.cols,
-          rows: currentTerminal.rows,
+          cols,
+          rows,
         });
       }, TERMINAL_RESIZE_DELAY_MS);
     });

@@ -214,8 +214,8 @@ export function useShellConnection({
               sessionId: isPlainShellRef.current ? null : selectedSessionRef.current?.id || null,
               hasSession: isPlainShellRef.current ? false : Boolean(selectedSessionRef.current),
               provider: isPlainShellRef.current ? 'plain-shell' : (selectedSessionRef.current?.__provider || localStorage.getItem('selected-provider') || 'claude'),
-              cols: currentTerminal.cols,
-              rows: currentTerminal.rows,
+              cols: Math.max(currentTerminal.cols, 40),
+              rows: Math.max(currentTerminal.rows, 10),
               initialCommand: initialCommandRef.current,
               isPlainShell: isPlainShellRef.current,
             });
