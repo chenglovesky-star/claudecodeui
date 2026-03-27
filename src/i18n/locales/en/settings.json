@@ -403,6 +403,7 @@
     "downloadMac": "Mac Download",
     "downloadWindows": "Windows Download",
     "hint": "Download and double-click to install",
+    "runHint": "Downloaded! Paste this command in your terminal to install:",
     "empty": "No skills or MCP servers available for download",
     "loading": "Loading..."
   },

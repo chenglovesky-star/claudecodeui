@@ -403,6 +403,7 @@
     "downloadMac": "Mac 下载",
     "downloadWindows": "Windows 下载",
     "hint": "下载后双击运行即可完成安装",
+    "runHint": "已下载！在终端中粘贴以下命令即可安装：",
     "empty": "暂无可安装的技能或 MCP 配置",
     "loading": "加载中..."
   },
