@@ -403,7 +403,9 @@ export function useProjectsState({
     (session: ProjectSession) => {
       setSelectedSession(session);
 
-      if (activeTab === 'tasks' || activeTab === 'preview') {
+      if (session.__provider === 'shell-log') {
+        setActiveTab('shell');
+      } else if (activeTab === 'tasks' || activeTab === 'preview') {
         setActiveTab('chat');
       }
 

@@ -3,13 +3,14 @@ import ChatInterface from '../../chat/view/ChatInterface';
 import FileTree from '../../file-tree/view/FileTree';
 import StandaloneShell from '../../standalone-shell/view/StandaloneShell';
 import GitPanel from '../../git-panel/view/GitPanel';
+import ShellLogViewer from '../../shell-log/view/ShellLogViewer';
 import type { MainContentProps } from '../types/types';
 import { useTaskMaster } from '../../../contexts/TaskMasterContext';
 import { useTasksSettings } from '../../../contexts/TasksSettingsContext';
 import { useUiPreferences } from '../../../hooks/useUiPreferences';
 import { useEditorSidebar } from '../../code-editor/hooks/useEditorSidebar';
 import EditorSidebar from '../../code-editor/view/EditorSidebar';
-import type { Project } from '../../../types/app';
+import type { Project, ShellLogSession } from '../../../types/app';
 import { TaskMasterPanel } from '../../task-master';
 import MainContentHeader from './subcomponents/MainContentHeader';
 import MainContentStateView from './subcomponents/MainContentStateView';
@@ -153,6 +154,15 @@ function MainContent({
           {shellVisitedRef.current && (
             <div className={`h-full w-full overflow-hidden ${activeTab === 'shell' ? '' : 'hidden'}`}>
               <StandaloneShell key={shellRestartKey} project={selectedProject} session={selectedSession} showHeader={false} onShellSessionCreated={onShellSessionCreated} />
+            </div>
+          )}
+
+          {selectedSession?.__provider === 'shell-log' && selectedProject && (
+            <div className="h-full w-full overflow-hidden">
+              <ShellLogViewer
+                project={selectedProject}
+                session={selectedSession as ShellLogSession}
+              />
             </div>
           )}
 
