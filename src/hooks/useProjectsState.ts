@@ -277,6 +277,13 @@ export function useProjectsState({
     );
 
     if (!updatedSelectedSession) {
+      // Shell "New Session" uses a temporary "new-{timestamp}" ID that won't exist in the
+      // updated project list (the real session gets a UUID from Claude CLI).
+      // Do NOT clear it here — that would trigger disconnectFromShell() in useShellRuntime,
+      // orphaning the PTY and causing chat history loss.
+      if (selectedSession.id.startsWith('new-')) {
+        return;
+      }
       setSelectedSession(null);
     }
   }, [latestMessage, selectedProject, selectedSession, activeSessions, projects]);
