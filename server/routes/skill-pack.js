@@ -176,6 +176,109 @@ function generateMacScript(commands, skills, mcpServers) {
   lines.push('skill_skipped=0');
   lines.push('');
 
+  // --- Proxy Config ---
+  lines.push('echo "----- 代理配置 -----"');
+  lines.push('echo "请选择使用模式:"');
+  lines.push('echo "  1) 登录号 / 拼车"');
+  lines.push('echo "  2) 中转站"');
+  lines.push('');
+  lines.push('PROXY_MODE=""');
+  lines.push('for _i in 1 2 3; do');
+  lines.push('  read -rp "输入选项 [1/2]: " _mode_input');
+  lines.push('  if [ "$_mode_input" = "1" ] || [ "$_mode_input" = "2" ]; then');
+  lines.push('    PROXY_MODE="$_mode_input"');
+  lines.push('    break');
+  lines.push('  fi');
+  lines.push('  echo "  错误：请输入 1 或 2"');
+  lines.push('done');
+  lines.push('if [ -z "$PROXY_MODE" ]; then');
+  lines.push('  echo "输入无效，已退出。"');
+  lines.push('  exit 1');
+  lines.push('fi');
+  lines.push('');
+  lines.push('# Collect base URL and API key (中转站 only)');
+  lines.push('ANTHROPIC_BASE_URL=""');
+  lines.push('ANTHROPIC_API_KEY=""');
+  lines.push('if [ "$PROXY_MODE" = "2" ]; then');
+  lines.push('  for _i in 1 2 3; do');
+  lines.push('    read -rp "请输入 Base URL (例: https://api.wow3.top): " _url_input');
+  lines.push('    case "$_url_input" in');
+  lines.push('      http://*|https://*) ANTHROPIC_BASE_URL="$_url_input"; break ;;');
+  lines.push('      *) echo "  错误：Base URL 必须以 http:// 或 https:// 开头" ;;');
+  lines.push('    esac');
+  lines.push('  done');
+  lines.push('  if [ -z "$ANTHROPIC_BASE_URL" ]; then');
+  lines.push('    echo "Base URL 无效，已退出。"');
+  lines.push('    exit 1');
+  lines.push('  fi');
+  lines.push('  for _i in 1 2 3; do');
+  lines.push('    read -rp "请输入 API Key: " _key_input');
+  lines.push('    if [ -n "$_key_input" ]; then');
+  lines.push('      ANTHROPIC_API_KEY="$_key_input"');
+  lines.push('      break');
+  lines.push('    fi');
+  lines.push('    echo "  错误：API Key 不能为空"');
+  lines.push('  done');
+  lines.push('  if [ -z "$ANTHROPIC_API_KEY" ]; then');
+  lines.push('    echo "API Key 无效，已退出。"');
+  lines.push('    exit 1');
+  lines.push('  fi');
+  lines.push('fi');
+  lines.push('');
+  lines.push('# Collect proxy address');
+  lines.push('PROXY_URL=""');
+  lines.push('for _i in 1 2 3; do');
+  lines.push('  read -rp "请输入代理地址 (http://ip:port): " _proxy_input');
+  lines.push('  case "$_proxy_input" in');
+  lines.push('    http://*) PROXY_URL="$_proxy_input"; break ;;');
+  lines.push('    *) echo "  错误：代理地址必须以 http:// 开头" ;;');
+  lines.push('  esac');
+  lines.push('done');
+  lines.push('if [ -z "$PROXY_URL" ]; then');
+  lines.push('  echo "代理地址无效，已退出。"');
+  lines.push('  exit 1');
+  lines.push('fi');
+  lines.push('');
+  lines.push('# Write to ~/.claude/settings.json via python3');
+  lines.push('if ! command -v python3 &>/dev/null; then');
+  lines.push('  echo "  ⚠ python3 未找到，跳过 settings.json 写入"');
+  lines.push('else');
+  lines.push(`python3 -c "
+import json, os, sys
+
+proxy_url = sys.argv[1]
+mode = sys.argv[2]
+base_url = sys.argv[3] if len(sys.argv) > 3 else ''
+api_key  = sys.argv[4] if len(sys.argv) > 4 else ''
+
+settings_path = os.path.expanduser('~/.claude/settings.json')
+if os.path.exists(settings_path):
+    with open(settings_path, 'r') as f:
+        settings = json.load(f)
+else:
+    settings = {}
+
+env = settings.setdefault('env', {})
+env['HTTP_PROXY']  = proxy_url
+env['HTTPS_PROXY'] = proxy_url
+if mode == '2' and base_url:
+    env['ANTHROPIC_BASE_URL'] = base_url
+if mode == '2' and api_key:
+    env['ANTHROPIC_API_KEY'] = api_key
+if 'language' not in settings:
+    settings['language'] = '中文'
+
+with open(settings_path, 'w') as f:
+    json.dump(settings, f, indent=2, ensure_ascii=False)
+
+print('  ✓ 代理配置已写入 ~/.claude/settings.json')
+" "$PROXY_URL" "$PROXY_MODE" "$ANTHROPIC_BASE_URL" "$ANTHROPIC_API_KEY"`);
+  lines.push('fi');
+  lines.push('');
+  lines.push('echo ""');
+  lines.push('echo "----- 安装内容 -----"');
+  lines.push('');
+
   // --- Commands ---
   for (const cmd of commands) {
     const relPath = safePath(cmd.relativePath);
@@ -267,13 +370,19 @@ print(f'  MCP: {added} added, {skipped} skipped')
   // --- Summary ---
   lines.push('echo ""');
   lines.push('echo "========================================="');
-  lines.push('echo "  Installation Complete!"');
+  lines.push('echo "  安装完成!"');
   lines.push('echo "========================================="');
+  lines.push('if [ "$PROXY_MODE" = "1" ]; then');
+  lines.push('  echo "  模式:     登录号/拼车"');
+  lines.push('else');
+  lines.push('  echo "  模式:     中转站"');
+  lines.push('fi');
+  lines.push('echo "  代理:     ${PROXY_URL}"');
   lines.push('echo "  Commands: ${command_added} added, ${command_skipped} skipped"');
   lines.push('echo "  Skills:   ${skill_added} added, ${skill_skipped} skipped"');
   lines.push(`echo "  MCP:      ${Object.keys(mcpServers).length}"`);
   lines.push('echo ""');
-  lines.push('echo "Restart Claude CLI to apply changes."');
+  lines.push('echo "请重启 Claude CLI 使配置生效。"');
   lines.push('');
 
   return lines.join('\n');
