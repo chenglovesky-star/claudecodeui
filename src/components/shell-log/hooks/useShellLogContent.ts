@@ -23,7 +23,7 @@ export function useShellLogContent(session: ShellLogSession | null, projectName:
     } finally {
       setIsLoading(false);
     }
-  }, [session, projectName]);
+  }, [session?.id, projectName]);
 
   useEffect(() => {
     void load();

@@ -152,7 +152,7 @@ function MainContent({
           )}
 
           {shellVisitedRef.current && (
-            <div className={`h-full w-full overflow-hidden ${activeTab === 'shell' ? '' : 'hidden'}`}>
+            <div className={`h-full w-full overflow-hidden ${activeTab === 'shell' && selectedSession?.__provider !== 'shell-log' ? '' : 'hidden'}`}>
               <StandaloneShell key={shellRestartKey} project={selectedProject} session={selectedSession} showHeader={false} onShellSessionCreated={onShellSessionCreated} />
             </div>
           )}
