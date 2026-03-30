@@ -39,6 +39,7 @@ export type SidebarProps = {
   onCloseSettings: () => void;
   isMobile: boolean;
   processingSessions?: Set<string>;
+  shellLogVersion?: number;
 };
 
 export type SessionViewModel = {

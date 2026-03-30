@@ -34,6 +34,7 @@ type UseSidebarControllerArgs = {
   setCurrentProject: (project: Project) => void;
   setSidebarVisible: (visible: boolean) => void;
   sidebarVisible: boolean;
+  shellLogVersion?: number;
 };
 
 export function useSidebarController({
@@ -51,6 +52,7 @@ export function useSidebarController({
   setCurrentProject,
   setSidebarVisible,
   sidebarVisible,
+  shellLogVersion,
 }: UseSidebarControllerArgs) {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [editingProject, setEditingProject] = useState<string | null>(null);
@@ -71,6 +73,9 @@ export function useSidebarController({
   const [sessionDeleteConfirmation, setSessionDeleteConfirmation] = useState<SessionDeleteConfirmation | null>(null);
   const [showVersionModal, setShowVersionModal] = useState(false);
   const [starredProjects, setStarredProjects] = useState<Set<string>>(() => loadStarredProjects());
+  const [shellLogSessionsByProject, setShellLogSessionsByProject] = useState<
+    Record<string, import('../../../types/app').ShellLogSession[]>
+  >({});
 
   const isSidebarCollapsed = !isMobile && !sidebarVisible;
 
@@ -140,15 +145,45 @@ export function useSidebarController({
     };
   }, []);
 
+  const loadShellLogSessions = useCallback(async (project: Project) => {
+    try {
+      const response = await api.shellSessions(project.name);
+      if (!response.ok) return;
+      const result = await response.json() as { sessions: import('../../../types/app').ShellLogSession[] };
+      const sessionsWithProvider = (result.sessions || []).map((s) => ({
+        ...s,
+        __provider: 'shell-log' as const,
+      }));
+      setShellLogSessionsByProject((prev) => ({
+        ...prev,
+        [project.name]: sessionsWithProvider,
+      }));
+    } catch {
+      // silent
+    }
+  }, []);
+
   const toggleProject = useCallback((projectName: string) => {
     setExpandedProjects((prev) => {
       const next = new Set<string>();
       if (!prev.has(projectName)) {
         next.add(projectName);
+        // Load shell log sessions when a project is expanded
+        const project = projects.find((p) => p.name === projectName);
+        if (project) void loadShellLogSessions(project);
       }
       return next;
     });
-  }, []);
+  }, [projects, loadShellLogSessions]);
+
+  useEffect(() => {
+    if (!shellLogVersion) return;
+    // Refresh shell log sessions for all currently expanded projects
+    expandedProjects.forEach((projectName) => {
+      const project = projects.find((p) => p.name === projectName);
+      if (project) void loadShellLogSessions(project);
+    });
+  }, [shellLogVersion, expandedProjects, projects, loadShellLogSessions]);
 
   const handleSessionClick = useCallback(
     (session: SessionWithProvider, projectName: string) => {
@@ -444,6 +479,7 @@ export function useSidebarController({
     showVersionModal,
     starredProjects,
     filteredProjects,
+    shellLogSessionsByProject,
     toggleProject,
     handleSessionClick,
     toggleStarProject,

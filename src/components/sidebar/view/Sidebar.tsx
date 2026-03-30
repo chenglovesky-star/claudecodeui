@@ -7,7 +7,7 @@ import { useSidebarController } from '../hooks/useSidebarController';
 import { useTaskMaster } from '../../../contexts/TaskMasterContext';
 import { useTasksSettings } from '../../../contexts/TasksSettingsContext';
 import { useAuth } from '../../auth/context/AuthContext';
-import type { Project, SessionProvider } from '../../../types/app';
+import type { Project, SessionProvider, ShellLogSession } from '../../../types/app';
 import type { MCPServerStatus, SidebarProps } from '../types/types';
 import SidebarCollapsed from './subcomponents/SidebarCollapsed';
 import SidebarContent from './subcomponents/SidebarContent';
@@ -37,6 +37,7 @@ function Sidebar({
   onCloseSettings,
   isMobile,
   processingSessions,
+  shellLogVersion,
 }: SidebarProps) {
   const { t } = useTranslation(['sidebar', 'common']);
   const { isPWA } = useDeviceSettings({ trackMobile: false });
@@ -68,6 +69,7 @@ function Sidebar({
     sessionDeleteConfirmation,
     showVersionModal,
     filteredProjects,
+    shellLogSessionsByProject,
     toggleProject,
     handleSessionClick,
     toggleStarProject,
@@ -109,6 +111,7 @@ function Sidebar({
     setCurrentProject,
     setSidebarVisible: (visible) => setPreference('sidebarVisible', visible),
     sidebarVisible,
+    shellLogVersion,
   });
 
   useEffect(() => {
@@ -148,6 +151,7 @@ function Sidebar({
     tasksEnabled,
     mcpServerStatus,
     processingSessions,
+    shellLogSessionsByProject,
     getProjectSessions,
     isProjectStarred,
     onEditingNameChange: setEditingName,
@@ -177,6 +181,9 @@ function Sidebar({
     },
     onSaveEditingSession: (projectName: string, sessionId: string, summary: string, provider: SessionProvider) => {
       void updateSessionSummary(projectName, sessionId, summary, provider);
+    },
+    onShellLogSessionSelect: (session: ShellLogSession) => {
+      onSessionSelect(session as unknown as import('../../../types/app').ProjectSession);
     },
     t,
   };

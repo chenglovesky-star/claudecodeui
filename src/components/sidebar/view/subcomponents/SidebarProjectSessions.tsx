@@ -1,7 +1,7 @@
-import { ChevronDown, Plus } from 'lucide-react';
+import { ChevronDown, Plus, Terminal } from 'lucide-react';
 import type { TFunction } from 'i18next';
 import { Button } from '../../../../shared/view/ui';
-import type { Project, ProjectSession, SessionProvider } from '../../../../types/app';
+import type { Project, ProjectSession, SessionProvider, ShellLogSession } from '../../../../types/app';
 import type { SessionWithProvider } from '../../types/types';
 import SidebarSessionItem from './SidebarSessionItem';
 
@@ -16,6 +16,8 @@ type SidebarProjectSessionsProps = {
   editingSession: string | null;
   editingSessionName: string;
   processingSessions?: Set<string>;
+  shellLogSessions?: ShellLogSession[];
+  onShellLogSessionSelect?: (session: ShellLogSession) => void;
   onEditingSessionNameChange: (value: string) => void;
   onStartEditingSession: (sessionId: string, initialName: string) => void;
   onCancelEditingSession: () => void;
@@ -62,6 +64,8 @@ export default function SidebarProjectSessions({
   editingSession,
   editingSessionName,
   processingSessions,
+  shellLogSessions,
+  onShellLogSessionSelect,
   onEditingSessionNameChange,
   onStartEditingSession,
   onCancelEditingSession,
@@ -131,6 +135,32 @@ export default function SidebarProjectSessions({
             </>
           )}
         </Button>
+      )}
+
+      {shellLogSessions && shellLogSessions.length > 0 && (
+        <div className="mt-1">
+          <div className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground">
+            <Terminal className="h-3 w-3" />
+            <span>Shell Logs</span>
+          </div>
+          {shellLogSessions.map((log) => (
+            <button
+              key={log.id}
+              className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
+              onClick={() => onShellLogSessionSelect?.(log)}
+            >
+              <Terminal className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs font-medium">
+                  {log.provider === 'plain-shell' ? 'Shell' : 'Claude'} — {new Date(log.startedAt).toLocaleString()}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {log.lineCount} 行{log.endedAt ? '' : ' (进行中)'}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
       )}
 
       <div className="px-3 pb-2 md:hidden">
