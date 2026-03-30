@@ -15,6 +15,7 @@ import {
     extractProjectDirectory
 } from '../projects.js';
 import { sessionNamesDb, applyCustomSessionNames, userProjectsDb, userDb } from '../database/db.js';
+import shellLogManager from '../shell-log-manager.js';
 
 const router = express.Router();
 
@@ -1032,6 +1033,42 @@ router.get('/:projectName/sessions/:sessionId/token-usage', authorizeProject, as
     } catch (error) {
         console.error('Error reading session token usage:', error);
         res.status(500).json({ error: 'Failed to read session token usage' });
+    }
+});
+
+// GET /api/projects/:projectName/shell-sessions
+router.get('/:projectName/shell-sessions', authorizeProject, async (req, res) => {
+    try {
+        const logs = await shellLogManager.getProjectLogs(
+            req.params.projectName,
+            req.user.id
+        );
+        res.json({ sessions: logs, total: logs.length });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET /api/projects/:projectName/shell-sessions/:logId/content
+router.get('/:projectName/shell-sessions/:logId/content', authorizeProject, async (req, res) => {
+    try {
+        const result = await shellLogManager.getLogContent(
+            req.params.logId,
+            req.user.id
+        );
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// DELETE /api/projects/:projectName/shell-sessions/:logId
+router.delete('/:projectName/shell-sessions/:logId', authorizeProject, async (req, res) => {
+    try {
+        await shellLogManager.deleteLog(req.params.logId, req.user.id);
+        res.status(204).end();
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
