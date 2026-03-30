@@ -105,7 +105,11 @@ class ShellLogManager {
       try {
         const raw = await fsPromises.readFile(path.join(userDir, file), 'utf8');
         const meta = JSON.parse(raw);
-        if (meta.projectName === projectName) {
+        // projectName in URL is the encoded path (e.g. '-workspace-leicheng9')
+        // meta.projectName stores path.basename (e.g. 'leicheng9')
+        // also derive encoded form from stored projectPath for matching
+        const encodedPath = meta.projectPath ? meta.projectPath.replace(/\//g, '-') : '';
+        if (meta.projectName === projectName || encodedPath === projectName) {
           results.push(meta);
         }
       } catch {
