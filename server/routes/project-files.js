@@ -1045,30 +1045,41 @@ router.get('/:projectName/shell-sessions', authorizeProject, async (req, res) =>
         );
         res.json({ sessions: logs, total: logs.length });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Error listing shell sessions:', error);
+        res.status(500).json({ error: 'Failed to list shell sessions' });
     }
 });
 
 // GET /api/projects/:projectName/shell-sessions/:logId/content
 router.get('/:projectName/shell-sessions/:logId/content', authorizeProject, async (req, res) => {
     try {
+        const { logId } = req.params;
+        if (!logId || /[/\\]/.test(logId) || logId.includes('..')) {
+            return res.status(400).json({ error: 'Invalid logId' });
+        }
         const result = await shellLogManager.getLogContent(
-            req.params.logId,
+            logId,
             req.user.id
         );
         res.json(result);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Error reading shell session content:', error);
+        res.status(500).json({ error: 'Failed to read shell session content' });
     }
 });
 
 // DELETE /api/projects/:projectName/shell-sessions/:logId
 router.delete('/:projectName/shell-sessions/:logId', authorizeProject, async (req, res) => {
     try {
-        await shellLogManager.deleteLog(req.params.logId, req.user.id);
+        const { logId } = req.params;
+        if (!logId || /[/\\]/.test(logId) || logId.includes('..')) {
+            return res.status(400).json({ error: 'Invalid logId' });
+        }
+        await shellLogManager.deleteLog(logId, req.user.id);
         res.status(204).end();
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Error deleting shell session:', error);
+        res.status(500).json({ error: 'Failed to delete shell session' });
     }
 });
 
