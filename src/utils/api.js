@@ -97,6 +97,14 @@ export const api = {
     authenticatedFetch(`/api/gemini/sessions/${sessionId}`, {
       method: 'DELETE',
     }),
+  shellSessions: (projectName) =>
+    authenticatedFetch(`/api/projects/${projectName}/shell-sessions`),
+  shellSessionContent: (projectName, logId) =>
+    authenticatedFetch(`/api/projects/${projectName}/shell-sessions/${logId}/content`),
+  deleteShellSession: (projectName, logId) =>
+    authenticatedFetch(`/api/projects/${projectName}/shell-sessions/${logId}`, {
+      method: 'DELETE',
+    }),
   deleteProject: (projectName, force = false) =>
     authenticatedFetch(`/api/projects/${projectName}${force ? '?force=true' : ''}`, {
       method: 'DELETE',
