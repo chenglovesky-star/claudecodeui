@@ -454,8 +454,12 @@ function generateWindowsScript(commands, skills, mcpServers) {
   psLines.push('} else {');
   psLines.push('  $settings = [PSCustomObject]@{}');
   psLines.push('}');
-  psLines.push('if (-not ($settings.PSObject.Properties.Name -contains "env")) {');
-  psLines.push('  $settings | Add-Member -NotePropertyName "env" -NotePropertyValue ([PSCustomObject]@{})');
+  psLines.push('if (-not ($settings.PSObject.Properties.Name -contains "env") -or $settings.env -eq $null) {');
+  psLines.push('  if ($settings.PSObject.Properties.Name -contains "env") {');
+  psLines.push('    $settings.env = [PSCustomObject]@{}');
+  psLines.push('  } else {');
+  psLines.push('    $settings | Add-Member -NotePropertyName "env" -NotePropertyValue ([PSCustomObject]@{})');
+  psLines.push('  }');
   psLines.push('}');
   psLines.push('$envObj = $settings.env');
   psLines.push('foreach ($key in @("HTTP_PROXY", "HTTPS_PROXY")) {');
