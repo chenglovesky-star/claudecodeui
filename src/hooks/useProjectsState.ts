@@ -81,6 +81,12 @@ const isUpdateAdditive = (
     return true;
   }
 
+  // Shell "New Session" has a temp "new-{ts}" ID that doesn't exist in sessions lists.
+  // Always allow project updates so the real UUID session can appear in the sidebar.
+  if (selectedSession.id.startsWith('new-')) {
+    return true;
+  }
+
   const currentSelectedProject = currentProjects.find((project) => project.name === selectedProject.name);
   const updatedSelectedProject = updatedProjects.find((project) => project.name === selectedProject.name);
 
