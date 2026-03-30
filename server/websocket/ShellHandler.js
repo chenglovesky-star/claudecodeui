@@ -8,8 +8,10 @@ import path from 'path';
 import { execFile } from 'child_process';
 import pty from 'node-pty';
 import { WebSocket } from 'ws';
+import chokidar from 'chokidar';
 import legacySessionManager from '../sessionManager.js';
 import { userMcpDb } from '../database/db.js';
+import shellLogManager from '../shell-log-manager.js';
 import { PTY_SESSION_TIMEOUT_MS, SHELL_URL_PARSE_BUFFER_LIMIT } from '../config/constants.js';
 import { createLogger } from '../config/logger.js';
 
@@ -436,6 +438,46 @@ export class ShellHandler {
                         const myGeneration = ++processGeneration;
                         const mySessionKey = ptySessionKey;
 
+                        // 创建持久化日志（链路 B）
+                        const logId = shellLogManager.createLog(
+                            projectPath,
+                            path.basename(projectPath),
+                            userId,
+                            sessionId || mySessionKey,
+                            isPlainShell ? 'plain-shell' : provider
+                        );
+
+                        // 链路 A：监听 Claude CLI 创建的真实 session JSONL
+                        let sessionWatcher = null;
+                        if (!isPlainShell && (provider === 'claude' || !provider) && !hasSession) {
+                            const claudeProjectsDir = path.join(userHome, '.claude', 'projects');
+                            try {
+                                sessionWatcher = chokidar.watch(claudeProjectsDir, {
+                                    persistent: false,
+                                    ignoreInitial: true,
+                                    depth: 2,
+                                    awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
+                                });
+                                sessionWatcher.on('add', (filePath) => {
+                                    if (!filePath.endsWith('.jsonl')) return;
+                                    const realSessionId = path.basename(filePath, '.jsonl');
+                                    if (realSessionId.startsWith('agent-')) return;
+                                    const session = this.ptySessionsMap.get(mySessionKey);
+                                    if (session && session.ws && session.ws.readyState === WebSocket.OPEN) {
+                                        session.ws.send(JSON.stringify({
+                                            type: 'shell-session-created',
+                                            sessionId: realSessionId,
+                                            provider: 'claude',
+                                        }));
+                                    }
+                                    sessionWatcher.close().catch(() => {});
+                                    sessionWatcher = null;
+                                });
+                            } catch (err) {
+                                log.error({ err }, 'Failed to start session watcher');
+                            }
+                        }
+
                         this.ptySessionsMap.set(mySessionKey, {
                             pty: shellProcess,
                             ws: ws,
@@ -452,6 +494,9 @@ export class ShellHandler {
                             if (myGeneration !== processGeneration) return;
                             const session = this.ptySessionsMap.get(mySessionKey);
                             if (!session) return;
+
+                            // 持久化输出（链路 B）
+                            shellLogManager.appendLine(logId, data);
 
                             if (session.buffer.length < 5000) {
                                 session.buffer.push(data);
@@ -525,6 +570,12 @@ export class ShellHandler {
                             }
                             if (session && session.timeoutId) {
                                 clearTimeout(session.timeoutId);
+                            }
+                            // 关闭日志（链路 B）
+                            shellLogManager.closeLog(logId);
+                            if (sessionWatcher) {
+                                sessionWatcher.close().catch(() => {});
+                                sessionWatcher = null;
                             }
                             this.ptySessionsMap.delete(mySessionKey);
                             shellProcess = null;
