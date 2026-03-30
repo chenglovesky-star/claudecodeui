@@ -551,7 +551,6 @@ export function useProjectsState({
       onCloseSettings: () => setShowSettings(false),
       isMobile,
       shellLogVersion,
-      onShellSessionCreated: handleShellSessionCreated,
     }),
     [
       handleNewSession,
@@ -560,7 +559,6 @@ export function useProjectsState({
       handleSessionDelete,
       handleSessionSelect,
       handleSidebarRefresh,
-      handleShellSessionCreated,
       isLoadingProjects,
       isMobile,
       loadingProgress,
