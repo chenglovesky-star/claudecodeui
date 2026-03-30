@@ -281,7 +281,7 @@ export default function ProviderSelectionEmptyState({
                   cursor: t('providerSelection.readyPrompt.cursor', { model: cursorModel }),
                   codex: t('providerSelection.readyPrompt.codex', { model: codexModel }),
                   gemini: t('providerSelection.readyPrompt.gemini', { model: geminiModel }),
-                }[provider]
+                }[provider as Exclude<typeof provider, 'shell-log'>]
               }
             </p>
           </div>

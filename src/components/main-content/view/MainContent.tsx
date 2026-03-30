@@ -161,7 +161,7 @@ function MainContent({
             <div className="h-full w-full overflow-hidden">
               <ShellLogViewer
                 project={selectedProject}
-                session={selectedSession as ShellLogSession}
+                session={selectedSession as unknown as ShellLogSession}
               />
             </div>
           )}
