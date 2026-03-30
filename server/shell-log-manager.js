@@ -131,6 +131,12 @@ class ShellLogManager {
     }
   }
 
+  closeAllLogs() {
+    for (const [logId] of this._openLogs) {
+      this.closeLog(logId);
+    }
+  }
+
   async deleteLog(logId, userId) {
     const userDir = this._userDir(userId);
     const txtPath = path.join(userDir, `${logId}.txt`);

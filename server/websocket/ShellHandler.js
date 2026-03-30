@@ -473,6 +473,9 @@ export class ShellHandler {
                                     sessionWatcher.close().catch(() => {});
                                     sessionWatcher = null;
                                 });
+                                sessionWatcher.on('error', (err) => {
+                                    log.error({ err }, 'sessionWatcher error');
+                                });
                             } catch (err) {
                                 log.error({ err }, 'Failed to start session watcher');
                             }
@@ -719,6 +722,14 @@ export class ShellHandler {
                             data: `\r\n\x1b[36m[正在切换到 ${preset.label} (${preset.model})...]\x1b[0m\r\n`
                         }));
 
+                        const switchLogId = shellLogManager.createLog(
+                            projectPath,
+                            path.basename(projectPath),
+                            userId,
+                            ptySessionKey + '-switch',
+                            preset.provider || preset.id || 'preset'
+                        );
+
                         shellProcess = pty.spawn(shellBin, shellArgs, {
                             name: 'xterm-256color',
                             cols: currentCols,
@@ -749,6 +760,9 @@ export class ShellHandler {
                             if (switchGeneration !== processGeneration) return;
                             const s = this.ptySessionsMap.get(switchSessionKey);
                             if (!s) return;
+
+                            // 持久化输出（switch-preset 链路 B）
+                            shellLogManager.appendLine(switchLogId, data);
 
                             if (s.buffer.length < 5000) {
                                 s.buffer.push(data);
@@ -794,6 +808,7 @@ export class ShellHandler {
                         shellProcess.onExit((exitCode) => {
                             if (switchGeneration !== processGeneration) return;
                             log.info(`Switched shell exited: ${exitCode.exitCode} signal: ${exitCode.signal}`);
+                            shellLogManager.closeLog(switchLogId);
                             const s = this.ptySessionsMap.get(switchSessionKey);
                             if (s?.ws?.readyState === WebSocket.OPEN) {
                                 s.ws.send(JSON.stringify({
@@ -928,6 +943,7 @@ export class ShellHandler {
             if (session.pty?.kill) session.pty.kill();
         }
         this.ptySessionsMap.clear();
+        shellLogManager.closeAllLogs();
         log.info('All PTY sessions disposed');
     }
 }
