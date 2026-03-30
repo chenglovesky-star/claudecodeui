@@ -48,6 +48,7 @@ function MainContent({
   onShowSettings,
   externalMessageUpdate,
   shellRestartKey,
+  onShellSessionCreated,
 }: MainContentProps) {
   const { preferences } = useUiPreferences();
   const { autoExpandTools, showRawParameters, showThinking, autoScrollToBottom, sendByCtrlEnter } = preferences;
@@ -151,7 +152,7 @@ function MainContent({
 
           {shellVisitedRef.current && (
             <div className={`h-full w-full overflow-hidden ${activeTab === 'shell' ? '' : 'hidden'}`}>
-              <StandaloneShell key={shellRestartKey} project={selectedProject} session={selectedSession} showHeader={false} />
+              <StandaloneShell key={shellRestartKey} project={selectedProject} session={selectedSession} showHeader={false} onShellSessionCreated={onShellSessionCreated} />
             </div>
           )}
 

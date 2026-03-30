@@ -149,6 +149,7 @@ export function useProjectsState({
   const [settingsInitialTab, setSettingsInitialTab] = useState('agents');
   const [externalMessageUpdate, setExternalMessageUpdate] = useState(0);
   const [shellRestartKey, setShellRestartKey] = useState(0);
+  const [shellLogVersion, setShellLogVersion] = useState(0);
 
   const loadingProgressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -217,7 +218,12 @@ export function useProjectsState({
       return;
     }
 
-    const projectsMessage = latestMessage as ProjectsUpdatedMessage;
+    const projectsMessage = latestMessage as ProjectsUpdatedMessage & { watchProvider?: string };
+
+    if (projectsMessage.watchProvider === 'shell-log') {
+      setShellLogVersion((prev) => prev + 1);
+      return;
+    }
 
     if (projectsMessage.changedFile && selectedSession && selectedProject) {
       const normalized = projectsMessage.changedFile.replace(/\\/g, '/');
@@ -420,6 +426,12 @@ export function useProjectsState({
     [activeTab, isMobile, navigate, selectedProject?.name],
   );
 
+  const handleShellSessionCreated = useCallback((realSessionId: string) => {
+    setSelectedSession((prev) =>
+      prev ? { ...prev, id: realSessionId } : prev
+    );
+  }, []);
+
   const handleNewSession = useCallback(
     (project: Project) => {
       setSelectedProject(project);
@@ -538,6 +550,8 @@ export function useProjectsState({
       settingsInitialTab,
       onCloseSettings: () => setShowSettings(false),
       isMobile,
+      shellLogVersion,
+      onShellSessionCreated: handleShellSessionCreated,
     }),
     [
       handleNewSession,
@@ -546,6 +560,7 @@ export function useProjectsState({
       handleSessionDelete,
       handleSessionSelect,
       handleSidebarRefresh,
+      handleShellSessionCreated,
       isLoadingProjects,
       isMobile,
       loadingProgress,
@@ -554,6 +569,7 @@ export function useProjectsState({
       selectedProject,
       selectedSession,
       showSettings,
+      shellLogVersion,
     ],
   );
 
@@ -583,5 +599,6 @@ export function useProjectsState({
     handleSessionDelete,
     handleProjectDelete,
     handleSidebarRefresh,
+    onShellSessionCreated: handleShellSessionCreated,
   };
 }

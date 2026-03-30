@@ -54,6 +54,7 @@ export type MainContentProps = {
   onShowSettings: () => void;
   externalMessageUpdate: number;
   shellRestartKey: number;
+  onShellSessionCreated?: (sessionId: string) => void;
 };
 
 export type MainContentHeaderProps = {
