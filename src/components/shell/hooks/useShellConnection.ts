@@ -28,6 +28,7 @@ type UseShellConnectionOptions = {
   clearTerminalScreen: () => void;
   setAuthUrl: (nextAuthUrl: string) => void;
   onOutputRef?: MutableRefObject<(() => void) | null>;
+  onShellSessionCreated?: (sessionId: string) => void;
 };
 
 type UseShellConnectionResult = {
@@ -55,6 +56,7 @@ export function useShellConnection({
   clearTerminalScreen,
   setAuthUrl,
   onOutputRef,
+  onShellSessionCreated,
 }: UseShellConnectionOptions): UseShellConnectionResult {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -148,6 +150,12 @@ export function useShellConnection({
         return;
       }
 
+      if (message.type === 'shell-session-created') {
+        const sid = typeof message.sessionId === 'string' ? message.sessionId : '';
+        if (sid) onShellSessionCreated?.(sid);
+        return;
+      }
+
       if (message.type === 'auth_url' || message.type === 'url_open') {
         const nextAuthUrl = typeof message.url === 'string' ? message.url : '';
         if (nextAuthUrl) {
@@ -155,7 +163,7 @@ export function useShellConnection({
         }
       }
     },
-    [flushOutputBuffer, handleProcessCompletion, setAuthUrl],
+    [flushOutputBuffer, handleProcessCompletion, onShellSessionCreated, setAuthUrl],
   );
 
   const connectWebSocket = useCallback(

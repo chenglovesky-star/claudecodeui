@@ -31,6 +31,7 @@ type ShellProps = {
   autoConnect?: boolean;
   isActive?: boolean;
   onWsRef?: (ws: import('react').MutableRefObject<WebSocket | null>) => void;
+  onShellSessionCreated?: (sessionId: string) => void;
 };
 
 export default function Shell({
@@ -43,6 +44,7 @@ export default function Shell({
   autoConnect = false,
   isActive,
   onWsRef,
+  onShellSessionCreated = undefined,
 }: ShellProps) {
   const { t } = useTranslation('chat');
   const [isRestarting, setIsRestarting] = useState(false);
@@ -78,6 +80,7 @@ export default function Shell({
     isRestarting,
     onProcessComplete,
     onOutputRef,
+    onShellSessionCreated,
   });
 
   useEffect(() => {
