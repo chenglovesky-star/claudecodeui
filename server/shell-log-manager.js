@@ -23,7 +23,8 @@ class ShellLogManager {
 
   /** 返回 userId 专属日志目录 */
   _userDir(userId) {
-    return path.join(this.logsBaseDir, String(userId || 0));
+    const safeId = String(parseInt(userId, 10) || 0);
+    return path.join(this.logsBaseDir, safeId);
   }
 
   /** 确保目录存在（同步，仅在 createLog 调用时） */
@@ -67,7 +68,7 @@ class ShellLogManager {
     if (!clean) return;
     try {
       fs.appendFileSync(entry.txtPath, clean, 'utf8');
-      entry.lineCount++;
+      entry.lineCount += clean.split('\n').length;
     } catch {
       // non-fatal
     }
@@ -119,6 +120,9 @@ class ShellLogManager {
   async getLogContent(logId, userId) {
     const userDir = this._userDir(userId);
     const txtPath = path.join(userDir, `${logId}.txt`);
+    if (!txtPath.startsWith(userDir + path.sep)) {
+      return { content: '', lineCount: 0 };
+    }
     try {
       const content = await fsPromises.readFile(txtPath, 'utf8');
       return { content, lineCount: content.split('\n').length };
@@ -131,6 +135,9 @@ class ShellLogManager {
     const userDir = this._userDir(userId);
     const txtPath = path.join(userDir, `${logId}.txt`);
     const metaPath = path.join(userDir, `${logId}.meta.json`);
+    if (!txtPath.startsWith(userDir + path.sep)) {
+      return;
+    }
     await Promise.allSettled([
       fsPromises.unlink(txtPath),
       fsPromises.unlink(metaPath),
