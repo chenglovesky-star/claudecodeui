@@ -241,7 +241,8 @@ function generateMacScript(commands, skills, mcpServers) {
   lines.push('');
   lines.push('# Write to ~/.claude/settings.json via python3');
   lines.push('if ! command -v python3 &>/dev/null; then');
-  lines.push('  echo "  ⚠ python3 未找到，跳过 settings.json 写入"');
+  lines.push('  echo "  ✗ 未找到 python3，无法写入代理配置，已退出。"');
+  lines.push('  exit 1');
   lines.push('else');
   lines.push(`python3 -c "
 import json, os, sys
@@ -258,7 +259,8 @@ if os.path.exists(settings_path):
 else:
     settings = {}
 
-env = settings.setdefault('env', {})
+env = settings.get('env') or {}
+settings['env'] = env
 env['HTTP_PROXY']  = proxy_url
 env['HTTPS_PROXY'] = proxy_url
 if mode == '2' and base_url:
