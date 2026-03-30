@@ -150,6 +150,28 @@ function setupUserHome(userId) {
                 fsSync.writeFileSync(versionFile, baseVersion, 'utf8');
                 log.info(`[MCP] Copied .claude/ dir for user ${userId} (version=${baseVersion})`);
             }
+
+            // Replace per-user projects/ dir with a symlink to the base projects dir.
+            // This ensures Shell-mode Claude CLI sessions land in the same directory
+            // that the chokidar watcher monitors, so projects_updated fires normally.
+            const userProjectsDir = path.join(userClaudeDir, 'projects');
+            const baseProjectsDir = path.join(baseClaudeDir, 'projects');
+            try {
+                if (!fsSync.existsSync(baseProjectsDir)) {
+                    fsSync.mkdirSync(baseProjectsDir, { recursive: true });
+                }
+                const stat = fsSync.existsSync(userProjectsDir) ? fsSync.lstatSync(userProjectsDir) : null;
+                if (stat && !stat.isSymbolicLink()) {
+                    // Replace copied directory with symlink
+                    fsSync.rmSync(userProjectsDir, { recursive: true, force: true });
+                }
+                if (!fsSync.existsSync(userProjectsDir)) {
+                    fsSync.symlinkSync(baseProjectsDir, userProjectsDir);
+                    log.info(`[MCP] Linked .claude/projects for user ${userId} → ${baseProjectsDir}`);
+                }
+            } catch (symlinkErr) {
+                log.warn({ symlinkErr }, `[MCP] Could not symlink projects dir for user ${userId}, sessions may not appear in sidebar`);
+            }
         }
 
         // Copy base .claude.json then merge user's MCP servers
