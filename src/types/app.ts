@@ -1,4 +1,4 @@
-export type SessionProvider = 'claude' | 'cursor' | 'codex' | 'gemini' | 'claude-cli' | 'shell-log';
+export type SessionProvider = 'claude' | 'cursor' | 'codex' | 'gemini' | 'claude-cli';
 
 export type AppTab = 'chat' | 'files' | 'shell' | 'git' | 'tasks' | 'preview';
 
@@ -30,18 +30,6 @@ export interface ProjectTaskmasterInfo {
   [key: string]: unknown;
 }
 
-export interface ShellLogSession {
-  id: string;
-  projectPath: string;
-  projectName: string;
-  userId: number;
-  provider: string;
-  startedAt: string;
-  endedAt: string | null;
-  lineCount: number;
-  __provider: 'shell-log';
-}
-
 export interface Project {
   name: string;
   displayName: string;
@@ -52,7 +40,6 @@ export interface Project {
   codexSessions?: ProjectSession[];
   geminiSessions?: ProjectSession[];
   claudeCliSessions?: ProjectSession[];
-  shellLogSessions?: ShellLogSession[];
   sessionMeta?: ProjectSessionMeta;
   taskmaster?: ProjectTaskmasterInfo;
   [key: string]: unknown;

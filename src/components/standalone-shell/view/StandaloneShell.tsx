@@ -20,7 +20,6 @@ type StandaloneShellProps = {
   showHeader?: boolean;
   compact?: boolean;
   minimal?: boolean;
-  onShellSessionCreated?: (sessionId: string) => void;
 };
 
 export default function StandaloneShell({
@@ -36,7 +35,6 @@ export default function StandaloneShell({
   showHeader = true,
   compact = false,
   minimal = false,
-  onShellSessionCreated = undefined,
 }: StandaloneShellProps) {
   const [isCompleted, setIsCompleted] = useState(false);
   const wsRefFromShell = useRef<MutableRefObject<WebSocket | null> | null>(null);
@@ -91,7 +89,6 @@ export default function StandaloneShell({
           minimal={minimal}
           autoConnect={minimal ? true : autoConnect}
           onWsRef={handleWsRef}
-          onShellSessionCreated={onShellSessionCreated}
         />
       </div>
     </div>

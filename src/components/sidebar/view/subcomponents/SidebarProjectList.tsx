@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import type { TFunction } from 'i18next';
-import type { LoadingProgress, Project, ProjectSession, SessionProvider, ShellLogSession } from '../../../../types/app';
+import type { LoadingProgress, Project, ProjectSession, SessionProvider } from '../../../../types/app';
 import type {
   LoadingSessionsByProject,
   MCPServerStatus,
@@ -28,10 +28,8 @@ export type SidebarProjectListProps = {
   tasksEnabled: boolean;
   mcpServerStatus: MCPServerStatus;
   processingSessions?: Set<string>;
-  shellLogSessionsByProject?: Record<string, ShellLogSession[]>;
   getProjectSessions: (project: Project) => SessionWithProvider[];
   isProjectStarred: (projectName: string) => boolean;
-  onShellLogSessionSelect?: (session: ShellLogSession) => void;
   onEditingNameChange: (value: string) => void;
   onToggleProject: (projectName: string) => void;
   onProjectSelect: (project: Project) => void;
@@ -75,7 +73,6 @@ export default function SidebarProjectList({
   tasksEnabled,
   mcpServerStatus,
   processingSessions,
-  shellLogSessionsByProject,
   getProjectSessions,
   isProjectStarred,
   onEditingNameChange,
@@ -94,7 +91,6 @@ export default function SidebarProjectList({
   onStartEditingSession,
   onCancelEditingSession,
   onSaveEditingSession,
-  onShellLogSessionSelect,
   t,
 }: SidebarProjectListProps) {
   const state = (
@@ -134,7 +130,6 @@ export default function SidebarProjectList({
               editingProject={editingProject}
               editingName={editingName}
               sessions={getProjectSessions(project)}
-              shellLogSessions={shellLogSessionsByProject?.[project.name] ?? []}
               initialSessionsLoaded={initialSessionsLoaded.has(project.name)}
               isLoadingSessions={Boolean(loadingSessions[project.name])}
               currentTime={currentTime}
@@ -159,7 +154,6 @@ export default function SidebarProjectList({
               onStartEditingSession={onStartEditingSession}
               onCancelEditingSession={onCancelEditingSession}
               onSaveEditingSession={onSaveEditingSession}
-              onShellLogSessionSelect={onShellLogSessionSelect}
               t={t}
             />
           ))}

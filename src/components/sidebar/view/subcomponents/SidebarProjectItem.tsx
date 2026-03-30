@@ -2,7 +2,7 @@ import { Check, ChevronDown, ChevronRight, Edit3, Folder, FolderOpen, Star, Tras
 import type { TFunction } from 'i18next';
 import { Button } from '../../../../shared/view/ui';
 import { cn } from '../../../../lib/utils';
-import type { Project, ProjectSession, SessionProvider, ShellLogSession } from '../../../../types/app';
+import type { Project, ProjectSession, SessionProvider } from '../../../../types/app';
 import type { MCPServerStatus, SessionWithProvider } from '../../types/types';
 import { getTaskIndicatorStatus } from '../../utils/utils';
 import TaskIndicator from './TaskIndicator';
@@ -18,7 +18,6 @@ type SidebarProjectItemProps = {
   editingProject: string | null;
   editingName: string;
   sessions: SessionWithProvider[];
-  shellLogSessions?: ShellLogSession[];
   initialSessionsLoaded: boolean;
   isLoadingSessions: boolean;
   currentTime: Date;
@@ -48,7 +47,6 @@ type SidebarProjectItemProps = {
   onStartEditingSession: (sessionId: string, initialName: string) => void;
   onCancelEditingSession: () => void;
   onSaveEditingSession: (projectName: string, sessionId: string, summary: string, provider: SessionProvider) => void;
-  onShellLogSessionSelect?: (session: ShellLogSession) => void;
   t: TFunction;
 };
 
@@ -71,7 +69,6 @@ export default function SidebarProjectItem({
   editingProject,
   editingName,
   sessions,
-  shellLogSessions,
   initialSessionsLoaded,
   isLoadingSessions,
   currentTime,
@@ -96,7 +93,6 @@ export default function SidebarProjectItem({
   onStartEditingSession,
   onCancelEditingSession,
   onSaveEditingSession,
-  onShellLogSessionSelect,
   t,
 }: SidebarProjectItemProps) {
   const isSelected = selectedProject?.name === project.name;
@@ -413,7 +409,6 @@ export default function SidebarProjectItem({
         project={project}
         isExpanded={isExpanded}
         sessions={sessions}
-        shellLogSessions={shellLogSessions}
         selectedSession={selectedSession}
         initialSessionsLoaded={initialSessionsLoaded}
         isLoadingSessions={isLoadingSessions}
@@ -430,7 +425,6 @@ export default function SidebarProjectItem({
         onDeleteSession={onDeleteSession}
         onLoadMoreSessions={onLoadMoreSessions}
         onNewSession={onNewSession}
-        onShellLogSessionSelect={onShellLogSessionSelect}
         t={t}
       />
     </div>

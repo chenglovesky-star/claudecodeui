@@ -44,7 +44,6 @@ export default function AppContent() {
     openSettings,
     fetchProjects,
     sidebarSharedProps,
-    onShellSessionCreated,
   } = useProjectsState({
     sessionId,
     navigate,
@@ -163,7 +162,6 @@ export default function AppContent() {
           onShowSettings={() => setShowSettings(true)}
           externalMessageUpdate={externalMessageUpdate}
           shellRestartKey={shellRestartKey}
-          onShellSessionCreated={onShellSessionCreated}
         />
       </div>
 

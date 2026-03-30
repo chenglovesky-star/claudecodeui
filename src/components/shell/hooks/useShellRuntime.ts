@@ -28,7 +28,6 @@ export function useShellRuntime({
   isRestarting,
   onProcessComplete,
   onOutputRef,
-  onShellSessionCreated,
 }: UseShellRuntimeOptions): UseShellRuntimeResult {
   const terminalContainerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -133,7 +132,6 @@ export function useShellRuntime({
     clearTerminalScreen,
     setAuthUrl: setCurrentAuthUrl,
     onOutputRef,
-    onShellSessionCreated,
   });
 
   // 连接成功时持久化 shell 会话信息
