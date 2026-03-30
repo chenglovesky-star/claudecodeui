@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { api } from '../../../utils/api';
-import type { Project, ProjectSession, SessionProvider } from '../../../types/app';
+import type { Project, ProjectSession, SessionProvider, ShellLogSession } from '../../../types/app';
 import type {
   AdditionalSessionsByProject,
   DeleteProjectConfirmation,
@@ -74,7 +74,7 @@ export function useSidebarController({
   const [showVersionModal, setShowVersionModal] = useState(false);
   const [starredProjects, setStarredProjects] = useState<Set<string>>(() => loadStarredProjects());
   const [shellLogSessionsByProject, setShellLogSessionsByProject] = useState<
-    Record<string, import('../../../types/app').ShellLogSession[]>
+    Record<string, ShellLogSession[]>
   >({});
 
   const isSidebarCollapsed = !isMobile && !sidebarVisible;
@@ -149,7 +149,7 @@ export function useSidebarController({
     try {
       const response = await api.shellSessions(project.name);
       if (!response.ok) return;
-      const result = await response.json() as { sessions: import('../../../types/app').ShellLogSession[] };
+      const result = await response.json() as { sessions: ShellLogSession[] };
       const sessionsWithProvider = (result.sessions || []).map((s) => ({
         ...s,
         __provider: 'shell-log' as const,
@@ -176,14 +176,17 @@ export function useSidebarController({
     });
   }, [projects, loadShellLogSessions]);
 
+  const expandedProjectsRef = useRef(expandedProjects);
+  useEffect(() => { expandedProjectsRef.current = expandedProjects; });
+
   useEffect(() => {
-    if (!shellLogVersion) return;
+    if (shellLogVersion === undefined) return;
     // Refresh shell log sessions for all currently expanded projects
-    expandedProjects.forEach((projectName) => {
+    expandedProjectsRef.current.forEach((projectName) => {
       const project = projects.find((p) => p.name === projectName);
       if (project) void loadShellLogSessions(project);
     });
-  }, [shellLogVersion, expandedProjects, projects, loadShellLogSessions]);
+  }, [shellLogVersion, projects, loadShellLogSessions]);
 
   const handleSessionClick = useCallback(
     (session: SessionWithProvider, projectName: string) => {
