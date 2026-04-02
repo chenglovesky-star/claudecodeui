@@ -30,6 +30,21 @@
 执行 SQL。仅支持 SELECT，最大 5000 行。
 **重要**：SQL 中禁止使用 `--` 注释，否则报"不允许执行修改数据的操作"错误。
 
+## 操作码工具（涉及 opcode 查询时必须使用）
+
+### searchOpcodes(keyword)
+按关键词搜索操作码。适用于不确定 opcode 编号、需要探索某业务场景对应哪个 opcode 时。
+
+### describeOpcode(opcode)
+查看单个操作码的详情：是否有效、关联业务场景、常用 tags 字段。
+**重要：凡需求涉及操作码，必须先调用此工具验证 opcode 当前是否仍然有效（约每半年迭代一次）。**
+
+### searchOpcodesByColumn(columnName)
+按字段名反查关联该字段的操作码列表。适用于知道 tags 字段名但不知对应哪个 opcode 时。
+
+### searchOpcodesByEnum(keyword)
+按枚举含义反查操作码。适用于知道业务行为描述但不知 opcode 编号时。
+
 ## 辅助工具
 
 ### showPartitions(tableName, database, catalog)
@@ -53,3 +68,4 @@
 2. **灵活组合** — 不要求严格顺序，按需调用
 3. **确认分区** — 不确定分区字段时先 describeTable 或 showPartitions
 4. **枚举验证** — 不确定字段取值时用 searchEnumByColumn 确认
+5. **操作码验证** — 需求涉及 opcode 时，先 searchOpcodes 探索，再 describeOpcode 验证有效性，最后才查数据

@@ -9,14 +9,14 @@
 先按 `uid` 分组聚合，再汇总计数。禁止顶层直接 `COUNT(DISTINCT uid)`。
 
 ```sql
--- 正确
+/* ✅ 正确：先分组去重，再 COUNT(1) */
 WITH user_actions AS (
   SELECT uid FROM ... GROUP BY uid
 )
 SELECT COUNT(1) AS uv FROM user_actions
 
--- 错误
-SELECT COUNT(DISTINCT uid) AS uv FROM ...
+/* ❌ 错误：大表 COUNT DISTINCT 性能差，Flink 部分场景不支持 */
+/* SELECT COUNT(DISTINCT uid) AS uv FROM ... */
 ```
 
 ### 分区裁剪
@@ -32,7 +32,16 @@ SELECT COUNT(DISTINCT uid) AS uv FROM ...
 `GROUP BY` 聚合配合 `COUNT(1)`。
 
 ### 注释
-SQL 中禁止使用 `--` 注释（executeQuery 不支持），说明写在回复文本中。
+
+SQL 中**禁止使用 `--` 注释**（executeQuery 会报错）。
+
+说明性注释统一使用块注释：
+```sql
+/* 这里是说明 */
+SELECT ...
+```
+
+业务说明写在回复文本中，不写在 SQL 里。
 
 ### Tags 提取
 使用 `ifly_map_get(tags, 'key_name')`，不要用 `tags_json`（不可靠）。
@@ -51,7 +60,7 @@ WITH base AS (
     AND ifly_map_get(tags, '目标tag_key') <> ''
 ),
 uv_total AS (
-  SELECT COUNT(DISTINCT uid) AS total_uv FROM base
+  SELECT COUNT(1) AS total_uv FROM (SELECT uid FROM base GROUP BY uid)
 ),
 pv_stat AS (
   SELECT tag_val, COUNT(1) AS pv FROM base GROUP BY tag_val
