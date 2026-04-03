@@ -52,16 +52,33 @@ description: "讯飞数据仓库 SQL 查询全流程。收到任何数据查询�
      - **已存在** → 静默继续
    - 检查 `./memory/general.md` 是否存在：不存在则初始化（含决策树和歧义词表）
    - MCP 连通性验证：调用 `listCatalogs`，失败则告警"MCP 连接异常，查询可能失败"后继续
-   - **Hooks 配置检查**：读取 `~/.claude/settings.json`（用户全局）和 `.claude/settings.json`（项目级），检查是否存在针对 `mcp__iflytek-sql-gateway__saveSqlGuide` 的 PostToolUse hook：
-     - **已配置** → 静默跳过，第六阶段同步中心知识库时将自动触发 hook
-     - **未配置** → 在本次查询结果展示后（第五阶段末），追加一次性提示：
-       ```
-       💡 提示：检测到尚未配置记忆同步 hook。
-       配置后，每次向中心知识库同步口径时可自动触发后续动作（如通知、备份等）。
-       可运行 /update-config 技能查看配置方式，或告知我帮您添加。
-       （此提示每个项目目录仅展示一次，后续不再重复）
-       ```
-       提示后在 `./memory/general.md` 末尾追加标记 `<!-- hooks-reminder-shown -->` 避免重复提示。若该标记已存在，则静默跳过。
+   - **Hooks 配置检查（强制，未配置时阻断查询）**：读取 `~/.claude/settings.json`（用户全局）和 `.claude/settings.json`（项目级），检查是否存在针对 `mcp__iflytek-sql-gateway__executeQuery` 的 PostToolUse hook：
+     - **已配置** → 静默继续，hook 将在每次查询后自动注入强制提醒
+     - **未配置** → **立即阻断查询流程**，不得继续派发 subagent，必须先完成配置：
+       1. 向用户说明：「检测到未配置 executeQuery PostToolUse hook，该 hook 是保障第六阶段 AskUserQuestion 强制调用的唯一外部机制，未配置将导致记忆系统无法可靠运行。」
+       2. 调用 AskUserQuestion 工具询问（必须调用工具，不得文字提问）：
+          ```
+          AskUserQuestion(
+            question="未检测到 executeQuery hook 配置，该配置是强制记忆评估的技术保障。是否现在立即配置？",
+            options=["立即配置（推荐）", "跳过（接受记忆系统可能失效的风险）"]
+          )
+          ```
+       3. 用户选「立即配置」→ 读取 `~/.claude/settings.json`，合并写入以下 hook，配置完成后继续查询：
+          ```json
+          {
+            "hooks": {
+              "PostToolUse": [{
+                "matcher": "mcp__iflytek-sql-gateway__executeQuery",
+                "hooks": [{
+                  "type": "command",
+                  "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"【强制记忆评估 - 不可跳过】executeQuery 已完成。你现在必须：1）评估本次查询是否有可复用知识（操作码/口径/踩坑/表字段）；2）如有新知识，必须调用 AskUserQuestion 工具询问用户是否写入记忆，严禁用文字提问替代工具调用。\"}}'",
+                  "timeout": 5
+                }]
+              }]
+            }
+          }
+          ```
+       4. 用户选「跳过」→ 在 `./memory/general.md` 末尾追加标记 `<!-- hooks-skipped -->` 并继续查询，第六阶段末输出警告：「⚠️ 当前未配置 hook，AskUserQuestion 调用依赖模型自觉性，存在漂移风险。」
 2. **读取记忆** — 读 `./memory/MEMORY.md` 和 `./memory/general.md`，提取通用知识（工具限制、性能陷阱）
 3. **精确摘取记忆上下文（非全文注入）** — 对需求文本提取核心关键词（业务名 + 操作类型），在命中的 biz_*.md 中逐行匹配：
    - 命中行连同前后各 1 行一起提取
@@ -348,18 +365,29 @@ AskUserQuestion(
 用户选"是"后写入，并同步更新 MEMORY.md 索引。
 
 **步骤2（需征求同意）：同步到中心知识库（本地写入完成后执行）**
-本地写入完成后，**必须调用 `AskUserQuestion` 工具**询问：
+
+**前置：中心知识库去重检查（必须先执行，再问用户）**
+
+调用 `searchSqlGuides`，用本次知识的核心关键词搜索（操作码编号、表名、业务名，2-3 个词）：
+
+| 命中情况 | 处理方式 |
+|---------|---------|
+| 相似度 ≥ 80%（表名/操作码/口径均一致） | **跳过同步**，告知用户「中心知识库已有类似条目：{标题}，无需重复提交」 |
+| 命中但有关键差异（如数据起始时间不同、字段变更） | 展示差异点，询问用户是否**覆盖更新**已有条目 |
+| 未命中 | 进入下方正常同步流程 |
+
+**未命中时，调用 `AskUserQuestion` 工具询问**：
 
 ```
 AskUserQuestion(
-  question="以上口径已写入本地记忆。是否同步到中心知识库供团队共享？\n内容：{1-2句摘要}",
+  question="以上口径已写入本地记忆，中心知识库未发现重复条目。是否同步到中心知识库供团队共享？\n内容：{1-2句摘要}",
   options=["同步", "跳过"]
 )
 ```
 
 用户确认后，调用 `mcp__iflytek-sql-gateway__saveSqlGuide` 保存。
 
-**理由**：中心知识库为团队共享，SQL 口径可能存在业务歧义或尚未最终确认，须经用户审核后再共享，避免传播错误口径。
+**理由**：中心知识库为团队共享，SQL 口径可能存在业务歧义或尚未最终确认，须经用户审核后再共享，避免传播错误口径。重复提交会导致知识库膨胀、检索干扰，去重检查是同步前的强制门控。
 
 **仅在以下情况跳过征求**：
 - 用户在本轮对话中已明确说"直接保存"或"自动同步"
