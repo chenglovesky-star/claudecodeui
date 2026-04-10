@@ -11,16 +11,11 @@
  * - API format ('claude-sonnet-4.5') - used by slash commands for display
  */
 export const CLAUDE_MODELS = {
-  // Models in SDK format (what the actual SDK accepts)
   OPTIONS: [
-    { value: 'sonnet', label: 'Sonnet' },
-    { value: 'opus', label: 'Opus' },
-    { value: 'haiku', label: 'Haiku' },
-    { value: 'opusplan', label: 'Opus Plan' },
-    { value: 'sonnet[1m]', label: 'Sonnet [1M]' }
+    { value: 'MiniMax-M2.7', label: 'MiniMax-M2.7' }
   ],
 
-  DEFAULT: 'sonnet'
+  DEFAULT: 'MiniMax-M2.7'
 };
 
 /**
