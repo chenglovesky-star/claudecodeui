@@ -19,7 +19,7 @@
     "user": "U",
     "error": "Error",
     "tool": "Tool",
-    "claude": "Claude",
+    "claude": "MiniMax",
     "claudeCli": "Claude CLI",
     "cursor": "Cursor",
     "codex": "Codex",
@@ -182,14 +182,14 @@
     "description": "Select a provider to start a new conversation",
     "selectModel": "Select Model",
     "providerInfo": {
-      "anthropic": "by Anthropic",
+      "anthropic": "by MiniMax",
       "openai": "by OpenAI",
       "cursorEditor": "AI Code Editor",
       "google": "by Google",
       "claudeCli": "CLI Mode"
     },
     "readyPrompt": {
-      "claude": "Ready to use Claude with {{model}}. Start typing your message below.",
+      "claude": "Ready to use MiniMax with {{model}}. Start typing your message below.",
       "claudeCli": "Ready to use Claude CLI with {{model}}. Start typing your message below.",
       "cursor": "Ready to use Cursor with {{model}}. Start typing your message below.",
       "codex": "Ready to use Codex with {{model}}. Start typing your message below.",

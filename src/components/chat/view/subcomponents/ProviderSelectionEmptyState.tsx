@@ -42,7 +42,7 @@ type ProviderDef = {
 const PROVIDERS: ProviderDef[] = [
   {
     id: 'claude',
-    name: 'Claude Code',
+    name: 'MiniMax',
     infoKey: 'providerSelection.providerInfo.anthropic',
     accent: 'border-primary',
     ring: 'ring-primary/15',

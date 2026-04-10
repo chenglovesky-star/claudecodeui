@@ -19,7 +19,7 @@
     "user": "U",
     "error": "错误",
     "tool": "工具",
-    "claude": "Claude",
+    "claude": "MiniMax",
     "claudeCli": "Claude CLI",
     "cursor": "Cursor",
     "codex": "Codex",
@@ -164,14 +164,14 @@
     "description": "选择一个供应商以开始新对话",
     "selectModel": "选择模型",
     "providerInfo": {
-      "anthropic": "由 Anthropic 提供",
+      "anthropic": "由 MiniMax 提供",
       "openai": "由 OpenAI 提供",
       "cursorEditor": "AI 代码编辑器",
       "google": "由 Google 提供",
       "claudeCli": "CLI 模式"
     },
     "readyPrompt": {
-      "claude": "准备好使用带有 {{model}} 的 Claude。请在下方开始输入您的消息。",
+      "claude": "准备好使用带有 {{model}} 的 MiniMax。请在下方开始输入您的消息。",
       "claudeCli": "准备好使用带有 {{model}} 的 Claude CLI。请在下方开始输入您的消息。",
       "cursor": "准备好使用带有 {{model}} 的 Cursor。请在下方开始输入您的消息。",
       "codex": "准备好使用带有 {{model}} 的 Codex。请在下方开始输入您的消息。",
