@@ -7,6 +7,11 @@ type ShellPresetBarProps = {
   onSwitch: (presetId: string) => void;
 };
 
+// Buttons in this bar must NOT steal focus from xterm — otherwise after
+// clicking 切换/确认 the keyboard input goes to the button and never reaches
+// the terminal.
+const preventFocusSteal = (e: React.PointerEvent) => e.preventDefault();
+
 export default function ShellPresetBar({
   presets,
   activePresetId,
@@ -58,12 +63,14 @@ export default function ShellPresetBar({
             切换到 {selectedLabel}？会话将重启
           </span>
           <button
+            onPointerDown={preventFocusSteal}
             onClick={handleSwitch}
             className="rounded bg-amber-600 px-2 py-0.5 text-xs text-white hover:bg-amber-700"
           >
             确认
           </button>
           <button
+            onPointerDown={preventFocusSteal}
             onClick={handleCancel}
             className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted/80"
           >
@@ -72,6 +79,7 @@ export default function ShellPresetBar({
         </>
       ) : (
         <button
+          onPointerDown={preventFocusSteal}
           onClick={handleSwitch}
           disabled={!selectedId || selectedId === activePresetId}
           className="rounded bg-primary/90 px-2 py-0.5 text-xs text-primary-foreground hover:bg-primary disabled:opacity-40"

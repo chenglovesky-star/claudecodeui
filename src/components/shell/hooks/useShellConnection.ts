@@ -154,8 +154,15 @@ export function useShellConnection({
           setAuthUrl(nextAuthUrl);
         }
       }
+
+      // Preset-switched: PTY just respawned with new env. Focus xterm so the
+      // user can resume typing — clicking the preset bar steals focus from the
+      // terminal, leaving keystrokes ignored until the user re-clicks the term.
+      if (message.type === 'preset-switched') {
+        terminalRef.current?.focus();
+      }
     },
-    [flushOutputBuffer, handleProcessCompletion, setAuthUrl],
+    [flushOutputBuffer, handleProcessCompletion, setAuthUrl, terminalRef],
   );
 
   const connectWebSocket = useCallback(
