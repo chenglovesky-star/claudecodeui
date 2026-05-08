@@ -469,9 +469,17 @@ export class ShellHandler {
                                 FORCE_COLOR: '3',
                                 // Containers cannot self-update (no npm write access /
                                 // no network to registry). Auto-update failure currently
-                                // crashes the CLI with SIGHUP, leaving an orphaned PTY
-                                // that ignores all input.
+                                // crashes the CLI, leaving an orphaned PTY that ignores
+                                // all input.
                                 DISABLE_AUTOUPDATER: '1',
+                                // Third-party Anthropic-compatible endpoints (e.g. MiniMax)
+                                // do not implement the telemetry / error-reporting / model-
+                                // listing routes. The CLI fails fast when those calls fail
+                                // and exits with code 129 mid-startup. This single flag
+                                // turns off all non-essential background traffic.
+                                CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+                                DISABLE_TELEMETRY: '1',
+                                DISABLE_ERROR_REPORTING: '1',
                             };
 
                         shellProcess = pty.spawn(shell, shellArgs, {
@@ -915,9 +923,14 @@ export class ShellHandler {
             TERM: 'xterm-256color',
             COLORTERM: 'truecolor',
             FORCE_COLOR: '3',
-            // See note in init path — without this, the CLI crashes on auto-update
-            // failure inside the container and the PTY orphan-ignores all input.
+            // See notes in init path — these three flags together avoid the CLI
+            // crash modes we hit in containerized + third-party-endpoint setups
+            // (auto-update + telemetry + error reporting all fail and the CLI
+            // exits with code 129 mid-startup).
             DISABLE_AUTOUPDATER: '1',
+            CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+            DISABLE_TELEMETRY: '1',
+            DISABLE_ERROR_REPORTING: '1',
         };
         if (preset) {
             env.ANTHROPIC_BASE_URL = preset.baseUrl || '';
