@@ -70,7 +70,7 @@ RUN npm config set registry https://registry.npmmirror.com
 # 安装 Claude CLI（通过 build-arg 控制版本，方便回退）
 # 使用方式: docker compose build --build-arg CLAUDE_CODE_VERSION=1.0.88
 # 留空则装最新版
-ARG CLAUDE_CODE_VERSION=1.0.88
+ARG CLAUDE_CODE_VERSION=1.1.88
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 # 复制依赖描述文件和 postinstall 脚本

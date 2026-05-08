@@ -6,8 +6,8 @@ services:
       args:
         # 想换 claude CLI 版本时改这里。空字符串 = 最新版。
         # 出过问题的版本: 2.1.123（auto-update 崩 + 第三方端点兼容差）
-        # 已知较稳: 1.0.88
-        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-1.0.88}
+        # 已知较稳: 1.1.88
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-1.1.88}
     container_name: claude-code-ui
     restart: unless-stopped
     ports:
