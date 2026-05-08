@@ -428,24 +428,6 @@ export class ShellHandler {
                             ? setupUserHome(userId)
                             : os.homedir();
 
-                        // Load first preset from shell-presets.json if available
-                        let initialPreset = null;
-                        try {
-                            const { fileURLToPath } = await import('url');
-                            const { dirname } = await import('path');
-                            const appRoot = path.join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-                            const presetsPath = path.join(appRoot, 'shell-presets.json');
-                            const raw = await fs.readFile(presetsPath, 'utf-8');
-                            const presetsList = JSON.parse(raw);
-                            if (Array.isArray(presetsList) && presetsList.length > 0) {
-                                initialPreset = presetsList[0];
-                            }
-                        } catch { /* no presets file, use defaults */ }
-
-                        if (initialPreset) {
-                            await this.#updateSettingsJson(initialPreset, userHome);
-                        }
-
                         // Use appropriate shell based on platform
                         const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
                         const shellArgs = os.platform() === 'win32' ? ['-Command', shellCommand] : ['-c', shellCommand];
@@ -455,22 +437,18 @@ export class ShellHandler {
                         const termRows = Math.max(Number(data.rows) || 24, 10);
                         log.info(`Using terminal dimensions: ${termCols} x ${termRows}`);
 
-                        const initEnv = initialPreset
-                            ? this.#buildPresetEnv(initialPreset, userHome)
-                            : {
-                                ...process.env,
-                                HOME: userHome,
-                                TERM: 'xterm-256color',
-                                COLORTERM: 'truecolor',
-                                FORCE_COLOR: '3'
-                            };
-
                         shellProcess = pty.spawn(shell, shellArgs, {
                             name: 'xterm-256color',
                             cols: termCols,
                             rows: termRows,
                             cwd: userHome,
-                            env: initEnv,
+                            env: {
+                                ...process.env,
+                                HOME: userHome,
+                                TERM: 'xterm-256color',
+                                COLORTERM: 'truecolor',
+                                FORCE_COLOR: '3'
+                            }
                         });
 
                         log.info(`Shell process started with PTY, PID: ${shellProcess.pid}`);
@@ -488,7 +466,7 @@ export class ShellHandler {
                             projectPath,
                             sessionId,
                             userHome,
-                            presetBaseUrl: initialPreset ? initialPreset.baseUrl : ''
+                            presetBaseUrl: ''
                         });
 
                         // Handle data output
