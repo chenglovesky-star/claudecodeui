@@ -466,7 +466,12 @@ export class ShellHandler {
                                 HOME: userHome,
                                 TERM: 'xterm-256color',
                                 COLORTERM: 'truecolor',
-                                FORCE_COLOR: '3'
+                                FORCE_COLOR: '3',
+                                // Containers cannot self-update (no npm write access /
+                                // no network to registry). Auto-update failure currently
+                                // crashes the CLI with SIGHUP, leaving an orphaned PTY
+                                // that ignores all input.
+                                DISABLE_AUTOUPDATER: '1',
                             };
 
                         shellProcess = pty.spawn(shell, shellArgs, {
@@ -910,6 +915,9 @@ export class ShellHandler {
             TERM: 'xterm-256color',
             COLORTERM: 'truecolor',
             FORCE_COLOR: '3',
+            // See note in init path — without this, the CLI crashes on auto-update
+            // failure inside the container and the PTY orphan-ignores all input.
+            DISABLE_AUTOUPDATER: '1',
         };
         if (preset) {
             env.ANTHROPIC_BASE_URL = preset.baseUrl || '';
