@@ -78,9 +78,14 @@ COPY package.json package-lock.json ./
 COPY scripts ./scripts
 
 # 仅安装生产依赖（忽略 prepare/husky 脚本，然后重建所有原生模块）
-# fetch-retries=5 防止镜像源网络波动导致构建失败
-RUN npm config set fetch-retries 5 \
-    && npm ci --omit=dev --ignore-scripts \
+# 多重重试 + 长超时，防止 npmmirror 抖动导致 ECONNRESET 整个 build 失败
+RUN npm config set fetch-retries 10 \
+    && npm config set fetch-retry-mintimeout 20000 \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && npm config set fetch-timeout 600000 \
+    && (npm ci --omit=dev --ignore-scripts \
+        || npm ci --omit=dev --ignore-scripts \
+        || npm ci --omit=dev --ignore-scripts) \
     && npm rebuild \
     && node scripts/fix-node-pty.js
 
